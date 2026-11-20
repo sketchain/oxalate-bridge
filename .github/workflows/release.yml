@@ -99,7 +99,7 @@ jobs:
             found { print }
             END { if (!found) exit 1 }
           ' Changelog.md > notes.md
-          printf '\n镜像：`%s:%s`\n' "$IMAGE" "${TAG#v}" >> notes.md
+          printf '\n镜像：\140%s:%s\140\n' "$IMAGE" "${TAG#v}" >> notes.md
           test -s notes.md
 
       - uses: softprops/action-gh-release@v3
