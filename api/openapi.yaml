@@ -1,0 +1,1581 @@
+openapi: 3.0.3
+info:
+  title: oxalate-bridge panel API
+  version: 0.1.0
+  description: |
+    Panel API of oxalate-bridge. This file is the single source of truth: the
+    backend server code is generated from it with oapi-codegen (chi strict
+    server) and must implement it as written.
+
+    Conventions:
+    - All amounts are integers in micro-USD (1e-6 USD).
+    - Times are RFC 3339 in UTC. IDs are UUIDv7.
+    - Lists are cursor paginated: pass `next_cursor` back as `cursor`.
+    - Errors are `{"error":{"code","message"}}` with a fixed `code` string.
+    - Authentication is a session cookie (`bridge_session`, HttpOnly,
+      SameSite=Lax) set by `POST /auth/login`.
+    - Every non-GET request must carry the header `X-Requested-With`
+      (any value, e.g. `XMLHttpRequest`) or it is rejected with
+      `csrf_header_missing` (403).
+    - `/admin/*` requires the `admin` role; admin writes are audited.
+
+    The relay endpoints (`/v1/*`) are not part of this API.
+servers:
+  - url: /api/v1
+security:
+  - cookieAuth: []
+
+tags:
+  - name: auth
+  - name: keys
+  - name: billing
+  - name: plans
+  - name: usage
+  - name: admin-users
+  - name: admin-accounts
+  - name: admin-plans
+  - name: admin-subscriptions
+  - name: admin-system
+
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      security: []
+      summary: Log in with username and password (rate limited).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Logged in; the session cookie is set.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        default: { $ref: '#/components/responses/Error' }
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: End the current session.
+      responses:
+        '204':
+          description: Logged out; the cookie is cleared.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+        default: { $ref: '#/components/responses/Error' }
+  /me:
+    get:
+      tags: [auth]
+      operationId: getMe
+      responses:
+        '200':
+          description: Current user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        default: { $ref: '#/components/responses/Error' }
+  /me/password:
+    post:
+      tags: [auth]
+      operationId: changePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangePasswordRequest' }
+      responses:
+        '204': { description: Password changed; other sessions stay valid until they expire. }
+        default: { $ref: '#/components/responses/Error' }
+
+  /keys:
+    get:
+      tags: [keys]
+      operationId: listKeys
+      responses:
+        '200':
+          description: The user's API keys.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiKeyList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [keys]
+      operationId: createKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApiKeyCreate' }
+      responses:
+        '201':
+          description: Created; `key` holds the full secret.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiKeyWithSecret' }
+        default: { $ref: '#/components/responses/Error' }
+  /keys/{keyId}:
+    parameters:
+      - $ref: '#/components/parameters/KeyId'
+    get:
+      tags: [keys]
+      operationId: getKey
+      responses:
+        '200':
+          description: The key.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiKey' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [keys]
+      operationId: updateKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApiKeyUpdate' }
+      responses:
+        '200':
+          description: Updated key.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiKey' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [keys]
+      operationId: deleteKey
+      responses:
+        '204': { description: Deleted. }
+        default: { $ref: '#/components/responses/Error' }
+  /keys/{keyId}/secret:
+    parameters:
+      - $ref: '#/components/parameters/KeyId'
+    get:
+      tags: [keys]
+      operationId: getKeySecret
+      responses:
+        '200':
+          description: The full key.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiKeySecret' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /balance:
+    get:
+      tags: [billing]
+      operationId: getBalance
+      responses:
+        '200':
+          description: Balance figures.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Balance' }
+        default: { $ref: '#/components/responses/Error' }
+  /ledger:
+    get:
+      tags: [billing]
+      operationId: listMyLedger
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/LedgerTypeFilter'
+      responses:
+        '200':
+          description: Ledger entries, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LedgerPage' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /plans:
+    get:
+      tags: [plans]
+      operationId: listPlansOnSale
+      responses:
+        '200':
+          description: Plans on sale.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanList' }
+        default: { $ref: '#/components/responses/Error' }
+  /plans/{planId}/purchase:
+    parameters:
+      - $ref: '#/components/parameters/PlanId'
+    post:
+      tags: [plans]
+      operationId: purchasePlan
+      summary: Buy a plan with the balance (no overdraft). The subscription waits for an admin to assign an account.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PurchaseRequest' }
+      responses:
+        '201':
+          description: Subscription created in pending_assignment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Subscription' }
+        default: { $ref: '#/components/responses/Error' }
+  /subscriptions:
+    get:
+      tags: [plans]
+      operationId: listMySubscriptions
+      responses:
+        '200':
+          description: The user's subscriptions with their current period.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubscriptionList' }
+        default: { $ref: '#/components/responses/Error' }
+  /subscriptions/{subscriptionId}/renew:
+    parameters:
+      - $ref: '#/components/parameters/SubscriptionId'
+    post:
+      tags: [plans]
+      operationId: renewSubscription
+      summary: Renew by one duration (charged to the balance; from now when already expired).
+      responses:
+        '200':
+          description: Renewed subscription.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Subscription' }
+        default: { $ref: '#/components/responses/Error' }
+  /subscriptions/{subscriptionId}/auto-renew:
+    parameters:
+      - $ref: '#/components/parameters/SubscriptionId'
+    put:
+      tags: [plans]
+      operationId: setAutoRenew
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AutoRenewRequest' }
+      responses:
+        '200':
+          description: Updated subscription.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Subscription' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /usage/logs:
+    get:
+      tags: [usage]
+      operationId: listMyUsageLogs
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/KeyIdFilter'
+        - $ref: '#/components/parameters/ModelFilter'
+        - $ref: '#/components/parameters/TierFilter'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+      responses:
+        '200':
+          description: Request logs, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RequestLogPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /usage/summary:
+    get:
+      tags: [usage]
+      operationId: getMyUsageSummary
+      parameters:
+        - $ref: '#/components/parameters/Granularity'
+        - $ref: '#/components/parameters/FromRequired'
+        - $ref: '#/components/parameters/ToRequired'
+        - $ref: '#/components/parameters/KeyIdFilter'
+      responses:
+        '200':
+          description: Usage grouped by time bucket, model and tier (from the hourly rollup).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageSummary' }
+        default: { $ref: '#/components/responses/Error' }
+  /models:
+    get:
+      tags: [usage]
+      operationId: listModels
+      responses:
+        '200':
+          description: Models served by at least one usable account.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ModelList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /admin/users:
+    get:
+      tags: [admin-users]
+      operationId: adminListUsers
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: search
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Users, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUserPage' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [admin-users]
+      operationId: adminCreateUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminUserCreate' }
+      responses:
+        '201':
+          description: Created user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUser' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/users/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [admin-users]
+      operationId: adminGetUser
+      responses:
+        '200':
+          description: The user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUser' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [admin-users]
+      operationId: adminUpdateUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminUserUpdate' }
+      responses:
+        '200':
+          description: Updated user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUser' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [admin-users]
+      operationId: adminDeleteUser
+      responses:
+        '204': { description: Soft-deleted; keys stop working. }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/users/{userId}/balance:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    post:
+      tags: [admin-users]
+      operationId: adminAdjustBalance
+      summary: Top up (admin_topup, amount > 0) or adjust (admin_adjust, signed) a balance.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BalanceAdjust' }
+      responses:
+        '200':
+          description: The ledger entry written.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LedgerEntry' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /admin/accounts:
+    get:
+      tags: [admin-accounts]
+      operationId: adminListAccounts
+      responses:
+        '200':
+          description: Upstream accounts with their live status.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [admin-accounts]
+      operationId: adminCreateAccount
+      summary: Import an account. /quota and /v1/models must both succeed before it is saved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountCreate' }
+      responses:
+        '201':
+          description: Created account.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/accounts/{accountId}:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    get:
+      tags: [admin-accounts]
+      operationId: adminGetAccount
+      responses:
+        '200':
+          description: The account with live status.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [admin-accounts]
+      operationId: adminUpdateAccount
+      summary: Edit an account. The edited connection is validated like an import; saving clears the error state.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountUpdate' }
+      responses:
+        '200':
+          description: Updated account.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [admin-accounts]
+      operationId: adminDeleteAccount
+      responses:
+        '204': { description: Deleted. }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/accounts/{accountId}/enabled:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    put:
+      tags: [admin-accounts]
+      operationId: adminSetAccountEnabled
+      summary: Enable or disable; enabling also clears the error state.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EnabledRequest' }
+      responses:
+        '200':
+          description: Updated account.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/accounts/{accountId}/test:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    post:
+      tags: [admin-accounts]
+      operationId: adminTestAccount
+      summary: Call /quota and /v1/models now; a full pass clears the error state and cooldown.
+      responses:
+        '200':
+          description: Test result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountTestResult' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /admin/plans:
+    get:
+      tags: [admin-plans]
+      operationId: adminListPlans
+      responses:
+        '200':
+          description: All plans.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [admin-plans]
+      operationId: adminCreatePlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlanInput' }
+      responses:
+        '201':
+          description: Created plan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Plan' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/plans/{planId}:
+    parameters:
+      - $ref: '#/components/parameters/PlanId'
+    get:
+      tags: [admin-plans]
+      operationId: adminGetPlan
+      responses:
+        '200':
+          description: The plan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Plan' }
+        default: { $ref: '#/components/responses/Error' }
+    put:
+      tags: [admin-plans]
+      operationId: adminUpdatePlan
+      summary: Replace a plan. Existing subscriptions keep the terms they were bought with.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlanInput' }
+      responses:
+        '200':
+          description: Updated plan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Plan' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [admin-plans]
+      operationId: adminDeletePlan
+      responses:
+        '204': { description: Deleted (taken off sale; subscriptions are unaffected). }
+        default: { $ref: '#/components/responses/Error' }
+
+  /admin/subscriptions:
+    get:
+      tags: [admin-subscriptions]
+      operationId: adminListSubscriptions
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/SubscriptionStatus' }
+        - $ref: '#/components/parameters/UserIdFilter'
+        - $ref: '#/components/parameters/AccountIdFilter'
+      responses:
+        '200':
+          description: Subscriptions, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubscriptionPage' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [admin-subscriptions]
+      operationId: adminGrantSubscription
+      summary: Open an active subscription for a user directly on an account, optionally charging the price.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GrantSubscriptionRequest' }
+      responses:
+        '201':
+          description: Created subscription, with an overcommit warning when applicable.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubscriptionWithWarning' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/subscriptions/{subscriptionId}/assign:
+    parameters:
+      - $ref: '#/components/parameters/SubscriptionId'
+    post:
+      tags: [admin-subscriptions]
+      operationId: adminAssignSubscription
+      summary: Activate a pending subscription on an account (warns, never blocks, on overcommit).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountRef' }
+      responses:
+        '200':
+          description: Activated subscription.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubscriptionWithWarning' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/subscriptions/{subscriptionId}/rebind:
+    parameters:
+      - $ref: '#/components/parameters/SubscriptionId'
+    post:
+      tags: [admin-subscriptions]
+      operationId: adminRebindSubscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountRef' }
+      responses:
+        '200':
+          description: Rebound subscription.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubscriptionWithWarning' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/subscriptions/{subscriptionId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/SubscriptionId'
+    post:
+      tags: [admin-subscriptions]
+      operationId: adminCancelSubscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelSubscriptionRequest' }
+      responses:
+        '200':
+          description: Cancelled subscription.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Subscription' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /admin/settings:
+    get:
+      tags: [admin-system]
+      operationId: adminGetSettings
+      responses:
+        '200':
+          description: Current runtime settings.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Settings' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [admin-system]
+      operationId: adminUpdateSettings
+      summary: Change some settings; every replica applies them immediately.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SettingsPatch' }
+      responses:
+        '200':
+          description: Settings after the change.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Settings' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/request-logs:
+    get:
+      tags: [admin-system]
+      operationId: adminListRequestLogs
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/UserIdFilter'
+        - $ref: '#/components/parameters/KeyIdFilter'
+        - $ref: '#/components/parameters/AccountIdFilter'
+        - $ref: '#/components/parameters/ModelFilter'
+        - $ref: '#/components/parameters/TierFilter'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+      responses:
+        '200':
+          description: Request logs, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RequestLogPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/usage/summary:
+    get:
+      tags: [admin-system]
+      operationId: adminGetUsageSummary
+      parameters:
+        - $ref: '#/components/parameters/Granularity'
+        - $ref: '#/components/parameters/FromRequired'
+        - $ref: '#/components/parameters/ToRequired'
+        - $ref: '#/components/parameters/UserIdFilter'
+        - $ref: '#/components/parameters/KeyIdFilter'
+        - $ref: '#/components/parameters/AccountIdFilter'
+      responses:
+        '200':
+          description: Usage grouped by time bucket, model and tier.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageSummary' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/ledger:
+    get:
+      tags: [admin-system]
+      operationId: adminListLedger
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/UserIdFilter'
+        - $ref: '#/components/parameters/LedgerTypeFilter'
+      responses:
+        '200':
+          description: Ledger entries, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LedgerPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/audit-logs:
+    get:
+      tags: [admin-system]
+      operationId: adminListAuditLogs
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: operator_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: target_type
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Audit log entries, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditLogPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/safeguard-events:
+    get:
+      tags: [admin-system]
+      operationId: adminListSafeguardEvents
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/UserIdFilter'
+      responses:
+        '200':
+          description: Safeguard (Claude refusal) events, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SafeguardEventPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/prices:
+    get:
+      tags: [admin-system]
+      operationId: adminGetPrices
+      responses:
+        '200':
+          description: Ratio table status.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PriceStatus' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/prices/refresh:
+    post:
+      tags: [admin-system]
+      operationId: adminRefreshPrices
+      responses:
+        '200':
+          description: Ratio table status after the refresh.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PriceStatus' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/reconcile:
+    post:
+      tags: [admin-system]
+      operationId: adminRunReconcile
+      summary: Run the ledger / balance / charge reconciliation now.
+      responses:
+        '200':
+          description: Reconcile result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReconcileResult' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/events:
+    get:
+      tags: [admin-system]
+      operationId: adminEvents
+      summary: Server-sent events across replicas.
+      description: |
+        `text/event-stream`. Event names: `account_status` (data: account id,
+        name, fetched_at, last_error, stale, snapshot) and `request_settled`
+        (data: request summary). A comment line is sent every 15 s.
+      responses:
+        '200':
+          description: Event stream.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        default: { $ref: '#/components/responses/Error' }
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: bridge_session
+
+  responses:
+    Error:
+      description: Error.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  parameters:
+    KeyId:
+      name: keyId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PlanId:
+      name: planId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SubscriptionId:
+      name: subscriptionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    KeyIdFilter:
+      name: key_id
+      in: query
+      schema: { type: string, format: uuid }
+    UserIdFilter:
+      name: user_id
+      in: query
+      schema: { type: string, format: uuid }
+    AccountIdFilter:
+      name: account_id
+      in: query
+      schema: { type: string, format: uuid }
+    ModelFilter:
+      name: model
+      in: query
+      description: Normalized model name.
+      schema: { type: string }
+    TierFilter:
+      name: tier
+      in: query
+      schema: { $ref: '#/components/schemas/Tier' }
+    LedgerTypeFilter:
+      name: type
+      in: query
+      schema: { $ref: '#/components/schemas/LedgerType' }
+    From:
+      name: from
+      in: query
+      schema: { type: string, format: date-time }
+    To:
+      name: to
+      in: query
+      schema: { type: string, format: date-time }
+    FromRequired:
+      name: from
+      in: query
+      required: true
+      schema: { type: string, format: date-time }
+    ToRequired:
+      name: to
+      in: query
+      required: true
+      schema: { type: string, format: date-time }
+    Granularity:
+      name: granularity
+      in: query
+      required: true
+      schema: { type: string, enum: [hour, day] }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: |
+                Fixed codes: bad_request, validation_failed, unauthorized,
+                forbidden, csrf_header_missing, not_found, conflict,
+                rate_limited, insufficient_balance, invalid_state,
+                upstream_validation_failed, internal.
+            message: { type: string }
+
+    Role:
+      type: string
+      enum: [admin, user]
+    UserStatus:
+      type: string
+      enum: [active, disabled]
+    Tier:
+      type: string
+      enum: [plan, standard, force]
+    LedgerType:
+      type: string
+      enum: [admin_topup, admin_adjust, plan_purchase, plan_renewal, api_charge, refund]
+    SubscriptionKind:
+      type: string
+      enum: [claude, chatgpt]
+    SubscriptionStatus:
+      type: string
+      enum: [pending_assignment, active, expired, cancelled]
+    DurationUnit:
+      type: string
+      enum: [day, week, month]
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, minLength: 1, maxLength: 64 }
+        password: { type: string, minLength: 1, maxLength: 256 }
+    ChangePasswordRequest:
+      type: object
+      required: [old_password, new_password]
+      properties:
+        old_password: { type: string }
+        new_password: { type: string, minLength: 8, maxLength: 256 }
+    Me:
+      type: object
+      required: [id, username, role, status, balance_micro, max_concurrency, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        status: { $ref: '#/components/schemas/UserStatus' }
+        balance_micro: { type: integer, format: int64 }
+        max_concurrency: { type: integer }
+        rpm: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    ApiKey:
+      type: object
+      required: [id, name, prefix, tiers, enabled, note, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        prefix: { type: string, description: Display form such as sk-AbCd…wxyz. }
+        tiers:
+          type: array
+          items: { $ref: '#/components/schemas/Tier' }
+        subscription_id: { type: string, format: uuid, nullable: true }
+        max_concurrency: { type: integer, nullable: true }
+        rpm: { type: integer, nullable: true }
+        enabled: { type: boolean }
+        note: { type: string }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+    ApiKeyWithSecret:
+      allOf:
+        - $ref: '#/components/schemas/ApiKey'
+        - type: object
+          required: [key]
+          properties:
+            key: { type: string }
+    ApiKeySecret:
+      type: object
+      required: [key]
+      properties:
+        key: { type: string }
+    ApiKeyList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ApiKey' }
+    ApiKeyCreate:
+      type: object
+      properties:
+        name: { type: string, maxLength: 100 }
+        tiers:
+          type: array
+          description: Ordered subset of plan, standard, force. Default [plan, standard] with a subscription, else [standard].
+          items: { $ref: '#/components/schemas/Tier' }
+        subscription_id: { type: string, format: uuid, nullable: true, description: Required when tiers contain plan. }
+        max_concurrency: { type: integer, minimum: 0, nullable: true }
+        rpm: { type: integer, minimum: 0, nullable: true }
+        enabled: { type: boolean, default: true }
+        note: { type: string, maxLength: 500 }
+    ApiKeyUpdate:
+      type: object
+      description: Fields left out keep their value; send null to clear a nullable field.
+      properties:
+        name: { type: string, maxLength: 100 }
+        tiers:
+          type: array
+          items: { $ref: '#/components/schemas/Tier' }
+        subscription_id: { type: string, format: uuid, nullable: true }
+        max_concurrency: { type: integer, minimum: 0, nullable: true }
+        rpm: { type: integer, minimum: 0, nullable: true }
+        enabled: { type: boolean }
+        note: { type: string, maxLength: 500 }
+
+    Balance:
+      type: object
+      required: [balance_micro, available_micro, pending_micro, held_micro]
+      properties:
+        balance_micro: { type: integer, format: int64, description: Balance persisted in PostgreSQL. }
+        available_micro: { type: integer, format: int64, description: Real-time available amount (Redis), after in-flight holds and charges not yet persisted. }
+        pending_micro: { type: integer, format: int64, description: Charges settled in real time but not yet persisted. }
+        held_micro: { type: integer, format: int64, description: Amount held by in-flight requests. }
+
+    LedgerEntry:
+      type: object
+      required: [id, user_id, type, amount_micro, balance_after_micro, ref_type, ref_id, note, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        type: { $ref: '#/components/schemas/LedgerType' }
+        amount_micro: { type: integer, format: int64 }
+        balance_after_micro: { type: integer, format: int64 }
+        ref_type: { type: string }
+        ref_id: { type: string }
+        note: { type: string }
+        operator_id: { type: string, format: uuid, nullable: true }
+        created_at: { type: string, format: date-time }
+    LedgerPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/LedgerEntry' }
+        next_cursor: { type: string, nullable: true }
+
+    Plan:
+      type: object
+      required: [id, name, description, subscription, weekly_quota_micro, price_micro, duration_value, duration_unit, allowed_models, on_sale, sort_order, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        subscription: { $ref: '#/components/schemas/SubscriptionKind' }
+        weekly_quota_micro: { type: integer, format: int64 }
+        price_micro: { type: integer, format: int64 }
+        duration_value: { type: integer }
+        duration_unit: { $ref: '#/components/schemas/DurationUnit' }
+        allowed_models:
+          type: array
+          description: Normalized model names; empty means unrestricted.
+          items: { type: string }
+        on_sale: { type: boolean }
+        sort_order: { type: integer }
+        created_at: { type: string, format: date-time }
+    PlanInput:
+      type: object
+      required: [name, subscription, weekly_quota_micro, price_micro, duration_value, duration_unit]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string }
+        subscription: { $ref: '#/components/schemas/SubscriptionKind' }
+        weekly_quota_micro: { type: integer, format: int64, minimum: 0 }
+        price_micro: { type: integer, format: int64, minimum: 0 }
+        duration_value: { type: integer, minimum: 1 }
+        duration_unit: { $ref: '#/components/schemas/DurationUnit' }
+        allowed_models:
+          type: array
+          items: { type: string }
+        on_sale: { type: boolean, default: true }
+        sort_order: { type: integer, default: 0 }
+    PlanList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Plan' }
+    PurchaseRequest:
+      type: object
+      properties:
+        auto_renew: { type: boolean, default: false }
+
+    PeriodUsage:
+      type: object
+      required: [period_start, period_end, quota_micro, used_billed_micro, used_upstream_micro, remaining_micro]
+      properties:
+        period_start: { type: string, format: date-time }
+        period_end: { type: string, format: date-time }
+        quota_micro: { type: integer, format: int64 }
+        used_billed_micro: { type: integer, format: int64, description: Persisted usage of the period. }
+        used_upstream_micro: { type: integer, format: int64 }
+        remaining_micro: { type: integer, format: int64, description: Real-time remaining quota (Redis). }
+    Subscription:
+      type: object
+      required: [id, user_id, plan_id, plan_name, subscription, weekly_quota_micro, allowed_models, duration_value, duration_unit, price_micro, status, auto_renew, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        plan_id: { type: string, format: uuid }
+        plan_name: { type: string }
+        subscription: { $ref: '#/components/schemas/SubscriptionKind' }
+        weekly_quota_micro: { type: integer, format: int64 }
+        allowed_models:
+          type: array
+          items: { type: string }
+        duration_value: { type: integer }
+        duration_unit: { $ref: '#/components/schemas/DurationUnit' }
+        price_micro: { type: integer, format: int64 }
+        account_id: { type: string, format: uuid, nullable: true }
+        status: { $ref: '#/components/schemas/SubscriptionStatus' }
+        activated_at: { type: string, format: date-time, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+        auto_renew: { type: boolean }
+        cancelled_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        current_period:
+          allOf:
+            - $ref: '#/components/schemas/PeriodUsage'
+          nullable: true
+    SubscriptionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Subscription' }
+    SubscriptionPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Subscription' }
+        next_cursor: { type: string, nullable: true }
+    SubscriptionWithWarning:
+      type: object
+      required: [subscription]
+      properties:
+        subscription: { $ref: '#/components/schemas/Subscription' }
+        warning: { type: string, nullable: true, description: Set when the account's sold weekly quotas exceed its week total. }
+    AutoRenewRequest:
+      type: object
+      required: [auto_renew]
+      properties:
+        auto_renew: { type: boolean }
+    GrantSubscriptionRequest:
+      type: object
+      required: [user_id, plan_id, account_id]
+      properties:
+        user_id: { type: string, format: uuid }
+        plan_id: { type: string, format: uuid }
+        account_id: { type: string, format: uuid }
+        charge: { type: boolean, default: false, description: Charge the plan price to the user's balance. }
+    AccountRef:
+      type: object
+      required: [account_id]
+      properties:
+        account_id: { type: string, format: uuid }
+    CancelSubscriptionRequest:
+      type: object
+      required: [refund_micro]
+      properties:
+        refund_micro: { type: integer, format: int64, minimum: 0 }
+        note: { type: string }
+
+    RequestLog:
+      type: object
+      required: [request_id, created_at, tier, endpoint, model_raw, model, stream, status_code, error_type, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, reasoning_tokens, upstream_cost_micro, billed_micro, tier_multiplier, model_multiplier, unpriced, usage_missing, latency_ms, first_byte_ms, retries]
+      properties:
+        request_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        user_id: { type: string, format: uuid, nullable: true }
+        key_id: { type: string, format: uuid, nullable: true }
+        account_id: { type: string, format: uuid, nullable: true }
+        tier: { type: string, description: 'plan, standard, force, or empty when no tier admitted the request.' }
+        subscription_id: { type: string, format: uuid, nullable: true }
+        endpoint: { type: string }
+        model_raw: { type: string }
+        model: { type: string }
+        stream: { type: boolean }
+        status_code: { type: integer }
+        error_type: { type: string }
+        input_tokens: { type: integer, format: int64 }
+        cache_read_tokens: { type: integer, format: int64 }
+        cache_write_tokens: { type: integer, format: int64 }
+        output_tokens: { type: integer, format: int64 }
+        reasoning_tokens: { type: integer, format: int64 }
+        upstream_cost_micro: { type: integer, format: int64 }
+        billed_micro: { type: integer, format: int64 }
+        tier_multiplier: { type: number, format: double }
+        model_multiplier: { type: number, format: double }
+        unpriced: { type: boolean }
+        usage_missing: { type: boolean }
+        latency_ms: { type: integer }
+        first_byte_ms: { type: integer }
+        retries: { type: integer }
+        session_hash: { type: string, description: Admin only. }
+        client_ip: { type: string, description: Admin only. }
+        user_agent: { type: string }
+    RequestLogPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/RequestLog' }
+        next_cursor: { type: string, nullable: true }
+    UsageBucket:
+      type: object
+      required: [bucket, model, tier, requests, errors, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, reasoning_tokens, upstream_cost_micro, billed_micro]
+      properties:
+        bucket: { type: string, format: date-time }
+        model: { type: string }
+        tier: { type: string }
+        requests: { type: integer, format: int64 }
+        errors: { type: integer, format: int64 }
+        input_tokens: { type: integer, format: int64 }
+        cache_read_tokens: { type: integer, format: int64 }
+        cache_write_tokens: { type: integer, format: int64 }
+        output_tokens: { type: integer, format: int64 }
+        reasoning_tokens: { type: integer, format: int64 }
+        upstream_cost_micro: { type: integer, format: int64 }
+        billed_micro: { type: integer, format: int64 }
+    UsageSummary:
+      type: object
+      required: [granularity, items]
+      properties:
+        granularity: { type: string, enum: [hour, day] }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/UsageBucket' }
+    ModelList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { type: string }
+
+    AdminUser:
+      type: object
+      required: [id, username, role, status, balance_micro, max_concurrency, note, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        status: { $ref: '#/components/schemas/UserStatus' }
+        balance_micro: { type: integer, format: int64 }
+        max_concurrency: { type: integer }
+        rpm: { type: integer, nullable: true }
+        note: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AdminUserPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminUser' }
+        next_cursor: { type: string, nullable: true }
+    AdminUserCreate:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9_.@-]+$' }
+        password: { type: string, minLength: 8, maxLength: 256 }
+        role: { $ref: '#/components/schemas/Role' }
+        max_concurrency: { type: integer, minimum: 0, description: Defaults to settings.default_user_concurrency. }
+        rpm: { type: integer, minimum: 0, nullable: true }
+        note: { type: string }
+    AdminUserUpdate:
+      type: object
+      description: Fields left out keep their value; send rpm null for unlimited.
+      properties:
+        role: { $ref: '#/components/schemas/Role' }
+        status: { $ref: '#/components/schemas/UserStatus' }
+        max_concurrency: { type: integer, minimum: 0 }
+        rpm: { type: integer, minimum: 0, nullable: true }
+        note: { type: string }
+        password: { type: string, minLength: 8, maxLength: 256 }
+    BalanceAdjust:
+      type: object
+      required: [type, amount_micro, note]
+      properties:
+        type: { type: string, enum: [topup, adjust] }
+        amount_micro: { type: integer, format: int64, description: Must be positive for topup; signed for adjust. }
+        note: { type: string, minLength: 1 }
+        idempotency_key: { type: string, maxLength: 128, description: Optional client key; a repeat returns 409. }
+
+    QuotaWindow:
+      type: object
+      required: [used_percent, total_usd, remaining_usd]
+      properties:
+        used_percent: { type: number, format: double }
+        reset_at: { type: string, format: date-time, nullable: true }
+        total_usd: { type: number, format: double }
+        remaining_usd: { type: number, format: double, description: Already multiplied by the safety factor; local reset applied. }
+    AccountRuntime:
+      type: object
+      required: [status, status_reason, stale, hard_exhausted, headroom_micro, reserved_micro, spend_since_observed_micro, current_concurrency, models]
+      properties:
+        status:
+          type: string
+          enum: [normal, stale, cooldown, error, disabled]
+        status_reason: { type: string }
+        stale: { type: boolean }
+        cooldown_until: { type: string, format: date-time, nullable: true }
+        hard_exhausted: { type: boolean }
+        state: { type: string, description: 'cpa-quota account state: cold, estimated or paused.' }
+        safety_factor: { type: number, format: double }
+        observed_at: { type: string, format: date-time, nullable: true }
+        fetched_at: { type: string, format: date-time, nullable: true }
+        last_error: { type: string }
+        database_status: { type: string }
+        estimates_loaded: { type: boolean }
+        five_hour:
+          allOf:
+            - $ref: '#/components/schemas/QuotaWindow'
+          nullable: true
+        week:
+          allOf:
+            - $ref: '#/components/schemas/QuotaWindow'
+          nullable: true
+        headroom_micro: { type: integer, format: int64, description: 'H_A = (week.remaining − S_A) − Σ reservations.' }
+        reserved_micro: { type: integer, format: int64 }
+        spend_since_observed_micro: { type: integer, format: int64, description: S_A. }
+        weight: { type: number, format: double }
+        current_concurrency: { type: integer, format: int64 }
+        models:
+          type: array
+          items: { type: string }
+    Account:
+      type: object
+      required: [id, name, base_url, enabled, note, instance, subscription, tier, auth_index, provider, watermark_5h_percent_effective, created_at, updated_at, runtime]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        base_url: { type: string }
+        enabled: { type: boolean }
+        watermark_5h_percent: { type: number, format: double, nullable: true }
+        watermark_5h_percent_effective: { type: number, format: double }
+        max_concurrency: { type: integer, nullable: true }
+        note: { type: string }
+        instance: { type: string }
+        subscription: { type: string }
+        tier: { type: string }
+        auth_index: { type: string }
+        provider: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        runtime: { $ref: '#/components/schemas/AccountRuntime' }
+    AccountList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Account' }
+    AccountCreate:
+      type: object
+      required: [name, base_url, cpa_key, quota_token]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        base_url: { type: string, minLength: 1 }
+        cpa_key: { type: string, minLength: 1 }
+        quota_token: { type: string, minLength: 1 }
+        enabled: { type: boolean, default: true }
+        watermark_5h_percent: { type: number, format: double, minimum: 0, maximum: 100, nullable: true }
+        max_concurrency: { type: integer, minimum: 0, nullable: true }
+        note: { type: string }
+    AccountUpdate:
+      type: object
+      description: Fields left out keep their value (secrets are never returned; omit them to keep them).
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        base_url: { type: string, minLength: 1 }
+        cpa_key: { type: string, minLength: 1 }
+        quota_token: { type: string, minLength: 1 }
+        enabled: { type: boolean }
+        watermark_5h_percent: { type: number, format: double, minimum: 0, maximum: 100, nullable: true }
+        max_concurrency: { type: integer, minimum: 0, nullable: true }
+        note: { type: string }
+    EnabledRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+    AccountTestResult:
+      type: object
+      required: [ok, quota_ok, models_ok]
+      properties:
+        ok: { type: boolean }
+        quota_ok: { type: boolean }
+        quota_error: { type: string }
+        models_ok: { type: boolean }
+        models_error: { type: string }
+        instance: { type: string }
+        subscription: { type: string }
+        tier: { type: string }
+        auth_index: { type: string }
+        provider: { type: string }
+        models:
+          type: array
+          items: { type: string }
+
+    TierMultipliers:
+      type: object
+      required: [plan, standard, force]
+      properties:
+        plan: { type: number, format: double, minimum: 0 }
+        standard: { type: number, format: double, minimum: 0 }
+        force: { type: number, format: double, minimum: 0 }
+    Settings:
+      type: object
+      required: [default_user_concurrency, watermark_5h_percent, watermark_penalty, standard_min_headroom_micro, sticky_ttl_seconds, sticky_ttl_1h_seconds, tier_multipliers, model_multipliers, hold_cap_micro, hold_default_max_tokens, max_retries, quota_poll_seconds, stale_after_seconds, models_poll_minutes, price_url, price_refresh_hours, upstream_idle_timeout_seconds, auto_renew_lead_hours, cooldown_5xx_seconds, cooldown_429_default_seconds]
+      properties:
+        default_user_concurrency: { type: integer }
+        watermark_5h_percent: { type: number, format: double }
+        watermark_penalty: { type: number, format: double }
+        standard_min_headroom_micro: { type: integer, format: int64 }
+        sticky_ttl_seconds: { type: integer }
+        sticky_ttl_1h_seconds: { type: integer }
+        tier_multipliers: { $ref: '#/components/schemas/TierMultipliers' }
+        model_multipliers:
+          type: object
+          description: Normalized model name -> multiplier (default 1).
+          additionalProperties: { type: number, format: double }
+        hold_cap_micro: { type: integer, format: int64 }
+        hold_default_max_tokens: { type: integer, format: int64 }
+        max_retries: { type: integer }
+        quota_poll_seconds: { type: integer }
+        stale_after_seconds: { type: integer }
+        models_poll_minutes: { type: integer }
+        price_url: { type: string }
+        price_refresh_hours: { type: integer }
+        upstream_idle_timeout_seconds: { type: integer }
+        auto_renew_lead_hours: { type: integer }
+        cooldown_5xx_seconds: { type: integer }
+        cooldown_429_default_seconds: { type: integer }
+    SettingsPatch:
+      type: object
+      description: Any subset of Settings.
+      properties:
+        default_user_concurrency: { type: integer }
+        watermark_5h_percent: { type: number, format: double }
+        watermark_penalty: { type: number, format: double }
+        standard_min_headroom_micro: { type: integer, format: int64 }
+        sticky_ttl_seconds: { type: integer }
+        sticky_ttl_1h_seconds: { type: integer }
+        tier_multipliers: { $ref: '#/components/schemas/TierMultipliers' }
+        model_multipliers:
+          type: object
+          additionalProperties: { type: number, format: double }
+        hold_cap_micro: { type: integer, format: int64 }
+        hold_default_max_tokens: { type: integer, format: int64 }
+        max_retries: { type: integer }
+        quota_poll_seconds: { type: integer }
+        stale_after_seconds: { type: integer }
+        models_poll_minutes: { type: integer }
+        price_url: { type: string }
+        price_refresh_hours: { type: integer }
+        upstream_idle_timeout_seconds: { type: integer }
+        auto_renew_lead_hours: { type: integer }
+        cooldown_5xx_seconds: { type: integer }
+        cooldown_429_default_seconds: { type: integer }
+
+    AuditLog:
+      type: object
+      required: [id, action, target_type, target_id, diff, ip, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        operator_id: { type: string, format: uuid, nullable: true }
+        action: { type: string }
+        target_type: { type: string }
+        target_id: { type: string }
+        diff:
+          type: object
+          description: '{"before": ..., "after": ...} with secrets removed.'
+          additionalProperties: true
+        ip: { type: string }
+        created_at: { type: string, format: date-time }
+    AuditLogPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AuditLog' }
+        next_cursor: { type: string, nullable: true }
+    SafeguardEvent:
+      type: object
+      required: [id, request_id, model, category, reason, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        request_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid, nullable: true }
+        key_id: { type: string, format: uuid, nullable: true }
+        account_id: { type: string, format: uuid, nullable: true }
+        model: { type: string }
+        category: { type: string }
+        reason: { type: string }
+        created_at: { type: string, format: date-time }
+    SafeguardEventPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SafeguardEvent' }
+        next_cursor: { type: string, nullable: true }
+    PriceStatus:
+      type: object
+      required: [source_url, origin, models, last_error]
+      properties:
+        source_url: { type: string }
+        origin: { type: string, enum: [remote, database, none] }
+        models: { type: integer }
+        fetched_at: { type: string, format: date-time, nullable: true }
+        last_attempt_at: { type: string, format: date-time, nullable: true }
+        last_error: { type: string }
+    ReconcileResult:
+      type: object
+      required: [ok, balance_mismatches, billed_total_micro, api_charge_total_micro]
+      properties:
+        ok: { type: boolean }
+        balance_mismatches:
+          type: array
+          items:
+            type: object
+            required: [user_id, balance_micro, ledger_total_micro]
+            properties:
+              user_id: { type: string, format: uuid }
+              balance_micro: { type: integer, format: int64 }
+              ledger_total_micro: { type: integer, format: int64 }
+        billed_total_micro: { type: integer, format: int64 }
+        api_charge_total_micro: { type: integer, format: int64 }

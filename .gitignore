@@ -1,0 +1,6 @@
+.env
+/backend/bridge
+/backend/cmd/bridge/bridge
+node_modules/
+*.test
+*.out

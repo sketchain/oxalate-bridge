@@ -1,0 +1,82 @@
+name: Auto release
+
+# After Check passes for a push to main, tag the version named by the first
+# "## vX.Y.Z" heading of Changelog.md when it equals Version in
+# backend/internal/version/version.go and the tag does not exist yet, then
+# start the release. Tags pushed with GITHUB_TOKEN do not trigger other
+# workflows, so the release is dispatched explicitly.
+
+on:
+  workflow_run:
+    workflows:
+      - Check
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Tag and dispatch the release
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Read the version
+        id: version
+        run: |
+          heading="$(grep -m1 '^## ' Changelog.md || true)"
+          tag="${heading#'## '}"
+          if ! printf '%s\n' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error file=Changelog.md::the first heading must be '## vX.Y.Z', not '$heading'"
+            exit 1
+          fi
+          version="$(sed -n 's/^const Version = "\(.*\)"/\1/p' backend/internal/version/version.go)"
+          if [ "$tag" != "v$version" ]; then
+            echo "::error file=backend/internal/version/version.go::Changelog.md is at $tag but Version is $version"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Create the tag
+        id: tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "$TAG exists; nothing to release."
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG" "$SHA"
+          git push origin "refs/tags/$TAG"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch the release
+        if: steps.tag.outputs.created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main -f tag="$TAG"

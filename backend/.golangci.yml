@@ -1,0 +1,30 @@
+version: "2"
+run:
+  timeout: 5m
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - gocritic
+    - misspell
+    - unconvert
+  settings:
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - (io.ReadCloser).Close
+        - (*database/sql.DB).Close
+        - (*github.com/redis/go-redis/v9.PubSub).Close
+        - (*os.File).WriteString
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+        - singleCaseSwitch
+  exclusions:
+    generated: strict
+    rules:
+      - path: _test\.go
+        linters: [errcheck, bodyclose]
+formatters:
+  enable:
+    - gofmt
