@@ -24,9 +24,11 @@ import (
 
 	"github.com/sketchain/oxalate-bridge/backend/internal/api"
 	"github.com/sketchain/oxalate-bridge/backend/internal/authcache"
+	"github.com/sketchain/oxalate-bridge/backend/internal/avail"
 	"github.com/sketchain/oxalate-bridge/backend/internal/billing"
 	"github.com/sketchain/oxalate-bridge/backend/internal/config"
 	"github.com/sketchain/oxalate-bridge/backend/internal/cpa"
+	"github.com/sketchain/oxalate-bridge/backend/internal/cpaquota"
 	"github.com/sketchain/oxalate-bridge/backend/internal/db"
 	"github.com/sketchain/oxalate-bridge/backend/internal/db/sqlc"
 	"github.com/sketchain/oxalate-bridge/backend/internal/events"
@@ -77,6 +79,7 @@ type App struct {
 	Outbox   *outbox.Dispatcher
 	Consumer *settle.Consumer
 	Jobs     *jobs.Runner
+	Avail    *avail.Service
 	Subs     *subs.Service
 	Proxy    *proxy.Proxy
 	API      *api.Server
@@ -148,8 +151,9 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 				a.Hub.Publish(context.Background(), "request_settled", s)
 			}
 		}}
+	a.Avail = &avail.Service{Router: a.Router, St: a.St, Log: log}
 	a.Jobs = &jobs.Runner{St: a.St, Store: a.Store, Box: box, CPA: a.CPA, Cat: a.Cat, Router: a.Router, Settings: a.Settings,
-		Prices: a.Prices, Subs: a.Subs, Hub: a.Hub, Log: log, ID: opts.InstanceID}
+		Prices: a.Prices, Subs: a.Subs, Hub: a.Hub, Log: log, ID: opts.InstanceID, Avail: a.Avail}
 	a.Jobs.RefreshPricesFn = a.refreshPrices
 	transport := opts.Transport
 	if transport == nil {
@@ -159,7 +163,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		Log: log, Transport: transport, ClientIP: a.ClientIP, OnAccountError: a.requestCatalogReload}
 	a.API = &api.Server{Store: a.Store, St: a.St, Box: box, Settings: a.Settings, Router: a.Router, Cat: a.Cat, Subs: a.Subs,
 		Prices: a.Prices, CPA: a.CPA, Hub: a.Hub, Auth: a.Auth, Log: log, CookieSecure: cfg.CookieSecure,
-		RefreshPrices: a.refreshPrices}
+		RefreshPrices: a.refreshPrices, Avail: a.Avail, Location: cfg.Location, CPAQuota: &cpaquota.Reader{Pool: pool, Schema: cfg.CPAQuotaSchema}}
 	a.Hub.OnInvalidate = a.Auth.DropL1
 	a.Hub.OnSettings = func() {
 		if err := a.Settings.Load(context.Background(), a.Store.Q); err != nil {
@@ -345,6 +349,9 @@ func (a *App) Handler() http.Handler {
 	})
 	r.Get("/readyz", a.ready)
 	a.Proxy.Routes(func(method, pattern string, h http.HandlerFunc) { r.Method(method, pattern, h) })
+	// Anything else under /v1 (e.g. the removed /v1/responses and
+	// /v1/chat/completions) is an Anthropic-shaped 404.
+	r.Handle("/v1/*", http.HandlerFunc(a.Proxy.ServeUnknown))
 
 	r.Route("/api/v1", func(sub chi.Router) {
 		sub.Use(func(next http.Handler) http.Handler {

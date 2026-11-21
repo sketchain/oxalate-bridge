@@ -12,6 +12,54 @@ import (
 	"github.com/google/uuid"
 )
 
+const accountCostByBucket = `-- name: AccountCostByBucket :many
+SELECT date_trunc($2::text, hour, 'UTC')::timestamptz AS bucket,
+       sum(upstream_cost_micro)::bigint AS upstream_cost_micro, sum(requests)::bigint AS requests
+FROM usage_hourly
+WHERE account_id = $1 AND hour >= $3::timestamptz AND hour < $4::timestamptz
+GROUP BY 1
+ORDER BY 1
+`
+
+type AccountCostByBucketParams struct {
+	AccountID uuid.UUID
+	Bucket    string
+	FromAt    time.Time
+	ToAt      time.Time
+}
+
+type AccountCostByBucketRow struct {
+	Bucket            time.Time
+	UpstreamCostMicro int64
+	Requests          int64
+}
+
+// This bridge's upstream cost of one account per UTC bucket (request start hour).
+func (q *Queries) AccountCostByBucket(ctx context.Context, arg AccountCostByBucketParams) ([]AccountCostByBucketRow, error) {
+	rows, err := q.db.Query(ctx, accountCostByBucket,
+		arg.AccountID,
+		arg.Bucket,
+		arg.FromAt,
+		arg.ToAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AccountCostByBucketRow{}
+	for rows.Next() {
+		var i AccountCostByBucketRow
+		if err := rows.Scan(&i.Bucket, &i.UpstreamCostMicro, &i.Requests); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const addUsageHourly = `-- name: AddUsageHourly :exec
 INSERT INTO usage_hourly (hour, user_id, key_id, account_id, model, tier, requests, errors, input_tokens, cache_read_tokens,
                           cache_write_tokens, output_tokens, reasoning_tokens, upstream_cost_micro, billed_micro)

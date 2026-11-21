@@ -16,9 +16,18 @@ WHERE (sqlc.narg('user_id')::uuid IS NULL OR user_id = sqlc.narg('user_id')::uui
   AND (sqlc.narg('tier')::text IS NULL OR tier = sqlc.narg('tier')::text)
   AND (sqlc.narg('from_at')::timestamptz IS NULL OR created_at >= sqlc.narg('from_at')::timestamptz)
   AND (sqlc.narg('to_at')::timestamptz IS NULL OR created_at < sqlc.narg('to_at')::timestamptz)
+  AND (sqlc.narg('status_code')::int IS NULL OR status_code = sqlc.narg('status_code')::int)
   AND (sqlc.narg('cursor_at')::timestamptz IS NULL OR (created_at, request_id) < (sqlc.narg('cursor_at')::timestamptz, sqlc.narg('cursor_id')::uuid))
 ORDER BY created_at DESC, request_id DESC
 LIMIT $1;
 
 -- name: SumBilledBalanceTiers :one
 SELECT COALESCE(sum(billed_micro), 0)::bigint FROM request_logs WHERE tier IN ('standard', 'force');
+
+-- name: RequestTotalsByTier :many
+-- Request count and amounts per tier in [from_at, to_at) (admin overview).
+SELECT tier, count(*)::bigint AS requests, COALESCE(sum(billed_micro), 0)::bigint AS billed_micro,
+       COALESCE(sum(upstream_cost_micro), 0)::bigint AS upstream_cost_micro
+FROM request_logs
+WHERE created_at >= sqlc.arg('from_at')::timestamptz AND created_at < sqlc.arg('to_at')::timestamptz
+GROUP BY tier;

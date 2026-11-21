@@ -85,9 +85,15 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
 
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+
       - uses: actions/setup-node@v6
         with:
           node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
 
       - name: sqlc
         working-directory: backend
@@ -97,14 +103,22 @@ jobs:
         working-directory: backend
         run: go run "github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@${OAPI_CODEGEN_VERSION}" -config oapi-codegen.yaml ../api/openapi.yaml
 
-      - name: Embedded web build
+      - name: TypeScript API types (openapi-typescript)
         working-directory: web
-        run: npm run build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm gen:api
+
+      - name: Route tree (TanStack Router)
+        working-directory: web
+        run: pnpm build
 
       - name: No diff
         run: |
+          # The frontend build output (backend/internal/webui/dist) is ignored;
+          # only generated sources are compared.
           if ! git diff --exit-code; then
-            echo "::error::generated files differ from the commit; run 'make generate web' and commit the result"
+            echo "::error::generated files differ from the commit; run 'make generate' (and 'pnpm build' in web/) and commit the result"
             exit 1
           fi
           untracked="$(git status --porcelain --untracked-files=all)"
@@ -112,6 +126,98 @@ jobs:
             echo "$untracked"
             exit 1
           fi
+
+  web:
+    name: Frontend (typecheck, lint, unit tests, i18n)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: ESLint
+        run: pnpm lint
+      - name: Vitest
+        run: pnpm test
+      - name: zh-CN / en keys complete
+        run: pnpm check:i18n
+      - name: Version matches the backend
+        run: |
+          backend="$(sed -n 's/^const Version = "\(.*\)"/\1/p' ../backend/internal/version/version.go)"
+          grep -q "APP_VERSION = \"$backend\"" src/lib/version.ts
+          grep -q "\"version\": \"$backend\"" package.json
+
+  e2e:
+    name: Playwright smoke (fakecpa + seed data)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      BRIDGE_DATABASE_URL: postgres://postgres:ci@127.0.0.1:5432/postgres?sslmode=disable
+      BRIDGE_REDIS_URL: redis://127.0.0.1:6379/0
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Install
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+      - name: Smoke tests
+        run: ./scripts/e2e.sh --project=smoke
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: playwright-report
+          path: web/playwright-report
+          retention-days: 7
 
   test:
     name: Test (PostgreSQL + Redis)

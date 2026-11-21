@@ -12,6 +12,17 @@ import (
 	"github.com/google/uuid"
 )
 
+const countSubscriptionsByStatus = `-- name: CountSubscriptionsByStatus :one
+SELECT count(*)::bigint FROM plan_subscriptions WHERE status = $1
+`
+
+func (q *Queries) CountSubscriptionsByStatus(ctx context.Context, status string) (int64, error) {
+	row := q.db.QueryRow(ctx, countSubscriptionsByStatus, status)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createSubscription = `-- name: CreateSubscription :one
 INSERT INTO plan_subscriptions (id, user_id, plan_id, plan_name, subscription, weekly_quota_micro, allowed_models, duration_value,
                                 duration_unit, price_micro, account_id, status, activated_at, expires_at, auto_renew)
@@ -137,6 +148,48 @@ func (q *Queries) GetSubscriptionForUpdate(ctx context.Context, id uuid.UUID) (P
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const listBlockingSubscriptionsByAccount = `-- name: ListBlockingSubscriptionsByAccount :many
+SELECT s.id, s.user_id, u.username, s.status, s.plan_name
+FROM plan_subscriptions s JOIN users u ON u.id = s.user_id
+WHERE s.account_id = $1 AND s.status IN ('active', 'pending_assignment')
+ORDER BY s.created_at, s.id
+`
+
+type ListBlockingSubscriptionsByAccountRow struct {
+	ID       uuid.UUID
+	UserID   uuid.UUID
+	Username string
+	Status   string
+	PlanName string
+}
+
+// Subscriptions that prevent deleting their account.
+func (q *Queries) ListBlockingSubscriptionsByAccount(ctx context.Context, accountID *uuid.UUID) ([]ListBlockingSubscriptionsByAccountRow, error) {
+	rows, err := q.db.Query(ctx, listBlockingSubscriptionsByAccount, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListBlockingSubscriptionsByAccountRow{}
+	for rows.Next() {
+		var i ListBlockingSubscriptionsByAccountRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Username,
+			&i.Status,
+			&i.PlanName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listDueRenewals = `-- name: ListDueRenewals :many
@@ -331,6 +384,39 @@ func (q *Queries) ListSubscriptionsByUser(ctx context.Context, userID uuid.UUID)
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const soldQuotaByAccount = `-- name: SoldQuotaByAccount :many
+SELECT account_id::uuid AS account_id, COALESCE(sum(weekly_quota_micro), 0)::bigint AS sold
+FROM plan_subscriptions
+WHERE account_id IS NOT NULL AND status IN ('active', 'pending_assignment')
+GROUP BY account_id
+`
+
+type SoldQuotaByAccountRow struct {
+	AccountID uuid.UUID
+	Sold      int64
+}
+
+// Σ weekly quota of the active and pending subscriptions bound to each account.
+func (q *Queries) SoldQuotaByAccount(ctx context.Context) ([]SoldQuotaByAccountRow, error) {
+	rows, err := q.db.Query(ctx, soldQuotaByAccount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SoldQuotaByAccountRow{}
+	for rows.Next() {
+		var i SoldQuotaByAccountRow
+		if err := rows.Scan(&i.AccountID, &i.Sold); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

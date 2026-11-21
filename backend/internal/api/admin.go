@@ -168,6 +168,17 @@ func (s *Server) AdminUpdateUser(ctx context.Context, req AdminUpdateUserRequest
 	if err != nil {
 		return nil, mapDomainErr(err)
 	}
+	// A password reset, a disable or a role change signs the user out of
+	// every panel session.
+	// (An admin resetting their own password keeps the session doing it,
+	// like a self-service change.)
+	if b.Password != nil || after.Status != before.Status || after.Role != before.Role {
+		keep := ""
+		if before.ID == currentUser(ctx).ID {
+			keep = sessionToken(ctx)
+		}
+		s.revokeSessions(ctx, before.ID, keep)
+	}
 	out := adminUserOf(after)
 	diffAfter := map[string]any{"user": out, "password_changed": b.Password != nil}
 	s.audit(ctx, "user.update", "user", before.ID.String(), adminUserOf(before), diffAfter)
@@ -192,6 +203,7 @@ func (s *Server) AdminDeleteUser(ctx context.Context, req AdminDeleteUserRequest
 	if err != nil {
 		return nil, err
 	}
+	s.revokeSessions(ctx, before.ID, "")
 	s.audit(ctx, "user.delete", "user", before.ID.String(), adminUserOf(before), nil)
 	return AdminDeleteUser204Response{}, nil
 }
@@ -292,6 +304,9 @@ func (s *Server) runtimeOf(ctx context.Context, row sqlc.Account, st *router.Acc
 				}
 				rt.FiveHour = quotaWindowOf(acc.FiveHour, acc.SafetyFactor, observed, now)
 				rt.Week = quotaWindowOf(acc.Week, acc.SafetyFactor, observed, now)
+				if five, err := rt.FiveHour.Get(); err == nil {
+					rt.Penalized = five.UsedPercent >= s.effectiveWatermark(row)
+				}
 			}
 		}
 	}
@@ -313,16 +328,23 @@ func (s *Server) runtimeOf(ctx context.Context, row sqlc.Account, st *router.Acc
 	return rt
 }
 
-func (s *Server) accountOf(ctx context.Context, row sqlc.Account, st *router.AccountState, now time.Time) Account {
-	wm := s.Settings.Get().Watermark5hPercent
+// effectiveWatermark is the account's 5-hour watermark (own or global).
+func (s *Server) effectiveWatermark(row sqlc.Account) float64 {
 	if row.Watermark5hPercent != nil {
-		wm = *row.Watermark5hPercent
+		return *row.Watermark5hPercent
 	}
-	return Account{Id: row.ID, Name: row.Name, BaseUrl: row.BaseUrl, Enabled: row.Enabled,
+	return s.Settings.Get().Watermark5hPercent
+}
+
+func (s *Server) accountOf(ctx context.Context, row sqlc.Account, st *router.AccountState, now time.Time) Account {
+	wm := s.effectiveWatermark(row)
+	out := Account{Id: row.ID, Name: row.Name, BaseUrl: row.BaseUrl, Enabled: row.Enabled,
 		Watermark5hPercent: nullFloat(row.Watermark5hPercent), Watermark5hPercentEffective: wm,
 		MaxConcurrency: nullInt32(row.MaxConcurrency), Note: row.Note, Instance: row.Instance, Subscription: row.Subscription,
 		Tier: row.Tier, AuthIndex: row.AuthIndex, Provider: row.Provider, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-		Runtime: s.runtimeOf(ctx, row, st, now)}
+		Runtime: s.runtimeOf(ctx, row, st, now), WeekTotalMicro: nullable.NewNullNullable[int64]()}
+	s.fillSold(ctx, &out, st)
+	return out
 }
 
 func (s *Server) accountStates(ctx context.Context, ids ...uuid.UUID) map[uuid.UUID]*router.AccountState {
@@ -347,9 +369,10 @@ func (s *Server) accountStates(ctx context.Context, ids ...uuid.UUID) map[uuid.U
 
 // validation is the outcome of checking an account connection.
 type validation struct {
-	result AccountTestResult
-	quota  *cpa.QuotaResponse
-	models []string
+	result      AccountTestResult
+	quota       *cpa.QuotaResponse
+	models      []string
+	unsupported string // the non-claude subscription /quota reported
 }
 
 func (s *Server) validateAccount(ctx context.Context, baseURL, cpaKey, quotaToken string) validation {
@@ -361,10 +384,17 @@ func (s *Server) validateAccount(ctx context.Context, baseURL, cpaKey, quotaToke
 		msg := err.Error()
 		v.result.QuotaError = &msg
 	} else {
-		v.result.QuotaOk, v.quota = true, q
 		acc := q.Accounts[0]
 		v.result.Instance, v.result.Subscription, v.result.Tier = &q.Instance, &q.Subscription, &q.Tier
 		v.result.AuthIndex, v.result.Provider = &acc.AuthIndex, &acc.Provider
+		if !cpa.IsClaude(q) {
+			// Only Claude subscriptions are served.
+			v.unsupported = q.Subscription
+			msg := fmt.Sprintf("unsupported subscription %q: only claude accounts can be used", q.Subscription)
+			v.result.QuotaError = &msg
+		} else {
+			v.result.QuotaOk, v.quota = true, q
+		}
 	}
 	models, err := s.CPA.Models(cctx, baseURL, cpaKey)
 	if err != nil {
@@ -381,6 +411,9 @@ func (s *Server) validateAccount(ctx context.Context, baseURL, cpaKey, quotaToke
 func (v validation) err() error {
 	if v.result.Ok {
 		return nil
+	}
+	if v.unsupported != "" {
+		return apiErr(http.StatusUnprocessableEntity, "unsupported_subscription", *v.result.QuotaError)
 	}
 	var parts []string
 	if v.result.QuotaError != nil {
@@ -428,6 +461,7 @@ func (s *Server) AdminListAccounts(ctx context.Context, _ AdminListAccountsReque
 	for i, row := range rows {
 		items[i] = s.accountOf(ctx, row, states[row.ID], now)
 	}
+	s.fillK(ctx, items)
 	return AdminListAccounts200JSONResponse{Items: items}, nil
 }
 
@@ -438,7 +472,9 @@ func (s *Server) AdminGetAccount(ctx context.Context, req AdminGetAccountRequest
 		return nil, mapDomainErr(err)
 	}
 	states := s.accountStates(ctx, row.ID)
-	return AdminGetAccount200JSONResponse(s.accountOf(ctx, row, states[row.ID], time.Now().UTC())), nil
+	items := []Account{s.accountOf(ctx, row, states[row.ID], time.Now().UTC())}
+	s.fillK(ctx, items)
+	return AdminGetAccount200JSONResponse(items[0]), nil
 }
 
 func checkAccountNumbers(wm *float64, conc *int32) error {
@@ -564,20 +600,46 @@ func (s *Server) AdminUpdateAccount(ctx context.Context, req AdminUpdateAccountR
 	return AdminUpdateAccount200JSONResponse(s.accountOf(ctx, after, states[after.ID], time.Now().UTC())), nil
 }
 
+// accountHasSubscriptions is the 409 returned when deleting an account that
+// active or pending subscriptions are bound to.
+func accountHasSubscriptions(rows []sqlc.ListBlockingSubscriptionsByAccountRow) error {
+	subs := make([]BlockingSubscription, len(rows))
+	for i, r := range rows {
+		subs[i] = BlockingSubscription{Id: r.ID, UserId: r.UserID, Username: r.Username, Status: SubscriptionStatus(r.Status), PlanName: r.PlanName}
+	}
+	e := apiErr(http.StatusConflict, "account_has_subscriptions",
+		fmt.Sprintf("%d active or pending subscription(s) are bound to this account; rebind or cancel them first (disabling the account is allowed)", len(rows)))
+	e.Details = map[string]any{"subscriptions": subs}
+	return e
+}
+
 // AdminDeleteAccount implements DELETE /admin/accounts/{accountId}.
+// Accounts with active or pending_assignment subscriptions cannot be deleted.
 func (s *Server) AdminDeleteAccount(ctx context.Context, req AdminDeleteAccountRequestObject) (AdminDeleteAccountResponseObject, error) {
 	before, err := s.Store.Q.GetAccount(ctx, req.AccountId)
 	if err != nil {
 		return nil, mapDomainErr(err)
 	}
 	err = s.Store.InTx(ctx, func(tx *store.Tx) error {
+		// The row lock serializes against subscription binds (they share-lock
+		// the account), so the check below cannot miss a concurrent bind.
+		if _, err := tx.Q.LockAccountForUpdate(ctx, before.ID); err != nil {
+			return err
+		}
+		blocking, err := tx.Q.ListBlockingSubscriptionsByAccount(ctx, &before.ID)
+		if err != nil {
+			return err
+		}
+		if len(blocking) > 0 {
+			return accountHasSubscriptions(blocking)
+		}
 		if err := tx.Q.SoftDeleteAccount(ctx, before.ID); err != nil {
 			return err
 		}
 		return tx.RoutingChanged(ctx)
 	})
 	if err != nil {
-		return nil, err
+		return nil, mapDomainErr(err)
 	}
 	s.reloadCatalog(ctx)
 	s.audit(ctx, "account.delete", "account", before.ID.String(), accountAudit(before), nil)
@@ -661,8 +723,8 @@ func planParams(b *PlanInput) (sqlc.CreatePlanParams, error) {
 	if strings.TrimSpace(b.Name) == "" {
 		return sqlc.CreatePlanParams{}, badRequest("name is required")
 	}
-	if b.Subscription != Claude && b.Subscription != Chatgpt {
-		return sqlc.CreatePlanParams{}, badRequest("subscription must be claude or chatgpt")
+	if b.Subscription != Claude {
+		return sqlc.CreatePlanParams{}, apiErr(http.StatusBadRequest, "unsupported_subscription", "only claude plans are supported")
 	}
 	if b.WeeklyQuotaMicro < 0 || b.PriceMicro < 0 || b.DurationValue < 1 {
 		return sqlc.CreatePlanParams{}, badRequest("quota and price must be >= 0 and duration >= 1")
@@ -779,10 +841,7 @@ func (s *Server) AdminListSubscriptions(ctx context.Context, req AdminListSubscr
 	if err != nil {
 		return nil, err
 	}
-	items := make([]Subscription, len(rows))
-	for i, sub := range rows {
-		items[i] = s.subscriptionOf(ctx, sub)
-	}
+	items := s.adminSubscriptions(ctx, rows)
 	page := SubscriptionPage{Items: items, NextCursor: nullable.NewNullNullable[string]()}
 	if len(rows) > 0 {
 		last := rows[len(rows)-1]
@@ -792,7 +851,8 @@ func (s *Server) AdminListSubscriptions(ctx context.Context, req AdminListSubscr
 }
 
 func (s *Server) withWarning(ctx context.Context, sub sqlc.PlanSubscription, warning string) SubscriptionWithWarning {
-	out := SubscriptionWithWarning{Subscription: s.subscriptionOf(ctx, sub), Warning: nullable.NewNullNullable[string]()}
+	out := SubscriptionWithWarning{Subscription: s.adminSubscriptions(ctx, []sqlc.PlanSubscription{sub})[0],
+		Warning: nullable.NewNullNullable[string]()}
 	if warning != "" {
 		out.Warning = nullable.NewNullableWithValue(warning)
 	}
@@ -863,7 +923,7 @@ func (s *Server) AdminCancelSubscription(ctx context.Context, req AdminCancelSub
 		return nil, mapDomainErr(err)
 	}
 	s.reloadCatalog(ctx)
-	out := s.subscriptionOf(ctx, sub)
+	out := s.adminSubscriptions(ctx, []sqlc.PlanSubscription{sub})[0]
 	s.audit(ctx, "subscription.cancel", "subscription", sub.ID.String(), nil,
 		map[string]any{"refund_micro": req.Body.RefundMicro, "refund": fmtMicro(req.Body.RefundMicro)})
 	return AdminCancelSubscription200JSONResponse(out), nil
@@ -948,7 +1008,7 @@ func (s *Server) AdminUpdateSettings(ctx context.Context, req AdminUpdateSetting
 func (s *Server) AdminListRequestLogs(ctx context.Context, req AdminListRequestLogsRequestObject) (AdminListRequestLogsResponseObject, error) {
 	p := req.Params
 	page, err := s.listLogs(ctx, logFilter{user: p.UserId, key: p.KeyId, account: p.AccountId, model: p.Model, tier: p.Tier,
-		from: p.From, to: p.To, cursor: p.Cursor, limit: p.Limit}, true)
+		status: p.StatusCode, from: p.From, to: p.To, cursor: p.Cursor, limit: p.Limit})
 	if err != nil {
 		return nil, err
 	}

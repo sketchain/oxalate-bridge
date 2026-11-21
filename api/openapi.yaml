@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: oxalate-bridge panel API
-  version: 0.1.0
+  version: 0.3.0
   description: |
     Panel API of oxalate-bridge. This file is the single source of truth: the
     backend server code is generated from it with oapi-codegen (chi strict
@@ -18,8 +18,13 @@ info:
       (any value, e.g. `XMLHttpRequest`) or it is rejected with
       `csrf_header_missing` (403).
     - `/admin/*` requires the `admin` role; admin writes are audited.
+    - Endpoints for ordinary users never expose upstream cost, multipliers or
+      anything about upstream accounts: they use their own `My*` schemas
+      (`MyRequestLog`, `MyUsageBucket`, `MySubscription`), while the admin
+      endpoints keep the full ones (`RequestLog`, `UsageBucket`, `Subscription`).
 
-    The relay endpoints (`/v1/*`) are not part of this API.
+    The relay endpoints (`/v1/messages`, `/v1/messages/count_tokens`,
+    `GET /v1/models`; Claude Messages protocol only) are not part of this API.
 servers:
   - url: /api/v1
 security:
@@ -95,6 +100,23 @@ paths:
         '204': { description: Password changed; other sessions stay valid until they expire. }
         default: { $ref: '#/components/responses/Error' }
 
+  /me/availability:
+    get:
+      tags: [billing]
+      operationId: getMyAvailability
+      summary: Estimated usable amount for the caller (normal / force calls and own plans).
+      description: |
+        Estimates only (`estimated` is always true). The account-independent part is
+        computed by the leader after every quota refresh and cached; the request itself
+        only combines that cache with the caller's balance, multipliers and
+        subscriptions. No upstream account names, counts or ids are returned.
+      responses:
+        '200':
+          description: Availability.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Availability' }
+        default: { $ref: '#/components/responses/Error' }
   /keys:
     get:
       tags: [keys]
@@ -224,7 +246,7 @@ paths:
           description: Subscription created in pending_assignment.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Subscription' }
+              schema: { $ref: '#/components/schemas/MySubscription' }
         default: { $ref: '#/components/responses/Error' }
   /subscriptions:
     get:
@@ -235,7 +257,7 @@ paths:
           description: The user's subscriptions with their current period.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SubscriptionList' }
+              schema: { $ref: '#/components/schemas/MySubscriptionList' }
         default: { $ref: '#/components/responses/Error' }
   /subscriptions/{subscriptionId}/renew:
     parameters:
@@ -249,7 +271,7 @@ paths:
           description: Renewed subscription.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Subscription' }
+              schema: { $ref: '#/components/schemas/MySubscription' }
         default: { $ref: '#/components/responses/Error' }
   /subscriptions/{subscriptionId}/auto-renew:
     parameters:
@@ -267,7 +289,7 @@ paths:
           description: Updated subscription.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Subscription' }
+              schema: { $ref: '#/components/schemas/MySubscription' }
         default: { $ref: '#/components/responses/Error' }
 
   /usage/logs:
@@ -284,10 +306,10 @@ paths:
         - $ref: '#/components/parameters/To'
       responses:
         '200':
-          description: Request logs, newest first.
+          description: Request logs, newest first (user view, no upstream cost, multipliers or account).
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/RequestLogPage' }
+              schema: { $ref: '#/components/schemas/MyRequestLogPage' }
         default: { $ref: '#/components/responses/Error' }
   /usage/summary:
     get:
@@ -300,10 +322,10 @@ paths:
         - $ref: '#/components/parameters/KeyIdFilter'
       responses:
         '200':
-          description: Usage grouped by time bucket, model and tier (from the hourly rollup).
+          description: Usage grouped by time bucket, model and tier (from the hourly rollup; user view, no upstream cost).
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/UsageSummary' }
+              schema: { $ref: '#/components/schemas/MyUsageSummary' }
         default: { $ref: '#/components/responses/Error' }
   /models:
     get:
@@ -403,6 +425,80 @@ paths:
               schema: { $ref: '#/components/schemas/LedgerEntry' }
         default: { $ref: '#/components/responses/Error' }
 
+  /admin/users/{userId}/keys:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [admin-users]
+      operationId: adminListUserKeys
+      summary: The user's API keys (secrets are never returned here).
+      responses:
+        '200':
+          description: The keys.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiKeyList' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/keys/{keyId}/enabled:
+    parameters:
+      - $ref: '#/components/parameters/KeyId'
+    put:
+      tags: [admin-users]
+      operationId: adminSetKeyEnabled
+      summary: Enable or disable any user's key (takes effect on every replica at once).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EnabledRequest' }
+      responses:
+        '200':
+          description: Updated key.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiKey' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /admin/overview:
+    get:
+      tags: [admin-system]
+      operationId: adminGetOverview
+      summary: Everything the admin overview page shows, in one call.
+      description: |
+        "Today" is the current day in the server time zone (`BRIDGE_TIMEZONE`,
+        default Asia/Shanghai), counted from the request logs. Account counts are
+        disjoint: `penalized` counts accounts that are otherwise normal but whose
+        5-hour usage is at or above their watermark (routing weight reduced).
+      responses:
+        '200':
+          description: Overview.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminOverview' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /admin/accounts/validate:
+    post:
+      tags: [admin-accounts]
+      operationId: adminValidateAccount
+      summary: Check a connection without saving anything (the import dialog's first step).
+      description: |
+        Calls /quota and /v1/models exactly like an import and returns what was
+        detected (instance, subscription, tier, auth_index). Always 200; `ok` tells
+        whether an import with the same values would pass.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountValidateRequest' }
+      responses:
+        '200':
+          description: Validation result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountTestResult' }
+        default: { $ref: '#/components/responses/Error' }
+
   /admin/accounts:
     get:
       tags: [admin-accounts]
@@ -418,6 +514,10 @@ paths:
       tags: [admin-accounts]
       operationId: adminCreateAccount
       summary: Import an account. /quota and /v1/models must both succeed before it is saved.
+      description: |
+        Only Claude subscriptions are accepted: when /quota reports a subscription other
+        than `claude` the import fails with 422 `unsupported_subscription` (edits are
+        checked the same way).
       requestBody:
         required: true
         content:
@@ -462,6 +562,11 @@ paths:
     delete:
       tags: [admin-accounts]
       operationId: adminDeleteAccount
+      summary: Delete an account (soft delete).
+      description: |
+        Refused with 409 `account_has_subscriptions` while subscriptions with status
+        `active` or `pending_assignment` are bound to the account; the error lists them
+        in `error.subscriptions`. Rebind or cancel them first. Disabling is always allowed.
       responses:
         '204': { description: Deleted. }
         default: { $ref: '#/components/responses/Error' }
@@ -497,6 +602,103 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AccountTestResult' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /admin/accounts/{accountId}/estimate:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    get:
+      tags: [admin-accounts]
+      operationId: adminGetAccountEstimate
+      summary: The account's row of the cpa-quota `estimates` table (read only).
+      description: |
+        Located by the account's `instance` and `auth_index`. `detail` is the full
+        account object JSON exactly as cpa-quota stored it. 404 when cpa-quota has
+        no estimate for the account yet; 503 `cpa_quota_unavailable` when the
+        cpa-quota schema or table is missing or the query times out.
+      responses:
+        '200':
+          description: The estimate row.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CpaQuotaEstimate' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/accounts/{accountId}/k-trend:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    get:
+      tags: [admin-accounts]
+      operationId: adminGetAccountKTrend
+      summary: Rows of the cpa-quota `k_trend_daily` table for the account (read only).
+      parameters:
+        - name: days
+          in: query
+          description: Days back from today (UTC), today included.
+          schema: { type: integer, minimum: 1, maximum: 365, default: 30 }
+      responses:
+        '200':
+          description: Daily k trend, oldest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KTrend' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/accounts/{accountId}/quota-series:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    get:
+      tags: [admin-accounts]
+      operationId: adminGetAccountQuotaSeries
+      summary: Reported utilization of one window over time (cpa-quota `quota_report_windows`, read only).
+      description: |
+        Rows with `limit_key = 'unified'` and `seconds` = 18000 (`5h`) or 604800 (`7d`),
+        ordered by time. When more than 2000 points fall in the range, the range is cut
+        into 2000 equal time buckets and the last point of each bucket is returned
+        (`downsampled` = true).
+      parameters:
+        - name: window
+          in: query
+          required: true
+          schema: { type: string, enum: [5h, 7d] }
+        - name: from
+          in: query
+          description: Default `to` − 7 days for `5h`, `to` − 30 days for `7d`.
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          description: Default now.
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: The series.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuotaSeries' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/accounts/{accountId}/cost-compare:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    get:
+      tags: [admin-accounts]
+      operationId: adminGetAccountCostCompare
+      summary: Upstream cost per time bucket as seen by cpa-quota and by this bridge.
+      description: |
+        For each UTC bucket: the sum of cpa-quota `requests.cost_usd` with
+        `accounting = 'complete'` (bucketed by request start, `requested_ns`) next to the
+        sum of this bridge's `usage_hourly.upstream_cost_micro` for the account
+        (bucketed by request start hour). Requests the CPA instance served without
+        going through the bridge only appear on the cpa-quota side.
+      parameters:
+        - $ref: '#/components/parameters/FromRequired'
+        - $ref: '#/components/parameters/ToRequired'
+        - name: bucket
+          in: query
+          schema: { type: string, enum: [hour, day], default: hour }
+      responses:
+        '200':
+          description: Side-by-side costs, oldest bucket first; buckets with no data on either side are omitted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CostCompare' }
         default: { $ref: '#/components/responses/Error' }
 
   /admin/plans:
@@ -693,6 +895,10 @@ paths:
         - $ref: '#/components/parameters/TierFilter'
         - $ref: '#/components/parameters/From'
         - $ref: '#/components/parameters/To'
+        - name: status_code
+          in: query
+          description: Exact HTTP status code returned to the client.
+          schema: { type: integer, minimum: 100, maximum: 599 }
       responses:
         '200':
           description: Request logs, newest first.
@@ -809,9 +1015,9 @@ paths:
       operationId: adminEvents
       summary: Server-sent events across replicas.
       description: |
-        `text/event-stream`. Event names: `account_status` (data: account id,
-        name, fetched_at, last_error, stale, snapshot) and `request_settled`
-        (data: request summary). A comment line is sent every 15 s.
+        `text/event-stream`. Event names: `account_status` (data:
+        `AccountStatusEvent`) and `request_settled` (data: `RequestSettledEvent`).
+        A comment line is sent every 15 s.
       responses:
         '200':
           description: Event stream.
@@ -932,8 +1138,13 @@ components:
                 Fixed codes: bad_request, validation_failed, unauthorized,
                 forbidden, csrf_header_missing, not_found, conflict,
                 rate_limited, insufficient_balance, invalid_state,
-                upstream_validation_failed, internal.
+                upstream_validation_failed, unsupported_subscription,
+                account_has_subscriptions, cpa_quota_unavailable, internal.
             message: { type: string }
+            subscriptions:
+              type: array
+              description: Only with `account_has_subscriptions`; the subscriptions that block the delete.
+              items: { $ref: '#/components/schemas/BlockingSubscription' }
 
     Role:
       type: string
@@ -949,7 +1160,8 @@ components:
       enum: [admin_topup, admin_adjust, plan_purchase, plan_renewal, api_charge, refund]
     SubscriptionKind:
       type: string
-      enum: [claude, chatgpt]
+      description: Only Claude subscriptions are served (since v0.2.0).
+      enum: [claude]
     SubscriptionStatus:
       type: string
       enum: [pending_assignment, active, expired, cancelled]
@@ -1161,6 +1373,51 @@ components:
           allOf:
             - $ref: '#/components/schemas/PeriodUsage'
           nullable: true
+        username: { type: string, description: The owner's username (admin views). }
+        account_name: { type: string, description: Name of the bound account, empty when unbound (admin views). }
+    MyPeriodUsage:
+      type: object
+      description: PeriodUsage without the upstream cost.
+      required: [period_start, period_end, quota_micro, used_billed_micro, remaining_micro]
+      properties:
+        period_start: { type: string, format: date-time }
+        period_end: { type: string, format: date-time }
+        quota_micro: { type: integer, format: int64 }
+        used_billed_micro: { type: integer, format: int64 }
+        remaining_micro: { type: integer, format: int64, description: Real-time remaining quota (Redis). }
+    MySubscription:
+      type: object
+      description: A subscription as its owner sees it (no account, no upstream cost).
+      required: [id, plan_id, plan_name, subscription, weekly_quota_micro, allowed_models, duration_value, duration_unit, price_micro, status, auto_renew, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        plan_id: { type: string, format: uuid }
+        plan_name: { type: string }
+        subscription: { $ref: '#/components/schemas/SubscriptionKind' }
+        weekly_quota_micro: { type: integer, format: int64 }
+        allowed_models:
+          type: array
+          items: { type: string }
+        duration_value: { type: integer }
+        duration_unit: { $ref: '#/components/schemas/DurationUnit' }
+        price_micro: { type: integer, format: int64 }
+        status: { $ref: '#/components/schemas/SubscriptionStatus' }
+        activated_at: { type: string, format: date-time, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+        auto_renew: { type: boolean }
+        cancelled_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        current_period:
+          allOf:
+            - $ref: '#/components/schemas/MyPeriodUsage'
+          nullable: true
+    MySubscriptionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/MySubscription' }
     SubscriptionList:
       type: object
       required: [items]
@@ -1249,6 +1506,65 @@ components:
           type: array
           items: { $ref: '#/components/schemas/RequestLog' }
         next_cursor: { type: string, nullable: true }
+    MyRequestLog:
+      type: object
+      description: A request log as its user sees it (no upstream cost, multipliers, retries or account).
+      required: [request_id, created_at, tier, endpoint, model_raw, model, stream, status_code, error_type, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, reasoning_tokens, billed_micro, unpriced, usage_missing, latency_ms, first_byte_ms, user_agent]
+      properties:
+        request_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        key_id: { type: string, format: uuid, nullable: true }
+        tier: { type: string, description: 'plan, standard, force, or empty when no tier admitted the request.' }
+        subscription_id: { type: string, format: uuid, nullable: true }
+        endpoint: { type: string }
+        model_raw: { type: string }
+        model: { type: string }
+        stream: { type: boolean }
+        status_code: { type: integer }
+        error_type: { type: string }
+        input_tokens: { type: integer, format: int64 }
+        cache_read_tokens: { type: integer, format: int64 }
+        cache_write_tokens: { type: integer, format: int64 }
+        output_tokens: { type: integer, format: int64 }
+        reasoning_tokens: { type: integer, format: int64 }
+        billed_micro: { type: integer, format: int64 }
+        unpriced: { type: boolean }
+        usage_missing: { type: boolean }
+        latency_ms: { type: integer }
+        first_byte_ms: { type: integer }
+        user_agent: { type: string }
+    MyRequestLogPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/MyRequestLog' }
+        next_cursor: { type: string, nullable: true }
+    MyUsageBucket:
+      type: object
+      description: UsageBucket without the upstream cost.
+      required: [bucket, model, tier, requests, errors, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, reasoning_tokens, billed_micro]
+      properties:
+        bucket: { type: string, format: date-time }
+        model: { type: string }
+        tier: { type: string }
+        requests: { type: integer, format: int64 }
+        errors: { type: integer, format: int64 }
+        input_tokens: { type: integer, format: int64 }
+        cache_read_tokens: { type: integer, format: int64 }
+        cache_write_tokens: { type: integer, format: int64 }
+        output_tokens: { type: integer, format: int64 }
+        reasoning_tokens: { type: integer, format: int64 }
+        billed_micro: { type: integer, format: int64 }
+    MyUsageSummary:
+      type: object
+      required: [granularity, items]
+      properties:
+        granularity: { type: string, enum: [hour, day] }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/MyUsageBucket' }
     UsageBucket:
       type: object
       required: [bucket, model, tier, requests, errors, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, reasoning_tokens, upstream_cost_micro, billed_micro]
@@ -1342,12 +1658,15 @@ components:
         remaining_usd: { type: number, format: double, description: Already multiplied by the safety factor; local reset applied. }
     AccountRuntime:
       type: object
-      required: [status, status_reason, stale, hard_exhausted, headroom_micro, reserved_micro, spend_since_observed_micro, current_concurrency, models]
+      required: [status, status_reason, penalized, stale, hard_exhausted, headroom_micro, reserved_micro, spend_since_observed_micro, current_concurrency, models]
       properties:
         status:
           type: string
           enum: [normal, stale, cooldown, error, disabled]
         status_reason: { type: string }
+        penalized:
+          type: boolean
+          description: 5-hour usage is at or above the effective watermark, so routing weight is multiplied by the penalty (shown as "降权中" while the status is normal).
         stale: { type: boolean }
         cooldown_until: { type: string, format: date-time, nullable: true }
         hard_exhausted: { type: boolean }
@@ -1376,7 +1695,7 @@ components:
           items: { type: string }
     Account:
       type: object
-      required: [id, name, base_url, enabled, note, instance, subscription, tier, auth_index, provider, watermark_5h_percent_effective, created_at, updated_at, runtime]
+      required: [id, name, base_url, enabled, note, instance, subscription, tier, auth_index, provider, watermark_5h_percent_effective, created_at, updated_at, runtime, sold_weekly_quota_micro, sold_upstream_micro]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -1394,6 +1713,24 @@ components:
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         runtime: { $ref: '#/components/schemas/AccountRuntime' }
+        sold_weekly_quota_micro:
+          type: integer
+          format: int64
+          description: Σ weekly quota (user price) of the active and pending_assignment subscriptions bound to the account.
+        sold_upstream_micro:
+          type: integer
+          format: int64
+          description: sold_weekly_quota_micro ÷ plan multiplier, comparable with week_total_micro (the overcommit warning uses the same figures).
+        week_total_micro:
+          type: integer
+          format: int64
+          nullable: true
+          description: The account's reported week total (week.total_usd, before the safety factor); null when unknown.
+        k:
+          type: number
+          format: double
+          nullable: true
+          description: The k of the account's cpa-quota estimate; null when cpa-quota has none or is unavailable.
     AccountList:
       type: object
       required: [items]
@@ -1425,6 +1762,13 @@ components:
         watermark_5h_percent: { type: number, format: double, minimum: 0, maximum: 100, nullable: true }
         max_concurrency: { type: integer, minimum: 0, nullable: true }
         note: { type: string }
+    AccountValidateRequest:
+      type: object
+      required: [base_url, cpa_key, quota_token]
+      properties:
+        base_url: { type: string, minLength: 1 }
+        cpa_key: { type: string, minLength: 1 }
+        quota_token: { type: string, minLength: 1 }
     EnabledRequest:
       type: object
       required: [enabled]
@@ -1448,6 +1792,188 @@ components:
           type: array
           items: { type: string }
 
+    BlockingSubscription:
+      type: object
+      required: [id, user_id, username, status, plan_name]
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        username: { type: string }
+        status: { $ref: '#/components/schemas/SubscriptionStatus' }
+        plan_name: { type: string }
+    CpaQuotaEstimate:
+      type: object
+      description: A row of cpa-quota's `estimates` table (schema version 1), unchanged.
+      required: [instance, auth_index, provider, subscription, tier, state, pause_reason, segment_window, basis, k_source,
+                 totals_from, safety_factor, used_5h, used_7d, five_hour_total_usd, weekly_total_usd, remaining_five_hour_usd,
+                 remaining_week_usd, clean_blocks, total_blocks, segments, excluded_segments, ratio, estimated_at, detail]
+      properties:
+        instance: { type: string }
+        auth_index: { type: string }
+        provider: { type: string }
+        subscription: { type: string }
+        tier: { type: string }
+        state: { type: string }
+        pause_reason: { type: string }
+        segment_window: { type: string }
+        basis: { type: string }
+        k: { type: number, format: double, nullable: true }
+        k_source: { type: string }
+        totals_from: { type: string }
+        safety_factor: { type: number, format: double }
+        used_5h: { type: number, format: double }
+        reset_5h: { type: string, format: date-time, nullable: true }
+        used_7d: { type: number, format: double }
+        reset_7d: { type: string, format: date-time, nullable: true }
+        five_hour_total_usd: { type: number, format: double }
+        weekly_total_usd: { type: number, format: double }
+        remaining_five_hour_usd: { type: number, format: double }
+        remaining_week_usd: { type: number, format: double }
+        clean_blocks: { type: integer }
+        total_blocks: { type: integer }
+        segments: { type: integer }
+        excluded_segments: { type: integer }
+        ratio: { type: number, format: double }
+        observed_at: { type: string, format: date-time, nullable: true }
+        estimated_at: { type: string, format: date-time }
+        detail:
+          type: object
+          description: The full quota-endpoint account object as cpa-quota stored it.
+          x-go-type: json.RawMessage
+    KTrendDay:
+      type: object
+      required: [day, gain_5h, gain_7d, segments, excluded_segments, cost_usd, gain, updated_at]
+      properties:
+        day: { type: string, format: date }
+        gain_5h: { type: number, format: double }
+        gain_7d: { type: number, format: double }
+        k: { type: number, format: double, nullable: true }
+        segments: { type: integer }
+        excluded_segments: { type: integer }
+        cost_usd: { type: number, format: double }
+        gain: { type: number, format: double }
+        updated_at: { type: string, format: date-time }
+    KTrend:
+      type: object
+      required: [days, items]
+      properties:
+        days: { type: integer }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/KTrendDay' }
+    QuotaPoint:
+      type: object
+      required: [at, used_percent]
+      properties:
+        at: { type: string, format: date-time }
+        used_percent: { type: number, format: double }
+        reset_at: { type: string, format: date-time, nullable: true }
+    QuotaSeries:
+      type: object
+      required: [window, from, to, downsampled, total_points, items]
+      properties:
+        window: { type: string, enum: [5h, 7d] }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        downsampled: { type: boolean }
+        bucket_seconds: { type: integer, format: int64, nullable: true, description: Bucket width when downsampled. }
+        total_points: { type: integer, format: int64, description: Points in the range before downsampling. }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/QuotaPoint' }
+    CostCompareRow:
+      type: object
+      required: [bucket, cpa_quota_cost_micro, cpa_quota_requests, bridge_upstream_cost_micro, bridge_requests, diff_micro]
+      properties:
+        bucket: { type: string, format: date-time }
+        cpa_quota_cost_micro: { type: integer, format: int64, description: Σ cost_usd of complete-accounting requests, in micro-USD. }
+        cpa_quota_requests: { type: integer, format: int64, description: Number of complete-accounting requests. }
+        bridge_upstream_cost_micro: { type: integer, format: int64 }
+        bridge_requests: { type: integer, format: int64 }
+        diff_micro: { type: integer, format: int64, description: cpa_quota_cost_micro − bridge_upstream_cost_micro. }
+    CostCompare:
+      type: object
+      required: [bucket, from, to, items, cpa_quota_total_micro, bridge_total_micro, diff_micro]
+      properties:
+        bucket: { type: string, enum: [hour, day] }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        cpa_quota_total_micro: { type: integer, format: int64 }
+        bridge_total_micro: { type: integer, format: int64 }
+        diff_micro: { type: integer, format: int64 }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CostCompareRow' }
+    AvailabilityHorizon:
+      type: object
+      required: [horizon, pool_micro, available_micro, limited_by_balance]
+      properties:
+        horizon: { type: string, enum: [1h, 5h, 24h, 7d] }
+        pool_micro:
+          type: integer
+          format: int64
+          description: Estimated pool capacity over the horizon, at the user price (× tier multiplier).
+        available_micro:
+          type: integer
+          format: int64
+          description: min(pool_micro, balance_available_micro), never below 0.
+        limited_by_balance: { type: boolean, description: True when the balance is smaller than the pool. }
+    PlanWindowAvailability:
+      type: object
+      required: [available_micro]
+      properties:
+        available_micro: { type: integer, format: int64 }
+        reset_at: { type: string, format: date-time, nullable: true, description: 'five_hour: next 5-hour reset (null without a 5-hour window).' }
+        ends_at: { type: string, format: date-time, nullable: true, description: 'period: end of the current plan period.' }
+    PlanAvailability:
+      type: object
+      required: [subscription_id, plan_name, status]
+      properties:
+        subscription_id: { type: string, format: uuid }
+        plan_name: { type: string }
+        status: { type: string, enum: [active, pending_assignment] }
+        account_status:
+          type: string
+          nullable: true
+          enum: [normal, stale, cooldown, unavailable, null]
+          description: |
+            State of the bound upstream account only (no account details). Null while
+            pending. A disabled account or one in error is `unavailable`, and then both
+            `five_hour.available_micro` and `period.available_micro` are 0.
+        period_start: { type: string, format: date-time, nullable: true }
+        period_end: { type: string, format: date-time, nullable: true }
+        quota_micro: { type: integer, format: int64, nullable: true }
+        used_micro: { type: integer, format: int64, nullable: true, description: Billed usage of the period. }
+        remaining_micro: { type: integer, format: int64, nullable: true, description: Real-time remaining of the period (billed). }
+        five_hour:
+          allOf:
+            - $ref: '#/components/schemas/PlanWindowAvailability'
+          nullable: true
+          description: min(remaining, r5 × plan multiplier).
+        period:
+          allOf:
+            - $ref: '#/components/schemas/PlanWindowAvailability'
+          nullable: true
+          description: min(remaining, min(C5, C7) until the period end × plan multiplier).
+    Availability:
+      type: object
+      required: [computed_at, estimated, balance_available_micro, normal, force, plans]
+      properties:
+        computed_at: { type: string, format: date-time, description: When the cached pool figures were computed. }
+        estimated: { type: boolean, description: Always true. }
+        balance_available_micro: { type: integer, format: int64, description: Real-time available balance (may be negative). }
+        normal:
+          type: array
+          description: Normal calls (standard tier), per horizon.
+          items: { $ref: '#/components/schemas/AvailabilityHorizon' }
+        force:
+          type: array
+          description: Forced calls (force tier), per horizon.
+          items: { $ref: '#/components/schemas/AvailabilityHorizon' }
+        plans:
+          type: array
+          description: One item per active or pending subscription of the caller.
+          items: { $ref: '#/components/schemas/PlanAvailability' }
     TierMultipliers:
       type: object
       required: [plan, standard, force]
@@ -1579,3 +2105,96 @@ components:
               ledger_total_micro: { type: integer, format: int64 }
         billed_total_micro: { type: integer, format: int64 }
         api_charge_total_micro: { type: integer, format: int64 }
+
+    OverviewTierTotals:
+      type: object
+      required: [tier, requests, billed_micro, upstream_cost_micro]
+      properties:
+        tier: { type: string, description: 'plan, standard, force, or empty (rejected before a tier admitted it).' }
+        requests: { type: integer, format: int64 }
+        billed_micro: { type: integer, format: int64 }
+        upstream_cost_micro: { type: integer, format: int64 }
+    OverviewToday:
+      type: object
+      required: [day, from, to, requests, billed_micro, upstream_cost_micro, by_tier]
+      properties:
+        day: { type: string, format: date, description: The day in the server time zone. }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        requests: { type: integer, format: int64 }
+        billed_micro: { type: integer, format: int64 }
+        upstream_cost_micro: { type: integer, format: int64 }
+        by_tier:
+          type: array
+          description: One row per tier that has requests today, in the order plan, standard, force, other.
+          items: { $ref: '#/components/schemas/OverviewTierTotals' }
+    OverviewAccounts:
+      type: object
+      required: [total, normal, penalized, stale, cooldown, error, disabled, headroom_micro, reserved_micro]
+      properties:
+        total: { type: integer }
+        normal: { type: integer, description: Normal and not penalized. }
+        penalized: { type: integer, description: Normal status with the routing weight reduced (降权中). }
+        stale: { type: integer }
+        cooldown: { type: integer }
+        error: { type: integer }
+        disabled: { type: integer }
+        headroom_micro: { type: integer, format: int64, description: Σ max(0, H_A) over enabled accounts that are not in error. }
+        reserved_micro: { type: integer, format: int64, description: Σ plan reservations over all accounts. }
+    ReconcileRun:
+      type: object
+      required: [id, started_at, finished_at, ok, balance_mismatches, charge_diff_micro]
+      properties:
+        id: { type: string, format: uuid }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        ok: { type: boolean }
+        balance_mismatches: { type: integer }
+        charge_diff_micro: { type: integer, format: int64 }
+    AdminOverview:
+      type: object
+      required: [generated_at, timezone, today, accounts, pending_assignment, stream_backlog, last_reconcile]
+      properties:
+        generated_at: { type: string, format: date-time }
+        timezone: { type: string, description: IANA name of the server time zone used to cut days. }
+        today: { $ref: '#/components/schemas/OverviewToday' }
+        accounts: { $ref: '#/components/schemas/OverviewAccounts' }
+        pending_assignment: { type: integer, format: int64, description: Subscriptions waiting for an account (also the navigation badge). }
+        stream_backlog:
+          type: integer
+          format: int64
+          description: Settlement stream entries not yet acknowledged by the consumer group (lag + pending; the stream length while the group does not exist yet).
+        last_reconcile:
+          allOf:
+            - $ref: '#/components/schemas/ReconcileRun'
+          nullable: true
+
+    AccountStatusEvent:
+      type: object
+      description: Data of the `account_status` SSE event, sent after every quota poll of an account.
+      required: [account_id, name, fetched_at, last_error, stale]
+      properties:
+        account_id: { type: string, format: uuid }
+        name: { type: string }
+        fetched_at: { type: string, format: date-time }
+        last_error: { type: string }
+        stale: { type: boolean }
+        snapshot:
+          type: object
+          description: The raw quota snapshot (internal shape; refetch the account for the computed view).
+          additionalProperties: true
+    RequestSettledEvent:
+      type: object
+      description: Data of the `request_settled` SSE event.
+      required: [request_id, created_at, user_id, tier, model, status_code, upstream_cost_micro, billed_micro, latency_ms]
+      properties:
+        request_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        user_id: { type: string, format: uuid }
+        account_id: { type: string, format: uuid }
+        tier: { type: string }
+        model: { type: string }
+        status_code: { type: integer }
+        upstream_cost_micro: { type: integer, format: int64 }
+        billed_micro: { type: integer, format: int64 }
+        latency_ms: { type: integer }

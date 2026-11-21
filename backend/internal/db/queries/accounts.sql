@@ -35,3 +35,12 @@ UPDATE accounts SET error_status = false, error_reason = '', error_at = NULL, up
 -- name: UpdateAccountQuotaInfo :exec
 UPDATE accounts SET instance = $2, subscription = $3, tier = $4, auth_index = $5, provider = $6, updated_at = now()
 WHERE id = $1 AND (instance, subscription, tier, auth_index, provider) IS DISTINCT FROM ($2, $3, $4, $5, $6);
+
+-- name: LockAccountForUpdate :one
+-- Serializes deleting an account against binding subscriptions to it.
+SELECT id FROM accounts WHERE id = $1 AND deleted_at IS NULL FOR UPDATE;
+
+-- name: LockAccountForShare :one
+-- Taken by subscription binds inside their transaction: fails once the
+-- account is deleted, and blocks a concurrent delete until the bind commits.
+SELECT id FROM accounts WHERE id = $1 AND deleted_at IS NULL FOR SHARE;

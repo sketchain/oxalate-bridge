@@ -34,19 +34,18 @@ func reject(tier, code, msg string) *Rejection {
 
 // Rejection codes.
 const (
-	CodeNoSubscription     = "no_subscription"
-	CodeSubInactive        = "subscription_inactive"
-	CodeSubExpired         = "subscription_expired"
-	CodeModelNotInPlan     = "model_not_in_plan"
-	CodePlanExhausted      = "plan_quota_exhausted"
-	CodePlanAccountDown    = "plan_account_unavailable"
-	CodeInsufficientFunds  = "insufficient_balance"
-	CodeNoAccount          = "no_available_account"
-	CodeAccountBusy        = "account_concurrency_full"
-	CodeUnsupportedTier    = "unsupported_tier"
-	CodeModelNotServed     = "model_not_served"
-	CodeStateUnavailable   = "state_unavailable"
-	CodeWrongSubscriptionT = "subscription_type_mismatch"
+	CodeNoSubscription    = "no_subscription"
+	CodeSubInactive       = "subscription_inactive"
+	CodeSubExpired        = "subscription_expired"
+	CodeModelNotInPlan    = "model_not_in_plan"
+	CodePlanExhausted     = "plan_quota_exhausted"
+	CodePlanAccountDown   = "plan_account_unavailable"
+	CodeInsufficientFunds = "insufficient_balance"
+	CodeNoAccount         = "no_available_account"
+	CodeAccountBusy       = "account_concurrency_full"
+	CodeUnsupportedTier   = "unsupported_tier"
+	CodeModelNotServed    = "model_not_served"
+	CodeStateUnavailable  = "state_unavailable"
 )
 
 // Router evaluates tiers and picks accounts.
@@ -92,9 +91,6 @@ func (r *Router) EvalPlan(ctx context.Context, auth authcache.Info, normModel st
 	acc, ok := r.Cat.Account(*sub.AccountID)
 	if !ok || !acc.Enabled || acc.Error {
 		return nil, reject(TierPlan, CodePlanAccountDown, "plan 绑定的账号不可用")
-	}
-	if acc.Subscription != "" && acc.Subscription != sub.Subscription {
-		return nil, reject(TierPlan, CodeWrongSubscriptionT, "plan 类型与账号类型不一致")
 	}
 	if !r.Cat.Serves(acc.ID, normModel) {
 		return nil, reject(TierPlan, CodeModelNotServed, "plan 绑定的账号不提供该模型")
