@@ -56,10 +56,43 @@ test("admin assigns a pending subscription to an account", async ({ page }) => {
   await table.getByRole("button", { name: "分配" }).first().click();
   const dialog = page.getByRole("dialog", { name: "分配账号" });
   await dialog.getByText("claude-max-tokyo").click();
+  // Capacity and warnings come from the backend dry run.
+  const check = dialog.getByTestId("bind-check");
+  await expect(check).toBeVisible();
+  await expect(check.getByText("已售周额度")).toBeVisible();
   await dialog.getByRole("button", { name: /确认/ }).click();
-  await expect(page.getByText(/^已分配$|账号已超卖/).first()).toBeVisible();
+  await expect(page.getByText(/^已分配$|请留意下列提醒/).first()).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByText("没有待分配的订阅")).toBeVisible();
+});
+
+test("account statuses are translated and oversold accounts are flagged", async ({ page }) => {
+  await login(page, ADMIN, "/admin/accounts");
+  const seoul = page.getByRole("article", { name: "claude-max-seoul" });
+  await expect(seoul.locator('[data-status="five_hour_full"]')).toHaveText("5h 已满");
+  // Raw reason codes never reach the page.
+  await expect(page.locator("main")).not.toContainText(/5h_exhausted|week_exhausted|penalized|quota_stale/);
+  const summary = (await (await page.request.get("/api/v1/admin/accounts")).json()).summary;
+  const line = page.getByTestId("oversold-line").first();
+  if (summary.oversold_count > 0) {
+    await expect(line).toContainText(`超卖账号 ${summary.oversold_count} 个`);
+    await expect(page.getByTestId("headroom-oversold").first()).toContainText("预留超出剩余");
+  } else {
+    await expect(line).toHaveText("没有超卖账号");
+  }
+  await page.goto("/admin");
+  await expect(page.getByTestId("oversold-line").first()).toBeVisible();
+});
+
+test("the login page shows the new logo", async ({ page }) => {
+  await page.goto("/login");
+  await expect(page.getByTestId("logo-mark")).toBeVisible();
+  await expect(page.getByText("OXALATE'S BRIDGE")).toBeVisible();
+  const icons = await page.locator('link[rel="icon"], link[rel="apple-touch-icon"]').evaluateAll((ls) => ls.map((l) => l.getAttribute("href")));
+  expect(icons).toEqual(expect.arrayContaining(["/favicon.svg", "/favicon-32.png", "/apple-touch-icon.png"]));
+  for (const href of ["/favicon.svg", "/favicon-32.png", "/apple-touch-icon.png"]) {
+    expect((await page.request.get(href)).status()).toBe(200);
+  }
 });
 
 test("dark mode toggle is applied and remembered", async ({ page }) => {
@@ -76,8 +109,54 @@ test("dark mode toggle is applied and remembered", async ({ page }) => {
   await expect(html).not.toHaveClass(/dark/);
 });
 
+const USER_PAGES = ["/", "/keys", "/usage", "/plans", "/billing", "/settings", "/me"];
+
 test.describe("mobile", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+
+  test("no horizontal overflow on any user page", async ({ page }) => {
+    await login(page, USER);
+    for (const path of USER_PAGES) {
+      await page.goto(path);
+      await page.waitForLoadState("networkidle");
+      const width = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, viewport: window.innerWidth }));
+      expect(width.scroll, `scrollWidth on ${path}`).toBeLessThanOrEqual(width.viewport);
+    }
+  });
+
+  test("the bottom tab bar is fixed to the bottom and never covers the content", async ({ page }) => {
+    await login(page, USER);
+    for (const path of USER_PAGES) {
+      await page.goto(path);
+      await page.waitForLoadState("networkidle");
+      const tabs = page.getByTestId("bottom-tabs");
+      const vh = page.viewportSize()!.height;
+      let box = (await tabs.boundingBox())!;
+      expect(Math.round(box.y + box.height), `tab bar bottom on ${path}`).toBe(vh);
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await page.waitForTimeout(150);
+      box = (await tabs.boundingBox())!;
+      expect(Math.round(box.y + box.height), `tab bar bottom after scrolling on ${path}`).toBe(vh);
+      const last = await page.evaluate(() => {
+        const container = document.querySelector("#main > div");
+        const el = container?.lastElementChild;
+        return el ? el.getBoundingClientRect().bottom : 0;
+      });
+      expect(last, `last content element on ${path}`).toBeGreaterThan(0);
+      expect(last, `last content element overlaps the tab bar on ${path}`).toBeLessThanOrEqual(box.y);
+    }
+  });
+
+  test("availability is one card per tier on a phone", async ({ page }) => {
+    await login(page, USER);
+    const cards = page.getByTestId("availability-cards");
+    await expect(cards).toBeVisible();
+    const normal = cards.getByRole("listitem", { name: "普通调用" });
+    for (const h of ["1h", "5h", "1d", "7d"]) await expect(normal.getByText(h, { exact: true })).toBeVisible();
+    await expect(cards.getByRole("listitem", { name: "强制调用" })).toBeVisible();
+    await expect(page.getByRole("table", { name: "普通与强制调用可用额度" })).toBeHidden();
+  });
+
   test("overview works on a phone with bottom tabs", async ({ page }) => {
     await login(page, USER);
     const tabs = page.getByRole("navigation", { name: "用户" }).last();

@@ -333,6 +333,13 @@ func nullInt32(p *int32) nullable.Nullable[int] {
 	return nullable.NewNullableWithValue(int(*p))
 }
 
+func nullInt64(p *int64) nullable.Nullable[int64] {
+	if p == nil {
+		return nullable.NewNullNullable[int64]()
+	}
+	return nullable.NewNullableWithValue(*p)
+}
+
 func nullFloat(p *float64) nullable.Nullable[float64] {
 	if p == nil {
 		return nullable.NewNullNullable[float64]()

@@ -2,7 +2,7 @@
 
 自建的 Claude API 中转站：用户与 API key、token plan、余额、计费和路由全部由本项目管理，上游是多个 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)（CPA）v8 实例。每个 CPA 实例只挂一个 Claude 订阅账号（Pro / Max 5x / Max 20x），额度估算来自 CPA 上的 [cpa-quota](https://github.com/sketchain/cpa-quota) 插件。中转站只服务 Claude Messages 协议，只接受 Claude 订阅的上游账号。
 
-本仓库目前是第三轮（v0.3.0）：后端完整，前端面板（`web/`，React + TanStack）已完成，用户侧与管理侧都在同一个应用里。界面截图见 [docs/screenshots](docs/screenshots)。
+本仓库目前是第四轮（v0.3.1）：后端完整，前端面板（`web/`，React + TanStack）已完成，用户侧与管理侧都在同一个应用里；只装了 Docker 也能用一条命令跑起完整演示（见「只用 Docker 体验」）。界面截图见 [docs/screenshots](docs/screenshots)。
 
 ## 仓库结构
 
@@ -33,7 +33,9 @@ web/                     前端面板：React 19 + Vite + TypeScript（strict）
   src/api                openapi-typescript 生成的类型（schema.d.ts）、openapi-fetch 客户端、查询键与 hooks
   e2e                    Playwright 冒烟测试与截图
 scripts/e2e.sh           构建 → fakecpa → seed-demo → bridge → Playwright
-docs/screenshots         用户侧与管理侧主要页面的浅色 / 深色 / 手机截图
+scripts/gen-logo.py      由 IBM Plex Mono 生成 C₂O₄²⁻ logo 的路径与 favicon（开发用，产物已提交）
+docker-compose.demo.yml  只用 Docker 的演示环境（postgres、redis、fakecpa、seed、bridge）
+docs/screenshots         登录页与用户侧、管理侧主要页面的浅色 / 深色 / 手机截图
 ```
 
 ## 工作方式
@@ -158,6 +160,40 @@ Stream 消费者（consumer group，多副本可同时消费）每批一个 PG �
 | `upstream_idle_timeout_seconds` | 300 | 上游空闲超时（无总超时） |
 | `auto_renew_lead_hours` | 24 | 自动续费提前量 |
 | `cooldown_5xx_seconds` / `cooldown_429_default_seconds` | 30 / 60 | 冷却时长 |
+
+## 只用 Docker 体验（演示环境）
+
+本机只需要 Docker（含 Compose v2），不需要 Go、Node。一条命令：
+
+```bash
+docker compose -f docker-compose.demo.yml up --build
+```
+
+第一次会构建镜像（前端 + Go，几分钟），之后依次启动：postgres、redis、fakecpa（4 个假的 CPA 实例，不连任何真实上游）→
+seed（一次性任务，执行 `bridge seed-demo` 写入演示数据后退出；库里已有演示数据时直接跳过）→ bridge。
+看到 bridge 变成 healthy 后打开 <http://localhost:8080>（端口被占用时用 `DEMO_PORT=8090 docker compose -f docker-compose.demo.yml up --build`）。
+
+演示账号：
+
+| 用户名 | 密码 | 说明 |
+| --- | --- | --- |
+| `admin` | `admin-pass-123` | 管理员：概览、上游账号、订阅分配、日志等 |
+| `alice` | `demo-pass-123` | 余额 $80，一份有效的 Max 周卡 + 一份待分配的 Sonnet 轻量包，两个 key |
+| `bob` | `demo-pass-123` | 余额较少，管理员直接开通的 Max 月卡（所在账号已超卖） |
+| `carol` | `demo-pass-123` | 几乎没有余额，只有余额档 key |
+
+4 个上游账号分别处于：正常、降权中、5h 已满、几分钟后变成「数据过期」。
+
+停止与重置：
+
+```bash
+docker compose -f docker-compose.demo.yml down       # 停止，保留数据（下次 up 不重新生成）
+docker compose -f docker-compose.demo.yml down -v    # 停止并删除数据卷；下次 up 重新生成演示数据
+```
+
+有 make 的话也可以用 `make demo` / `make demo-down` / `make demo-reset`，与上面三条命令等价，不是必须的。
+fakecpa 的额度窗口以容器启动时间为基准，隔了很久再 `up` 时账号的「运行时状态」会与当初写入的「估算明细」逐渐对不上，`down -v` 重置即可。
+演示环境的密钥、密码都写死在 `docker-compose.demo.yml` 里，只能用于本地体验，不要用于部署。
 
 ## 部署
 

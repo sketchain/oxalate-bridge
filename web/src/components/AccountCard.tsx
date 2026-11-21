@@ -5,7 +5,7 @@ import { accountKind, accountNote } from "@/lib/accounts";
 import { formatPercent, formatUSD } from "@/lib/format";
 import { useNow } from "@/lib/hooks";
 import { ProgressBar } from "./Progress";
-import { StatusTag } from "./Tags";
+import { OversoldTag, StatusTag } from "./Tags";
 
 /** Account card: name, tier and k, status, 5h (with watermark) and 7d bars, three figures and a note. */
 export function AccountCard({ a }: { a: Schemas["Account"] }) {
@@ -49,14 +49,14 @@ export function AccountCard({ a }: { a: Schemas["Account"] }) {
       <dl className="grid grid-cols-3 border-t border-ink text-[12px]">
         {(
           [
-            [t("accounts.headroom"), formatUSD(rt.headroom_micro)],
+            [t("accounts.headroom"), <HeadroomValue key="h" micro={rt.headroom_micro} />],
             [t("accounts.reserved"), formatUSD(rt.reserved_micro)],
             [t("accounts.concurrency"), `${rt.current_concurrency}/${a.max_concurrency ?? "∞"}`],
           ] as const
         ).map(([k, v], i) => (
           <div key={k} className={i > 0 ? "border-l border-ink px-3 py-2" : "px-3 py-2"}>
             <dt className="label-mono text-muted">{k}</dt>
-            <dd className="num mt-0.5 truncate text-[14px]">{v}</dd>
+            <dd className="num mt-0.5 min-w-0 text-[14px]">{v}</dd>
           </div>
         ))}
       </dl>
@@ -64,5 +64,16 @@ export function AccountCard({ a }: { a: Schemas["Account"] }) {
         {accountNote(a, now, i18n.language, t) || "—"}
       </p>
     </article>
+  );
+}
+
+/** Headroom H_A: negative (oversold) is shown as is, in danger red, with a "预留超出剩余" tag. */
+export function HeadroomValue({ micro }: { micro: number }) {
+  if (micro >= 0) return <span className="block truncate">{formatUSD(micro)}</span>;
+  return (
+    <span className="flex flex-col items-start gap-0.5" data-testid="headroom-oversold">
+      <span className="truncate font-semibold text-red">{formatUSD(micro)}</span>
+      <OversoldTag />
+    </span>
   );
 }

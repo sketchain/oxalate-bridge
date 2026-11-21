@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -25,6 +26,11 @@ func main() {
 	if len(os.Args) > 1 && (os.Args[1] == "version" || os.Args[1] == "--version") {
 		os.Stdout.WriteString(version.Version + "\n")
 		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		// For container health checks (the image has no shell or curl):
+		// exits 0 when /readyz answers 200.
+		os.Exit(healthcheck(os.Args[2:]))
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -103,6 +109,37 @@ func seedDemo(ctx context.Context, cfg config.Config, log *slog.Logger, args []s
 		log.Info("demo data ready", "users", demo.Users, "password", *password, "admin", cfg.BootstrapAdminUsername)
 	}
 	return err
+}
+
+// healthcheck GETs the given URL (default: /readyz on BRIDGE_LISTEN's port)
+// and returns the process exit code.
+func healthcheck(args []string) int {
+	url := ""
+	if len(args) > 0 {
+		url = args[0]
+	} else {
+		listen := os.Getenv("BRIDGE_LISTEN")
+		if listen == "" {
+			listen = ":8080"
+		}
+		_, port, err := net.SplitHostPort(listen)
+		if err != nil || port == "" {
+			port = "8080"
+		}
+		url = "http://127.0.0.1:" + port + "/readyz"
+	}
+	hc := &http.Client{Timeout: 3 * time.Second}
+	resp, err := hc.Get(url) //nolint:noctx // one-shot CLI probe with a client timeout
+	if err != nil {
+		os.Stderr.WriteString("healthcheck: " + err.Error() + "\n")
+		return 1
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		os.Stderr.WriteString("healthcheck: " + resp.Status + "\n")
+		return 1
+	}
+	return 0
 }
 
 func logLevel() slog.Level {

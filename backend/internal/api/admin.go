@@ -22,6 +22,7 @@ import (
 	"github.com/sketchain/oxalate-bridge/backend/internal/secret"
 	"github.com/sketchain/oxalate-bridge/backend/internal/settings"
 	"github.com/sketchain/oxalate-bridge/backend/internal/store"
+	"github.com/sketchain/oxalate-bridge/backend/internal/subs"
 )
 
 // ---- users ----------------------------------------------------------------------
@@ -311,20 +312,30 @@ func (s *Server) runtimeOf(ctx context.Context, row sqlc.Account, st *router.Acc
 		}
 	}
 	switch {
-	case !row.Enabled:
-		rt.Status, rt.StatusReason = AccountRuntimeStatusDisabled, "已停用"
 	case row.ErrorStatus:
-		rt.Status, rt.StatusReason = AccountRuntimeStatusError, row.ErrorReason
+		rt.Status = AccountRuntimeStatusError
+	case !row.Enabled:
+		rt.Status = AccountRuntimeStatusDisabled
 	case st != nil && st.Cooldown != nil:
-		rt.Status, rt.StatusReason = AccountRuntimeStatusCooldown, st.Cooldown.Reason
+		rt.Status = AccountRuntimeStatusCooldown
 	case rt.Stale:
-		rt.Status, rt.StatusReason = AccountRuntimeStatusStale, "额度数据过期"
-		if rt.LastError != nil && *rt.LastError != "" {
-			rt.StatusReason += ": " + *rt.LastError
-		}
-	case st != nil && st.HardExhausted:
-		rt.StatusReason = "额度已用尽（" + st.HardReason + "）"
+		rt.Status = AccountRuntimeStatusStale
 	}
+	var cooldown *string
+	if st != nil {
+		rt.HardReason = st.HardReason
+		if st.Cooldown != nil {
+			r := st.Cooldown.Reason
+			cooldown = &r
+		}
+	}
+	rt.Oversold = rt.HeadroomMicro < 0
+	lastErr := ""
+	if rt.LastError != nil {
+		lastErr = *rt.LastError
+	}
+	rt.DisplayStatus, rt.StatusReasonCode, rt.StatusReason = displayOf(row.Enabled, row.ErrorStatus, row.ErrorReason, cooldown,
+		rt.HardReason, rt.Stale, lastErr, rt.Penalized)
 	return rt
 }
 
@@ -462,7 +473,7 @@ func (s *Server) AdminListAccounts(ctx context.Context, _ AdminListAccountsReque
 		items[i] = s.accountOf(ctx, row, states[row.ID], now)
 	}
 	s.fillK(ctx, items)
-	return AdminListAccounts200JSONResponse{Items: items}, nil
+	return AdminListAccounts200JSONResponse{Items: items, Summary: CountAccounts(items)}, nil
 }
 
 // AdminGetAccount implements GET /admin/accounts/{accountId}.
@@ -850,11 +861,23 @@ func (s *Server) AdminListSubscriptions(ctx context.Context, req AdminListSubscr
 	return AdminListSubscriptions200JSONResponse(page), nil
 }
 
-func (s *Server) withWarning(ctx context.Context, sub sqlc.PlanSubscription, warning string) SubscriptionWithWarning {
-	out := SubscriptionWithWarning{Subscription: s.adminSubscriptions(ctx, []sqlc.PlanSubscription{sub})[0],
-		Warning: nullable.NewNullNullable[string]()}
-	if warning != "" {
-		out.Warning = nullable.NewNullableWithValue(warning)
+// bindResult is the response of a bind (grant, assign, rebind), real or dry run.
+func (s *Server) bindResult(ctx context.Context, sub sqlc.PlanSubscription, chk subs.Check, dryRun bool) SubscriptionWithWarning {
+	c := chk.Capacity
+	out := SubscriptionWithWarning{DryRun: dryRun, Subscription: nullable.NewNullNullable[Subscription](),
+		Warning: nullable.NewNullNullable[string](), Warnings: []BindWarning{},
+		Capacity: BindCapacity{AccountId: c.AccountID, SubscriptionQuotaMicro: c.Quota, SoldWeeklyQuotaMicro: c.SoldWeekly,
+			SoldUpstreamMicro: c.SoldUpstream, WeekTotalMicro: nullInt64(c.WeekTotal), PlanMultiplier: c.PlanMultiplier}}
+	if !dryRun {
+		out.Subscription = nullable.NewNullableWithValue(s.adminSubscriptions(ctx, []sqlc.PlanSubscription{sub})[0])
+	}
+	msgs := make([]string, 0, len(chk.Warnings))
+	for _, w := range chk.Warnings {
+		out.Warnings = append(out.Warnings, BindWarning{Code: w.Code, Message: w.Message})
+		msgs = append(msgs, w.Message)
+	}
+	if len(msgs) > 0 {
+		out.Warning = nullable.NewNullableWithValue(strings.Join(msgs, "; "))
 	}
 	return out
 }
@@ -865,15 +888,19 @@ func (s *Server) AdminGrantSubscription(ctx context.Context, req AdminGrantSubsc
 		return nil, badRequest("body required")
 	}
 	b := req.Body
+	dry := deref(req.Params.DryRun, false)
 	if _, err := s.Store.Q.GetUser(ctx, b.UserId); err != nil {
 		return nil, mapDomainErr(err)
 	}
-	sub, warning, err := s.Subs.Grant(ctx, currentUser(ctx).ID, b.UserId, b.PlanId, b.AccountId, deref(b.Charge, false))
+	sub, chk, err := s.Subs.Grant(ctx, currentUser(ctx).ID, b.UserId, b.PlanId, b.AccountId, deref(b.Charge, false), dry)
 	if err != nil {
 		return nil, mapDomainErr(err)
 	}
+	out := s.bindResult(ctx, sub, chk, dry)
+	if dry {
+		return AdminGrantSubscription200JSONResponse(out), nil
+	}
 	s.reloadCatalog(ctx)
-	out := s.withWarning(ctx, sub, warning)
 	s.audit(ctx, "subscription.grant", "subscription", sub.ID.String(), nil, out)
 	return AdminGrantSubscription201JSONResponse(out), nil
 }
@@ -883,13 +910,16 @@ func (s *Server) AdminAssignSubscription(ctx context.Context, req AdminAssignSub
 	if req.Body == nil {
 		return nil, badRequest("body required")
 	}
-	sub, warning, err := s.Subs.Assign(ctx, req.SubscriptionId, req.Body.AccountId)
+	dry := deref(req.Params.DryRun, false)
+	sub, chk, err := s.Subs.Assign(ctx, req.SubscriptionId, req.Body.AccountId, dry)
 	if err != nil {
 		return nil, mapDomainErr(err)
 	}
-	s.reloadCatalog(ctx)
-	out := s.withWarning(ctx, sub, warning)
-	s.audit(ctx, "subscription.assign", "subscription", sub.ID.String(), nil, out)
+	out := s.bindResult(ctx, sub, chk, dry)
+	if !dry {
+		s.reloadCatalog(ctx)
+		s.audit(ctx, "subscription.assign", "subscription", sub.ID.String(), nil, out)
+	}
 	return AdminAssignSubscription200JSONResponse(out), nil
 }
 
@@ -898,18 +928,21 @@ func (s *Server) AdminRebindSubscription(ctx context.Context, req AdminRebindSub
 	if req.Body == nil {
 		return nil, badRequest("body required")
 	}
+	dry := deref(req.Params.DryRun, false)
 	before, err := s.Store.Q.GetSubscription(ctx, req.SubscriptionId)
 	if err != nil {
 		return nil, mapDomainErr(err)
 	}
-	sub, warning, err := s.Subs.Rebind(ctx, req.SubscriptionId, req.Body.AccountId)
+	sub, chk, err := s.Subs.Rebind(ctx, req.SubscriptionId, req.Body.AccountId, dry)
 	if err != nil {
 		return nil, mapDomainErr(err)
 	}
-	s.reloadCatalog(ctx)
-	out := s.withWarning(ctx, sub, warning)
-	s.audit(ctx, "subscription.rebind", "subscription", sub.ID.String(), map[string]any{"account_id": before.AccountID},
-		map[string]any{"account_id": sub.AccountID})
+	out := s.bindResult(ctx, sub, chk, dry)
+	if !dry {
+		s.reloadCatalog(ctx)
+		s.audit(ctx, "subscription.rebind", "subscription", sub.ID.String(), map[string]any{"account_id": before.AccountID},
+			map[string]any{"account_id": sub.AccountID})
+	}
 	return AdminRebindSubscription200JSONResponse(out), nil
 }
 

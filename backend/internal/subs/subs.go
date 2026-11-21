@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/sketchain/oxalate-bridge/backend/internal/billing"
+	"github.com/sketchain/oxalate-bridge/backend/internal/cpa"
 	"github.com/sketchain/oxalate-bridge/backend/internal/db/sqlc"
 	"github.com/sketchain/oxalate-bridge/backend/internal/router"
 	"github.com/sketchain/oxalate-bridge/backend/internal/rstate"
@@ -116,17 +117,18 @@ func (s *Service) Purchase(ctx context.Context, user, planID uuid.UUID, autoRene
 }
 
 // Grant opens a subscription for a user directly (admin), already active on
-// an account, optionally charging the plan price.
-func (s *Service) Grant(ctx context.Context, operator, user, planID, accountID uuid.UUID, charge bool) (sqlc.PlanSubscription, string, error) {
+// an account, optionally charging the plan price. A dry run validates the
+// same way and reports the same capacity and warnings, but writes nothing.
+func (s *Service) Grant(ctx context.Context, operator, user, planID, accountID uuid.UUID, charge, dryRun bool) (sqlc.PlanSubscription, Check, error) {
 	plan, err := s.Store.Q.GetPlan(ctx, planID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return sqlc.PlanSubscription{}, "", ErrNotFound
+		return sqlc.PlanSubscription{}, Check{}, ErrNotFound
 	}
 	if err != nil {
-		return sqlc.PlanSubscription{}, "", err
+		return sqlc.PlanSubscription{}, Check{}, err
 	}
 	if _, err := s.checkAccount(ctx, accountID); err != nil {
-		return sqlc.PlanSubscription{}, "", err
+		return sqlc.PlanSubscription{}, Check{}, err
 	}
 	now := s.now()
 	expires := AddDuration(now, plan.DurationValue, plan.DurationUnit)
@@ -150,13 +152,30 @@ func (s *Service) Grant(ctx context.Context, operator, user, planID, accountID u
 				return err
 			}
 		}
-		return tx.RoutingChanged(ctx)
+		return finish(ctx, tx, dryRun)
 	})
-	if err != nil {
-		return sub, "", err
+	return s.afterBind(ctx, sub, accountID, err)
+}
+
+// errDryRun rolls back a dry-run transaction.
+var errDryRun = errors.New("dry run")
+
+// finish ends a bind transaction: a dry run rolls back, a real one marks
+// routing as changed.
+func finish(ctx context.Context, tx *store.Tx, dryRun bool) error {
+	if dryRun {
+		return errDryRun
 	}
-	warning, _ := s.OvercommitWarning(ctx, accountID, sub.ID, sub.WeeklyQuotaMicro)
-	return sub, warning, nil
+	return tx.RoutingChanged(ctx)
+}
+
+// afterBind computes the capacity check of a bind (real or dry run).
+func (s *Service) afterBind(ctx context.Context, sub sqlc.PlanSubscription, accountID uuid.UUID, err error) (sqlc.PlanSubscription, Check, error) {
+	if err != nil && !errors.Is(err, errDryRun) {
+		return sub, Check{}, err
+	}
+	chk, cerr := s.CheckCapacity(ctx, accountID, sub.ID, sub.WeeklyQuotaMicro)
+	return sub, chk, cerr
 }
 
 // checkAccount loads an account a subscription is bound to. Accounts and
@@ -186,32 +205,97 @@ func lockAccount(ctx context.Context, tx *store.Tx, accountID uuid.UUID) error {
 	return err
 }
 
-// OvercommitWarning reports when the weekly quotas sold on an account (in
-// upstream terms) exceed its week.total_usd. It never blocks.
-func (s *Service) OvercommitWarning(ctx context.Context, accountID, subID uuid.UUID, quota int64) (string, error) {
+// Warning codes of a bind (never blocking).
+const (
+	WarnOvercommit       = "overcommit"
+	WarnWeekTotalUnknown = "week_total_unknown"
+	WarnAccountNotNormal = "account_not_normal"
+)
+
+// Warning is one non-blocking remark about a bind.
+type Warning struct {
+	Code    string
+	Message string
+}
+
+// Capacity is an account's sold capacity after a bind (the bound
+// subscription included).
+type Capacity struct {
+	AccountID      uuid.UUID
+	Quota          int64 // the bound subscription's weekly quota (user price)
+	SoldWeekly     int64 // Σ weekly quota of active / pending subscriptions on the account
+	SoldUpstream   int64 // SoldWeekly ÷ plan multiplier
+	WeekTotal      *int64
+	PlanMultiplier float64
+}
+
+// Check is the capacity and the warnings of a bind.
+type Check struct {
+	Capacity Capacity
+	Warnings []Warning
+}
+
+// CheckCapacity computes the capacity of an account as it is with the
+// subscription subID (weekly quota quota) bound to it, and the warnings:
+// overcommit when the sold quotas in upstream terms exceed the account's
+// week.total_usd, an unknown week total, and an account that is not in a
+// normal state. Real binds and dry runs both use it, after their
+// transaction, so their warnings are identical.
+func (s *Service) CheckCapacity(ctx context.Context, accountID, subID uuid.UUID, quota int64) (Check, error) {
 	others, err := s.Store.Q.SumQuotaByAccount(ctx, sqlc.SumQuotaByAccountParams{AccountID: &accountID, ID: subID})
 	if err != nil {
-		return "", err
-	}
-	snap := s.Cat.Snapshot(accountID)
-	if snap == nil || !snap.HasData || snap.Account.Week == nil || snap.Account.Week.TotalUSD <= 0 {
-		return "", nil
+		return Check{}, err
 	}
 	mult := s.Settings.Get().TierMultipliers.Plan
 	if mult <= 0 {
 		mult = 1
 	}
-	sold := float64(others+quota) / mult
-	total := float64(billing.USDToMicro(snap.Account.Week.TotalUSD))
-	if sold > total {
-		return fmt.Sprintf("该账号上 active/pending 订阅的周额度合计（折算上游 $%.2f）超过账号周总额 $%.2f",
-			sold/1e6, total/1e6), nil
+	c := Capacity{AccountID: accountID, Quota: quota, SoldWeekly: others + quota, PlanMultiplier: mult}
+	c.SoldUpstream = int64(float64(c.SoldWeekly) / mult)
+	out := Check{Capacity: c, Warnings: []Warning{}}
+	snap := s.Cat.Snapshot(accountID)
+	if snap != nil && snap.HasData && snap.Account.Week != nil && snap.Account.Week.TotalUSD > 0 {
+		total := billing.USDToMicro(snap.Account.Week.TotalUSD)
+		out.Capacity.WeekTotal = &total
+		if c.SoldUpstream > total {
+			out.Warnings = append(out.Warnings, Warning{Code: WarnOvercommit, Message: fmt.Sprintf(
+				"the weekly quotas sold on this account ($%.2f in upstream terms) exceed its week total $%.2f",
+				float64(c.SoldUpstream)/1e6, float64(total)/1e6)})
+		}
+	} else {
+		out.Warnings = append(out.Warnings, Warning{Code: WarnWeekTotalUnknown,
+			Message: "the account has not reported a week total yet, so overcommit cannot be checked"})
 	}
-	return "", nil
+	if issue := s.accountIssue(ctx, accountID, snap); issue != "" {
+		out.Warnings = append(out.Warnings, Warning{Code: WarnAccountNotNormal, Message: "the account is " + issue + " right now"})
+	}
+	return out, nil
 }
 
-// Assign activates a pending subscription on an account.
-func (s *Service) Assign(ctx context.Context, subID, accountID uuid.UUID) (sqlc.PlanSubscription, string, error) {
+// accountIssue names what keeps an account from serving now (error,
+// cooldown, stale, full), or "".
+func (s *Service) accountIssue(ctx context.Context, accountID uuid.UUID, snap *cpa.Snapshot) string {
+	now := s.now()
+	if acc, err := s.Store.Q.GetAccount(ctx, accountID); err == nil && acc.ErrorStatus {
+		return "in error"
+	}
+	if cd, ok := s.St.Cooldown(ctx, accountID); ok && now.Before(cd.Until) {
+		return "cooling down"
+	}
+	if snap.Stale(now, time.Duration(s.Settings.Get().StaleAfterSeconds)*time.Second) {
+		return "stale"
+	}
+	if snap != nil && snap.HasData {
+		if full, reason := cpa.HardExhausted(snap.Account, now); full {
+			return "full (" + reason + ")"
+		}
+	}
+	return ""
+}
+
+// Assign activates a pending subscription on an account (a dry run
+// validates and reports without writing).
+func (s *Service) Assign(ctx context.Context, subID, accountID uuid.UUID, dryRun bool) (sqlc.PlanSubscription, Check, error) {
 	var out sqlc.PlanSubscription
 	err := s.Store.InTx(ctx, func(tx *store.Tx) error {
 		sub, err := tx.Q.GetSubscriptionForUpdate(ctx, subID)
@@ -237,17 +321,14 @@ func (s *Service) Assign(ctx context.Context, subID, accountID uuid.UUID) (sqlc.
 		if err != nil {
 			return err
 		}
-		return tx.RoutingChanged(ctx)
+		return finish(ctx, tx, dryRun)
 	})
-	if err != nil {
-		return out, "", err
-	}
-	warning, _ := s.OvercommitWarning(ctx, accountID, out.ID, out.WeeklyQuotaMicro)
-	return out, warning, nil
+	return s.afterBind(ctx, out, accountID, err)
 }
 
-// Rebind moves an active (or pending) subscription to another account.
-func (s *Service) Rebind(ctx context.Context, subID, accountID uuid.UUID) (sqlc.PlanSubscription, string, error) {
+// Rebind moves an active (or pending) subscription to another account (a
+// dry run validates and reports without writing).
+func (s *Service) Rebind(ctx context.Context, subID, accountID uuid.UUID, dryRun bool) (sqlc.PlanSubscription, Check, error) {
 	var out sqlc.PlanSubscription
 	err := s.Store.InTx(ctx, func(tx *store.Tx) error {
 		sub, err := tx.Q.GetSubscriptionForUpdate(ctx, subID)
@@ -271,16 +352,14 @@ func (s *Service) Rebind(ctx context.Context, subID, accountID uuid.UUID) (sqlc.
 		if err != nil {
 			return err
 		}
-		return tx.RoutingChanged(ctx)
+		return finish(ctx, tx, dryRun)
 	})
-	if err != nil {
-		return out, "", err
+	if err == nil {
+		// Drop the stored period so the next request derives it from the
+		// new account's week window.
+		_ = s.St.R.Del(ctx, s.St.PeriodKey(subID)).Err()
 	}
-	// Drop the stored period so the next request derives it from the new
-	// account's week window.
-	_ = s.St.R.Del(ctx, s.St.PeriodKey(subID)).Err()
-	warning, _ := s.OvercommitWarning(ctx, accountID, out.ID, out.WeeklyQuotaMicro)
-	return out, warning, nil
+	return s.afterBind(ctx, out, accountID, err)
 }
 
 // Cancel cancels a subscription and refunds refund micro-USD (may be 0).

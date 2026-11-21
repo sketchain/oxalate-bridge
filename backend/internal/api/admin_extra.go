@@ -218,33 +218,40 @@ func OverviewTiers(rows []sqlc.RequestTotalsByTierRow) ([]OverviewTierTotals, in
 	return out, req, billed, upstream
 }
 
-// CountAccounts tallies accounts by their (disjoint) overview status and sums
-// headroom and reservations.
+// CountAccounts tallies accounts by display status (disjoint) and sums the
+// headroom (max(0, H_A), so an oversold account never offsets the others),
+// the oversold accounts and the reservations. Disabled and errored accounts
+// are left out of the headroom and oversold figures.
 func CountAccounts(items []Account) OverviewAccounts {
 	var out OverviewAccounts
 	for _, a := range items {
 		out.Total++
 		rt := a.Runtime
 		out.ReservedMicro += rt.ReservedMicro
-		switch rt.Status {
-		case AccountRuntimeStatusDisabled:
+		switch rt.DisplayStatus {
+		case AccountDisplayStatusDisabled:
 			out.Disabled++
 			continue
-		case AccountRuntimeStatusError:
+		case AccountDisplayStatusError:
 			out.Error++
 			continue
-		case AccountRuntimeStatusCooldown:
+		case AccountDisplayStatusCooldown:
 			out.Cooldown++
-		case AccountRuntimeStatusStale:
+		case AccountDisplayStatusFiveHourFull, AccountDisplayStatusWeekFull, AccountDisplayStatusPaused:
+			out.Full++
+		case AccountDisplayStatusStale:
 			out.Stale++
+		case AccountDisplayStatusPenalized:
+			out.Penalized++
 		default:
-			if rt.Penalized {
-				out.Penalized++
-			} else {
-				out.Normal++
-			}
+			out.Normal++
 		}
-		out.HeadroomMicro += max(0, rt.HeadroomMicro)
+		if rt.HeadroomMicro < 0 {
+			out.OversoldCount++
+			out.OversoldMicro += -rt.HeadroomMicro
+			continue
+		}
+		out.HeadroomMicro += rt.HeadroomMicro
 	}
 	return out
 }

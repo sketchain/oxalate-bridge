@@ -65,7 +65,11 @@
     "error": "异常",
     "unavailable": "不可用",
     "disabled": "停用",
-    "pending": "待分配"
+    "pending": "待分配",
+    "five_hour_full": "5h 已满",
+    "week_full": "7d 已满",
+    "paused": "已暂停",
+    "full": "已满"
   },
   "subStatus": {
     "pending_assignment": "等待分配",
@@ -410,7 +414,8 @@
     "liveNote": "最近 50 条",
     "liveEmpty": "等待新请求…",
     "liveEmptyHint": "请求结算后会实时出现在这里（不保存，刷新后清空）。",
-    "user": "用户"
+    "user": "用户",
+    "headroomNote": "按 max(0, H) 求和，超卖不抵消"
   },
   "users": {
     "title": "用户",
@@ -565,8 +570,14 @@
       "stale": "额度数据已过期，最后更新 {{rel}}",
       "staleUnknown": "额度数据过期",
       "disabled": "已停用，不参与路由",
-      "reset": "5h 重置于 {{time}}（{{rel}}）"
-    }
+      "reset": "5h 重置于 {{time}}（{{rel}}）",
+      "full": "{{reason}}，重置于 {{time}}（{{rel}}）",
+      "paused": "cpa-quota 暂停了该账号"
+    },
+    "oversoldTag": "预留超出剩余",
+    "oversoldLine": "超卖账号 {{n}} 个，合计超出 {{amount}}",
+    "noOversold": "没有超卖账号",
+    "headroomNoteSum": "按 max(0, H) 求和，超卖不抵消"
   },
   "adminPlans": {
     "title": "Plan 管理",
@@ -625,8 +636,7 @@
     "rebindTitle": "换绑账号",
     "assigned": "已分配",
     "rebound": "已换绑",
-    "overcommitPreview": "分配后该账号已售周额度（折算上游 {{sold}}）将超过周总额 {{total}}。仍可确认。",
-    "overcommitDone": "已完成，但账号已超卖",
+    "overcommitDone": "已完成，请留意下列提醒",
     "confirmAnyway": "仍然确认",
     "cancelTitle": "取消订阅",
     "cancelBody": "{{user}} 的 {{plan}}（售价 {{price}}）将立即取消，绑定它的 Key 的 Plan 档随之失效。",
@@ -637,7 +647,18 @@
     "noPending": "没有待分配的订阅",
     "noPendingHint": "用户购买 Plan 后会出现在这里。",
     "none": "没有订阅",
-    "userFilterHint": "从用户详情页进入可按用户筛选"
+    "userFilterHint": "从用户详情页进入可按用户筛选",
+    "capacityTitle": "分配后容量",
+    "capacitySold": "已售周额度",
+    "capacityUpstream": "折算上游",
+    "capacityTotal": "周总额",
+    "capacityChecking": "正在校验…",
+    "capacityHint": "由后端按与正式提交相同的规则计算（dry run）。",
+    "warn": {
+      "overcommit": "该账号已售周额度（折算上游 {{sold}}）将超过周总额 {{total}}。仍可确认。",
+      "week_total_unknown": "账号还没有上报周总额，无法判断是否超卖。",
+      "account_not_normal": "账号当前不是正常状态，绑定后可能暂时用不上。"
+    }
   },
   "logs": {
     "title": "请求日志",
@@ -736,5 +757,22 @@
       "cooldown_429_default_seconds": "429 默认冷却时长",
       "price_url": "价格表地址"
     }
+  },
+  "reason": {
+    "disabled": "管理员已停用",
+    "upstream_auth": "上游鉴权失败（401 / 403）",
+    "unsupported_subscription": "上游订阅类型不受支持",
+    "error": "上游异常",
+    "network": "连接上游失败",
+    "upstream_429": "上游限流（429）",
+    "upstream_5xx": "上游服务错误（5xx）",
+    "error_cooldown": "出错后临时冷却",
+    "cooldown": "冷却中",
+    "quota_stale": "额度数据过期",
+    "5h_exhausted": "5 小时窗口已用满",
+    "week_exhausted": "7 天窗口已用满",
+    "paused": "cpa-quota 暂停了该账号",
+    "penalized": "5h 用量超过水位线，路由降权",
+    "other": "其他原因"
   }
 }

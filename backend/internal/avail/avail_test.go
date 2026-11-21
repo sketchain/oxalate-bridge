@@ -192,3 +192,22 @@ func TestUserAmount(t *testing.T) {
 		t.Fatal("user amount")
 	}
 }
+
+// The pools sum max(0, S_A): an oversold account (reservations above its
+// remaining week) adds nothing and never lowers the other accounts' part.
+func TestPoolIgnoresOversoldAccount(t *testing.T) {
+	healthy := Account{ID: uuid.New(), Status: StatusNormal,
+		Five: Window{Known: true, R: 5_000_000, T: 9_000_000, NextReset: at(time.Hour)},
+		Week: Window{Known: true, R: 40_000_000, T: 90_000_000, NextReset: at(100 * time.Hour)}}
+	oversold := Account{ID: uuid.New(), Status: StatusNormal,
+		Five:     Window{Known: true, R: 5_000_000, T: 9_000_000, NextReset: at(time.Hour)},
+		Week:     Window{Known: true, R: 3_000_000, T: 90_000_000, NextReset: at(100 * time.Hour)},
+		Reserved: 50_000_000}
+	alone := Build([]Account{healthy}, now)
+	both := Build([]Account{healthy, oversold}, now)
+	for _, h := range Horizons {
+		if both.Normal[h.Name] != alone.Normal[h.Name] {
+			t.Fatalf("normal %s: %d with the oversold account, %d without", h.Name, both.Normal[h.Name], alone.Normal[h.Name])
+		}
+	}
+}

@@ -8,7 +8,7 @@ import { keys, overviewQuery } from "@/api/queries";
 import { PageHeader } from "@/components/PageHeader";
 import { Section } from "@/components/Section";
 import { StatStrip } from "@/components/StatStrip";
-import { StatusTag, StatusCode, TierTag, type StatusKind } from "@/components/Tags";
+import { OversoldLine, StatusTag, StatusCode, TierTag, type StatusKind } from "@/components/Tags";
 import { EmptyState, ErrorBox } from "@/components/Feedback";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,6 +26,7 @@ export const Route = createFileRoute("/_app/admin/")({
 const SEGMENTS: { key: keyof Schemas["OverviewAccounts"]; kind: StatusKind; cls: string }[] = [
   { key: "normal", kind: "normal", cls: "bg-ink" },
   { key: "penalized", kind: "penalized", cls: "bg-yellow" },
+  { key: "full", kind: "full", cls: "hazard-sm" },
   { key: "stale", kind: "stale", cls: "bg-bg" },
   { key: "cooldown", kind: "cooldown", cls: "hazard" },
   { key: "error", kind: "error", cls: "bg-red" },
@@ -81,7 +82,12 @@ function AdminOverview() {
             {
               label: t("adminOverview.headroom"),
               value: formatUSD(acc?.headroom_micro ?? 0),
-              note: t("adminOverview.reserved", { amount: formatUSD(acc?.reserved_micro ?? 0) }),
+              note: (
+                <>
+                  {t("adminOverview.reserved", { amount: formatUSD(acc?.reserved_micro ?? 0) })}
+                  {acc ? <OversoldLine count={acc.oversold_count} amount={formatUSD(acc.oversold_micro)} /> : null}
+                </>
+              ),
             },
             {
               label: t("adminOverview.attention"),

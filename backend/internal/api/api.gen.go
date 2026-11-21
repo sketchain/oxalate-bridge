@@ -19,6 +19,45 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AccountDisplayStatus.
+const (
+	AccountDisplayStatusCooldown     AccountDisplayStatus = "cooldown"
+	AccountDisplayStatusDisabled     AccountDisplayStatus = "disabled"
+	AccountDisplayStatusError        AccountDisplayStatus = "error"
+	AccountDisplayStatusFiveHourFull AccountDisplayStatus = "five_hour_full"
+	AccountDisplayStatusNormal       AccountDisplayStatus = "normal"
+	AccountDisplayStatusPaused       AccountDisplayStatus = "paused"
+	AccountDisplayStatusPenalized    AccountDisplayStatus = "penalized"
+	AccountDisplayStatusStale        AccountDisplayStatus = "stale"
+	AccountDisplayStatusWeekFull     AccountDisplayStatus = "week_full"
+)
+
+// Valid indicates whether the value is a known member of the AccountDisplayStatus enum.
+func (e AccountDisplayStatus) Valid() bool {
+	switch e {
+	case AccountDisplayStatusCooldown:
+		return true
+	case AccountDisplayStatusDisabled:
+		return true
+	case AccountDisplayStatusError:
+		return true
+	case AccountDisplayStatusFiveHourFull:
+		return true
+	case AccountDisplayStatusNormal:
+		return true
+	case AccountDisplayStatusPaused:
+		return true
+	case AccountDisplayStatusPenalized:
+		return true
+	case AccountDisplayStatusStale:
+		return true
+	case AccountDisplayStatusWeekFull:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AccountRuntimeStatus.
 const (
 	AccountRuntimeStatusCooldown AccountRuntimeStatus = "cooldown"
@@ -507,9 +546,16 @@ type AccountCreate struct {
 	Watermark5hPercent nullable.Nullable[float64] `json:"watermark_5h_percent,omitempty"`
 }
 
+// AccountDisplayStatus The single status to show for an account, by priority: error > disabled > cooldown >
+// five_hour_full / week_full / paused (hard exhausted) > stale > penalized > normal.
+type AccountDisplayStatus string
+
 // AccountList defines model for AccountList.
 type AccountList struct {
 	Items []Account `json:"items"`
+
+	// Summary Accounts counted by `display_status` (each account in exactly one bucket) and the pooled figures.
+	Summary OverviewAccounts `json:"summary"`
 }
 
 // AccountRef defines model for AccountRef.
@@ -519,19 +565,29 @@ type AccountRef struct {
 
 // AccountRuntime defines model for AccountRuntime.
 type AccountRuntime struct {
-	CooldownUntil      nullable.Nullable[time.Time]   `json:"cooldown_until,omitempty"`
-	CurrentConcurrency int64                          `json:"current_concurrency"`
-	DatabaseStatus     *string                        `json:"database_status,omitempty"`
-	EstimatesLoaded    *bool                          `json:"estimates_loaded,omitempty"`
-	FetchedAt          nullable.Nullable[time.Time]   `json:"fetched_at,omitempty"`
-	FiveHour           nullable.Nullable[QuotaWindow] `json:"five_hour,omitempty"`
-	HardExhausted      bool                           `json:"hard_exhausted"`
+	CooldownUntil      nullable.Nullable[time.Time] `json:"cooldown_until,omitempty"`
+	CurrentConcurrency int64                        `json:"current_concurrency"`
+	DatabaseStatus     *string                      `json:"database_status,omitempty"`
+
+	// DisplayStatus The single status to show for an account, by priority: error > disabled > cooldown >
+	// five_hour_full / week_full / paused (hard exhausted) > stale > penalized > normal.
+	DisplayStatus   AccountDisplayStatus           `json:"display_status"`
+	EstimatesLoaded *bool                          `json:"estimates_loaded,omitempty"`
+	FetchedAt       nullable.Nullable[time.Time]   `json:"fetched_at,omitempty"`
+	FiveHour        nullable.Nullable[QuotaWindow] `json:"five_hour,omitempty"`
+	HardExhausted   bool                           `json:"hard_exhausted"`
+
+	// HardReason Why the account cannot take requests (`5h_exhausted`, `week_exhausted`, `paused`, `cooldown`), empty otherwise.
+	HardReason string `json:"hard_reason"`
 
 	// HeadroomMicro H_A = (week.remaining − S_A) − Σ reservations.
 	HeadroomMicro int64                        `json:"headroom_micro"`
 	LastError     *string                      `json:"last_error,omitempty"`
 	Models        []string                     `json:"models"`
 	ObservedAt    nullable.Nullable[time.Time] `json:"observed_at,omitempty"`
+
+	// Oversold H_A < 0 (plan reservations exceed what is left of the week).
+	Oversold bool `json:"oversold"`
 
 	// Penalized 5-hour usage is at or above the effective watermark, so routing weight is multiplied by the penalty (shown as "降权中" while the status is normal).
 	Penalized     bool     `json:"penalized"`
@@ -543,11 +599,21 @@ type AccountRuntime struct {
 	Stale                   bool  `json:"stale"`
 
 	// State cpa-quota account state: cold, estimated or paused.
-	State        *string                        `json:"state,omitempty"`
-	Status       AccountRuntimeStatus           `json:"status"`
-	StatusReason string                         `json:"status_reason"`
-	Week         nullable.Nullable[QuotaWindow] `json:"week,omitempty"`
-	Weight       *float64                       `json:"weight,omitempty"`
+	State  *string              `json:"state,omitempty"`
+	Status AccountRuntimeStatus `json:"status"`
+
+	// StatusReason Raw detail behind `status_reason_code` (upstream error text, cooldown reason, last
+	// /quota error); may be empty. Not translated: show it only as a detail.
+	StatusReason string `json:"status_reason"`
+
+	// StatusReasonCode Machine-readable reason for `display_status` (empty when there is none). Known codes:
+	// `disabled`, `upstream_auth` (upstream 401 / 403), `unsupported_subscription`, `error`
+	// (any other error), `network`, `upstream_429`, `upstream_5xx`, `error_cooldown`,
+	// `cooldown`, `quota_stale`, `5h_exhausted`, `week_exhausted`, `paused`, `penalized`.
+	// Clients must cope with codes they do not know.
+	StatusReasonCode string                         `json:"status_reason_code"`
+	Week             nullable.Nullable[QuotaWindow] `json:"week,omitempty"`
+	Weight           *float64                       `json:"weight,omitempty"`
 }
 
 // AccountRuntimeStatus defines model for AccountRuntime.Status.
@@ -589,6 +655,7 @@ type AccountValidateRequest struct {
 
 // AdminOverview defines model for AdminOverview.
 type AdminOverview struct {
+	// Accounts Accounts counted by `display_status` (each account in exactly one bucket) and the pooled figures.
 	Accounts      OverviewAccounts                `json:"accounts"`
 	GeneratedAt   time.Time                       `json:"generated_at"`
 	LastReconcile nullable.Nullable[ReconcileRun] `json:"last_reconcile"`
@@ -806,6 +873,35 @@ type BalanceAdjust struct {
 
 // BalanceAdjustType defines model for BalanceAdjust.Type.
 type BalanceAdjustType string
+
+// BindCapacity The account's sold capacity as it is after the operation (this subscription included).
+type BindCapacity struct {
+	AccountId      openapi_types.UUID `json:"account_id"`
+	PlanMultiplier float64            `json:"plan_multiplier"`
+
+	// SoldUpstreamMicro sold_weekly_quota_micro ÷ the plan tier multiplier (upstream terms).
+	SoldUpstreamMicro int64 `json:"sold_upstream_micro"`
+
+	// SoldWeeklyQuotaMicro Σ weekly quota (user price) of the active and pending subscriptions on the account
+	SoldWeeklyQuotaMicro int64 `json:"sold_weekly_quota_micro"`
+
+	// SubscriptionQuotaMicro Weekly quota (user price) of the subscription being bound.
+	SubscriptionQuotaMicro int64 `json:"subscription_quota_micro"`
+
+	// WeekTotalMicro The account's week.total_usd; null when unknown.
+	WeekTotalMicro nullable.Nullable[int64] `json:"week_total_micro"`
+}
+
+// BindWarning defines model for BindWarning.
+type BindWarning struct {
+	// Code `overcommit` (sold upstream exceeds the week total), `week_total_unknown` (no week
+	// total reported yet), `account_not_normal` (the account is stale, cooling down, full
+	// or in error). Clients must cope with codes they do not know.
+	Code string `json:"code"`
+
+	// Message English text for clients that do not know the code.
+	Message string `json:"message"`
+}
 
 // BlockingSubscription defines model for BlockingSubscription.
 type BlockingSubscription struct {
@@ -1088,17 +1184,26 @@ type MyUsageSummary struct {
 // MyUsageSummaryGranularity defines model for MyUsageSummary.Granularity.
 type MyUsageSummaryGranularity string
 
-// OverviewAccounts defines model for OverviewAccounts.
+// OverviewAccounts Accounts counted by `display_status` (each account in exactly one bucket) and the pooled figures.
 type OverviewAccounts struct {
 	Cooldown int `json:"cooldown"`
 	Disabled int `json:"disabled"`
 	Error    int `json:"error"`
 
-	// HeadroomMicro Σ max(0
+	// Full Hard exhausted: 5-hour or week window full, or paused by the plugin.
+	Full int `json:"full"`
+
+	// HeadroomMicro Σ max(0, H_A) over enabled accounts that are not in error. A negative H_A (oversold) never offsets other accounts.
 	HeadroomMicro int64 `json:"headroom_micro"`
 
 	// Normal Normal and not penalized.
 	Normal int `json:"normal"`
+
+	// OversoldCount Accounts of the headroom set with H_A < 0.
+	OversoldCount int `json:"oversold_count"`
+
+	// OversoldMicro Σ −H_A over those accounts (how far reservations exceed what is left).
+	OversoldMicro int64 `json:"oversold_micro"`
 
 	// Penalized Normal status with the routing weight reduced (降权中).
 	Penalized int `json:"penalized"`
@@ -1468,10 +1573,18 @@ type SubscriptionStatus string
 
 // SubscriptionWithWarning defines model for SubscriptionWithWarning.
 type SubscriptionWithWarning struct {
-	Subscription Subscription `json:"subscription"`
+	// Capacity The account's sold capacity as it is after the operation (this subscription included).
+	Capacity BindCapacity `json:"capacity"`
+	DryRun   bool         `json:"dry_run"`
 
-	// Warning Set when the account's sold weekly quotas exceed its week total.
-	Warning nullable.Nullable[string] `json:"warning,omitempty"`
+	// Subscription The subscription after the operation; null for a dry run.
+	Subscription nullable.Nullable[Subscription] `json:"subscription"`
+
+	// Warning Deprecated — the messages of `warnings` joined with "; ", null when there is none.
+	Warning nullable.Nullable[string] `json:"warning"`
+
+	// Warnings Warnings of the operation (never blocking). A dry run returns exactly the warnings the real call would.
+	Warnings []BindWarning `json:"warnings"`
 }
 
 // Tier defines model for Tier.
@@ -1520,6 +1633,9 @@ type AccountIdFilter = openapi_types.UUID
 
 // Cursor defines model for Cursor.
 type Cursor = string
+
+// DryRun defines model for DryRun.
+type DryRun = bool
 
 // From defines model for From.
 type From = time.Time
@@ -1644,6 +1760,24 @@ type AdminListSubscriptionsParams struct {
 	Status    *SubscriptionStatus `form:"status,omitempty" json:"status,omitempty"`
 	UserId    *UserIdFilter       `form:"user_id,omitempty" json:"user_id,omitempty"`
 	AccountId *AccountIdFilter    `form:"account_id,omitempty" json:"account_id,omitempty"`
+}
+
+// AdminGrantSubscriptionParams defines parameters for AdminGrantSubscription.
+type AdminGrantSubscriptionParams struct {
+	// DryRun Validate and report capacity and warnings without changing anything.
+	DryRun *DryRun `form:"dry_run,omitempty" json:"dry_run,omitempty"`
+}
+
+// AdminAssignSubscriptionParams defines parameters for AdminAssignSubscription.
+type AdminAssignSubscriptionParams struct {
+	// DryRun Validate and report capacity and warnings without changing anything.
+	DryRun *DryRun `form:"dry_run,omitempty" json:"dry_run,omitempty"`
+}
+
+// AdminRebindSubscriptionParams defines parameters for AdminRebindSubscription.
+type AdminRebindSubscriptionParams struct {
+	// DryRun Validate and report capacity and warnings without changing anything.
+	DryRun *DryRun `form:"dry_run,omitempty" json:"dry_run,omitempty"`
 }
 
 // AdminGetUsageSummaryParams defines parameters for AdminGetUsageSummary.
@@ -1854,16 +1988,16 @@ type ServerInterface interface {
 	AdminListSubscriptions(w http.ResponseWriter, r *http.Request, params AdminListSubscriptionsParams)
 	// AdminGrantSubscription Open an active subscription for a user directly on an account, optionally charging the price.
 	// (POST /admin/subscriptions)
-	AdminGrantSubscription(w http.ResponseWriter, r *http.Request)
+	AdminGrantSubscription(w http.ResponseWriter, r *http.Request, params AdminGrantSubscriptionParams)
 	// AdminAssignSubscription Activate a pending subscription on an account (warns, never blocks, on overcommit).
 	// (POST /admin/subscriptions/{subscriptionId}/assign)
-	AdminAssignSubscription(w http.ResponseWriter, r *http.Request, subscriptionId SubscriptionId)
+	AdminAssignSubscription(w http.ResponseWriter, r *http.Request, subscriptionId SubscriptionId, params AdminAssignSubscriptionParams)
 
 	// (POST /admin/subscriptions/{subscriptionId}/cancel)
 	AdminCancelSubscription(w http.ResponseWriter, r *http.Request, subscriptionId SubscriptionId)
-
+	// AdminRebindSubscription Move an active or pending subscription to another account (warns, never blocks, on overcommit).
 	// (POST /admin/subscriptions/{subscriptionId}/rebind)
-	AdminRebindSubscription(w http.ResponseWriter, r *http.Request, subscriptionId SubscriptionId)
+	AdminRebindSubscription(w http.ResponseWriter, r *http.Request, subscriptionId SubscriptionId, params AdminRebindSubscriptionParams)
 
 	// (GET /admin/usage/summary)
 	AdminGetUsageSummary(w http.ResponseWriter, r *http.Request, params AdminGetUsageSummaryParams)
@@ -2125,13 +2259,13 @@ func (_ Unimplemented) AdminListSubscriptions(w http.ResponseWriter, r *http.Req
 
 // AdminGrantSubscription Open an active subscription for a user directly on an account, optionally charging the price.
 // (POST /admin/subscriptions)
-func (_ Unimplemented) AdminGrantSubscription(w http.ResponseWriter, r *http.Request) {
+func (_ Unimplemented) AdminGrantSubscription(w http.ResponseWriter, r *http.Request, params AdminGrantSubscriptionParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // AdminAssignSubscription Activate a pending subscription on an account (warns, never blocks, on overcommit).
 // (POST /admin/subscriptions/{subscriptionId}/assign)
-func (_ Unimplemented) AdminAssignSubscription(w http.ResponseWriter, r *http.Request, subscriptionId SubscriptionId) {
+func (_ Unimplemented) AdminAssignSubscription(w http.ResponseWriter, r *http.Request, subscriptionId SubscriptionId, params AdminAssignSubscriptionParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2140,8 +2274,9 @@ func (_ Unimplemented) AdminCancelSubscription(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// AdminRebindSubscription Move an active or pending subscription to another account (warns, never blocks, on overcommit).
 // (POST /admin/subscriptions/{subscriptionId}/rebind)
-func (_ Unimplemented) AdminRebindSubscription(w http.ResponseWriter, r *http.Request, subscriptionId SubscriptionId) {
+func (_ Unimplemented) AdminRebindSubscription(w http.ResponseWriter, r *http.Request, subscriptionId SubscriptionId, params AdminRebindSubscriptionParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3353,8 +3488,27 @@ func (siw *ServerInterfaceWrapper) AdminListSubscriptions(w http.ResponseWriter,
 // AdminGrantSubscription operation middleware
 func (siw *ServerInterfaceWrapper) AdminGrantSubscription(w http.ResponseWriter, r *http.Request) {
 
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminGrantSubscriptionParams
+
+	// ------------- Optional query parameter "dry_run" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "dry_run", r.URL.Query(), &params.DryRun, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "dry_run"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "dry_run", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.AdminGrantSubscription(w, r)
+		siw.Handler.AdminGrantSubscription(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3379,8 +3533,24 @@ func (siw *ServerInterfaceWrapper) AdminAssignSubscription(w http.ResponseWriter
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminAssignSubscriptionParams
+
+	// ------------- Optional query parameter "dry_run" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "dry_run", r.URL.Query(), &params.DryRun, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "dry_run"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "dry_run", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.AdminAssignSubscription(w, r, subscriptionId)
+		siw.Handler.AdminAssignSubscription(w, r, subscriptionId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3431,8 +3601,24 @@ func (siw *ServerInterfaceWrapper) AdminRebindSubscription(w http.ResponseWriter
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminRebindSubscriptionParams
+
+	// ------------- Optional query parameter "dry_run" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "dry_run", r.URL.Query(), &params.DryRun, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "dry_run"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "dry_run", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.AdminRebindSubscription(w, r, subscriptionId)
+		siw.Handler.AdminRebindSubscription(w, r, subscriptionId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5816,11 +6002,26 @@ func (response AdminListSubscriptionsdefaultJSONResponse) VisitAdminListSubscrip
 }
 
 type AdminGrantSubscriptionRequestObject struct {
-	Body *AdminGrantSubscriptionJSONRequestBody
+	Params AdminGrantSubscriptionParams
+	Body   *AdminGrantSubscriptionJSONRequestBody
 }
 
 type AdminGrantSubscriptionResponseObject interface {
 	VisitAdminGrantSubscriptionResponse(w http.ResponseWriter) error
+}
+
+type AdminGrantSubscription200JSONResponse SubscriptionWithWarning
+
+func (response AdminGrantSubscription200JSONResponse) VisitAdminGrantSubscriptionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type AdminGrantSubscription201JSONResponse SubscriptionWithWarning
@@ -5856,6 +6057,7 @@ func (response AdminGrantSubscriptiondefaultJSONResponse) VisitAdminGrantSubscri
 
 type AdminAssignSubscriptionRequestObject struct {
 	SubscriptionId SubscriptionId `json:"subscriptionId"`
+	Params         AdminAssignSubscriptionParams
 	Body           *AdminAssignSubscriptionJSONRequestBody
 }
 
@@ -5936,6 +6138,7 @@ func (response AdminCancelSubscriptiondefaultJSONResponse) VisitAdminCancelSubsc
 
 type AdminRebindSubscriptionRequestObject struct {
 	SubscriptionId SubscriptionId `json:"subscriptionId"`
+	Params         AdminRebindSubscriptionParams
 	Body           *AdminRebindSubscriptionJSONRequestBody
 }
 
@@ -7197,7 +7400,7 @@ type StrictServerInterface interface {
 
 	// (POST /admin/subscriptions/{subscriptionId}/cancel)
 	AdminCancelSubscription(ctx context.Context, request AdminCancelSubscriptionRequestObject) (AdminCancelSubscriptionResponseObject, error)
-
+	// AdminRebindSubscription Move an active or pending subscription to another account (warns, never blocks, on overcommit).
 	// (POST /admin/subscriptions/{subscriptionId}/rebind)
 	AdminRebindSubscription(ctx context.Context, request AdminRebindSubscriptionRequestObject) (AdminRebindSubscriptionResponseObject, error)
 
@@ -8144,8 +8347,10 @@ func (sh *strictHandler) AdminListSubscriptions(w http.ResponseWriter, r *http.R
 }
 
 // AdminGrantSubscription operation middleware
-func (sh *strictHandler) AdminGrantSubscription(w http.ResponseWriter, r *http.Request) {
+func (sh *strictHandler) AdminGrantSubscription(w http.ResponseWriter, r *http.Request, params AdminGrantSubscriptionParams) {
 	var request AdminGrantSubscriptionRequestObject
+
+	request.Params = params
 
 	var body AdminGrantSubscriptionJSONRequestBody
 	if err := runtime.BindJSONBody(r, &body); err != nil {
@@ -8175,10 +8380,11 @@ func (sh *strictHandler) AdminGrantSubscription(w http.ResponseWriter, r *http.R
 }
 
 // AdminAssignSubscription operation middleware
-func (sh *strictHandler) AdminAssignSubscription(w http.ResponseWriter, r *http.Request, subscriptionId SubscriptionId) {
+func (sh *strictHandler) AdminAssignSubscription(w http.ResponseWriter, r *http.Request, subscriptionId SubscriptionId, params AdminAssignSubscriptionParams) {
 	var request AdminAssignSubscriptionRequestObject
 
 	request.SubscriptionId = subscriptionId
+	request.Params = params
 
 	var body AdminAssignSubscriptionJSONRequestBody
 	if err := runtime.BindJSONBody(r, &body); err != nil {
@@ -8241,10 +8447,11 @@ func (sh *strictHandler) AdminCancelSubscription(w http.ResponseWriter, r *http.
 }
 
 // AdminRebindSubscription operation middleware
-func (sh *strictHandler) AdminRebindSubscription(w http.ResponseWriter, r *http.Request, subscriptionId SubscriptionId) {
+func (sh *strictHandler) AdminRebindSubscription(w http.ResponseWriter, r *http.Request, subscriptionId SubscriptionId, params AdminRebindSubscriptionParams) {
 	var request AdminRebindSubscriptionRequestObject
 
 	request.SubscriptionId = subscriptionId
+	request.Params = params
 
 	var body AdminRebindSubscriptionJSONRequestBody
 	if err := runtime.BindJSONBody(r, &body); err != nil {

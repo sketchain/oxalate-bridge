@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Section } from "@/components/Section";
 import { ProgressBar } from "@/components/Progress";
 import { StatusTag } from "@/components/Tags";
+import { HeadroomValue } from "@/components/AccountCard";
 import { PairBars, TimeLines } from "@/components/Charts";
 import { EmptyState, ErrorBox } from "@/components/Feedback";
 import { ValidationResult } from "@/components/ValidationResult";
@@ -22,7 +23,7 @@ import { Field } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApiMutation } from "@/lib/mutations";
-import { accountKind, accountNote } from "@/lib/accounts";
+import { accountKind, accountNote, reasonLabel } from "@/lib/accounts";
 import { formatDate, formatDateTime, formatPercent, formatUSD } from "@/lib/format";
 import { useNow } from "@/lib/hooks";
 import { errorText } from "@/lib/errors";
@@ -267,14 +268,14 @@ function Runtime({ a }: { a: Account }) {
   const rt = a.runtime;
   const rows: [string, ReactNode][] = [
     [t("accounts.rt.status"), <StatusTag kind={accountKind(a)} />],
-    [t("accounts.rt.reason"), rt.status_reason || "—"],
+    [t("accounts.rt.reason"), <ReasonText key="r" code={rt.status_reason_code} detail={rt.status_reason} />],
     [t("accounts.rt.state"), rt.state || "—"],
     [t("accounts.rt.safety"), rt.safety_factor != null ? rt.safety_factor.toFixed(2) : "—"],
     [t("accounts.rt.observed"), formatDateTime(rt.observed_at)],
     [t("accounts.rt.fetched"), formatDateTime(rt.fetched_at)],
     [t("accounts.rt.cooldown"), formatDateTime(rt.cooldown_until)],
     [t("accounts.rt.weight"), rt.weight != null ? rt.weight.toFixed(3) : "—"],
-    [t("accounts.headroom"), formatUSD(rt.headroom_micro)],
+    [t("accounts.headroom"), <HeadroomValue key="h" micro={rt.headroom_micro} />],
     [t("accounts.reserved"), formatUSD(rt.reserved_micro)],
     [t("accounts.rt.spend"), formatUSD(rt.spend_since_observed_micro)],
     [t("accounts.rt.sold"), `${formatUSD(a.sold_upstream_micro)} / ${a.week_total_micro != null ? formatUSD(a.week_total_micro) : "—"}`],
@@ -310,6 +311,22 @@ function Runtime({ a }: { a: Account }) {
         ))}
       </dl>
     </Section>
+  );
+}
+
+/** Translated reason code (never the raw code), unknown codes as "其他原因" + the code in small mono; the raw detail below. */
+function ReasonText({ code, detail }: { code: string; detail: string }) {
+  const { t } = useTranslation();
+  if (!code) return <>—</>;
+  const r = reasonLabel(t, code);
+  return (
+    <span className="flex flex-col">
+      <span className="font-sans">
+        {r.text}
+        {r.unknown ? <code className="num ml-1.5 text-[11px] text-muted">{code}</code> : null}
+      </span>
+      {detail ? <span className="text-[11px] break-words text-muted">{detail}</span> : null}
+    </span>
   );
 }
 

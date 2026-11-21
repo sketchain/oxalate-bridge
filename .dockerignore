@@ -4,3 +4,8 @@
 .env
 *.md
 !README.md
+docs
+.dev
+web/playwright-report
+web/test-results
+backend/internal/webui/dist/assets

@@ -4,11 +4,34 @@ import { cn } from "@/lib/utils";
 
 const base = "label-mono inline-flex h-[22px] items-center whitespace-nowrap px-1.5 leading-none";
 
-export type StatusKind = "normal" | "penalized" | "stale" | "cooldown" | "error" | "unavailable" | "disabled" | "pending";
+export type StatusKind =
+  | "normal"
+  | "penalized"
+  | "stale"
+  | "cooldown"
+  | "error"
+  | "unavailable"
+  | "disabled"
+  | "pending"
+  | "five_hour_full"
+  | "week_full"
+  | "paused"
+  | "full";
 
-/** Square status tag. */
+const FULL_KINDS: ReadonlySet<StatusKind> = new Set(["five_hour_full", "week_full", "paused", "full"]);
+
+/** Square status tag. The "full" kinds (hard exhausted) get a 1px ink frame with an 8px hazard stripe on the left. */
 export function StatusTag({ kind, className }: { kind: StatusKind; className?: string }) {
   const { t } = useTranslation();
+  if (FULL_KINDS.has(kind)) {
+    return (
+      <span data-status={kind} className={cn(base, "border border-ink bg-bg pr-1.5 pl-0 text-ink", className)}>
+        {/* Fixed yellow / black in both themes, like a warning label. */}
+        <span aria-hidden="true" className="hazard-sm mr-1.5 w-2 shrink-0 self-stretch" />
+        {t(`status.${kind}`)}
+      </span>
+    );
+  }
   const styles: Record<StatusKind, string> = {
     normal: "bg-ink text-bg",
     penalized: "border border-ink bg-yellow text-on-yellow",
@@ -18,8 +41,16 @@ export function StatusTag({ kind, className }: { kind: StatusKind; className?: s
     unavailable: "bg-red text-on-red",
     disabled: "border border-rule text-muted",
     pending: "border border-dashed border-ink text-ink",
+    five_hour_full: "",
+    week_full: "",
+    paused: "",
+    full: "",
   };
-  return <span className={cn(base, styles[kind], className)}>{t(`status.${kind}`)}</span>;
+  return (
+    <span data-status={kind} className={cn(base, styles[kind], className)}>
+      {t(`status.${kind}`)}
+    </span>
+  );
 }
 
 /** Tier tag: plan = ink, standard = outlined, force = yellow with ink border. */
@@ -64,4 +95,20 @@ export function CountBadge({ n, className }: { n: number; className?: string }) 
 /** HTTP status: plain for 2xx, red plate otherwise. */
 export function StatusCode({ code }: { code: number }) {
   return code >= 200 && code < 300 ? <span className="num text-[12px]">{code}</span> : <span className="num bg-red px-1 text-[12px] text-on-red">{code}</span>;
+}
+
+/** "预留超出剩余": a negative headroom (oversold account). */
+export function OversoldTag({ className }: { className?: string }) {
+  const { t } = useTranslation();
+  return <span className={cn(base, "h-[18px] border border-red px-1 text-[10px] text-red", className)}>{t("accounts.oversoldTag")}</span>;
+}
+
+/** "超卖账号 N 个，合计超出 $X" (or a quiet "none" line). */
+export function OversoldLine({ count, amount, className }: { count: number; amount: string; className?: string }) {
+  const { t } = useTranslation();
+  return (
+    <p data-testid="oversold-line" className={cn("num text-[12px]", count > 0 ? "font-semibold text-red" : "text-muted", className)}>
+      {count > 0 ? t("accounts.oversoldLine", { n: count, amount }) : t("accounts.noOversold")}
+    </p>
+  );
 }

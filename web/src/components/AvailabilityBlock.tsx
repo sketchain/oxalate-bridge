@@ -10,10 +10,10 @@ import { EstimatedTag, StatusTag } from "./Tags";
 import { EmptyState, ErrorBox } from "./Feedback";
 import { Skeleton } from "./ui/skeleton";
 
-function Cell({ cell, balance }: { cell: PoolCell; balance: number }) {
+function CellBody({ cell, balance }: { cell: PoolCell; balance: number }) {
   const { t } = useTranslation();
   return (
-    <td className={cn("px-3 py-2.5 align-top", cell.limitedByBalance && "border-l-[3px] border-l-ink")}>
+    <>
       <div className="num text-[16px] font-medium">{formatUSD(cell.available)}</div>
       {cell.limitedByBalance ? (
         <div className="mt-0.5 text-[11px] leading-tight">
@@ -23,7 +23,68 @@ function Cell({ cell, balance }: { cell: PoolCell; balance: number }) {
       ) : cell.unlimitedPool ? (
         <div className="mt-0.5 text-[11px] text-muted">{t("availability.unlimitedPool")}</div>
       ) : null}
+    </>
+  );
+}
+
+function Cell({ cell, balance }: { cell: PoolCell; balance: number }) {
+  return (
+    <td className={cn("px-3 py-2.5 align-top", cell.limitedByBalance && "border-l-[3px] border-l-ink")}>
+      <CellBody cell={cell} balance={balance} />
     </td>
+  );
+}
+
+/** Phone layout (< 640px): one card per plan, two cells (5h, period). */
+function PlanCardMobile({ row, now }: { row: PlanRow; now: Date }) {
+  const { t, i18n } = useTranslation();
+  return (
+    <li className="border border-ink" aria-label={row.name}>
+      <div className="flex items-center justify-between gap-2 border-b border-ink px-3 py-2">
+        <span className="min-w-0 truncate font-semibold">{row.name}</span>
+        {!row.pending && row.accountStatus ? <StatusTag kind={row.accountStatus} /> : null}
+      </div>
+      {row.pending ? (
+        <p className="px-3 py-2.5 text-[13px] text-muted">{t("plans.waitingAssignment")}</p>
+      ) : (
+        <dl className="grid grid-cols-2">
+          <div className="min-w-0 px-3 py-2.5">
+            <dt className="label-mono text-muted">{t("availability.fiveHour")}</dt>
+            <dd className="num mt-0.5 text-[16px] font-medium">{row.five ? formatUSD(row.five.available) : "—"}</dd>
+            <dd className="num text-[11px] break-words text-muted">
+              {row.five?.resetAt ? t("availability.resetsAt", { when: formatWhen(row.five.resetAt, now, i18n.language) }) : row.five?.unlimited ? t("availability.noFiveHour") : ""}
+            </dd>
+          </div>
+          <div className="min-w-0 border-l border-ink px-3 py-2.5">
+            <dt className="label-mono text-muted">{t("availability.period")}</dt>
+            <dd className="num mt-0.5 text-[16px] font-medium">{row.period ? formatUSD(row.period.available) : "—"}</dd>
+            <dd className="num text-[11px] break-words text-muted">{row.period?.endsAt ? t("availability.endsAt", { when: formatWhen(row.period.endsAt, now, i18n.language) }) : ""}</dd>
+          </div>
+        </dl>
+      )}
+    </li>
+  );
+}
+
+/** Phone layout: one card per call type, a 2×2 grid of 1h / 5h / 1d / 7d. */
+function PoolCardMobile({ title, cells, balance }: { title: string; cells: PoolCell[]; balance: number }) {
+  return (
+    <li className="border border-ink" aria-label={title}>
+      <div className="border-b border-ink px-3 py-2 font-semibold">{title}</div>
+      <dl className="grid grid-cols-2">
+        {cells.map((c, i) => (
+          <div
+            key={c.horizon}
+            className={cn("min-w-0 px-3 py-2.5", i % 2 === 1 && "border-l border-ink", i >= 2 && "border-t border-ink", c.limitedByBalance && "border-l-[3px] border-l-ink")}
+          >
+            <dt className="label-mono text-muted">{c.label}</dt>
+            <dd className="mt-0.5">
+              <CellBody cell={c} balance={balance} />
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </li>
   );
 }
 
@@ -85,7 +146,17 @@ export function AvailabilityBlock({ n }: { n: number }) {
         </div>
       ) : (
         <div className="flex flex-col">
-          <div className="scroll-x">
+          {/* Phone: cards, no horizontal scrolling. */}
+          <div className="flex flex-col gap-3 p-3 sm:hidden" data-testid="availability-cards">
+            <ul className="flex flex-col gap-3" aria-label={t("availability.plansTable")}>
+              {a.plans.length === 0 ? <li className="text-[13px] text-muted">{t("availability.noPlans")}</li> : planRows(a.plans).map((row) => <PlanCardMobile key={row.id} row={row} now={now} />)}
+            </ul>
+            <ul className="flex flex-col gap-3" aria-label={t("availability.poolsTable")}>
+              <PoolCardMobile title={t("availability.normal")} cells={poolCells(a.normal)} balance={a.balance_available_micro} />
+              <PoolCardMobile title={t("availability.force")} cells={poolCells(a.force)} balance={a.balance_available_micro} />
+            </ul>
+          </div>
+          <div className="scroll-x max-sm:hidden">
             <table className="w-full min-w-[560px] border-collapse text-[13px]" aria-label={t("availability.plansTable")}>
               <thead>
                 <tr className="border-b border-ink">
@@ -116,7 +187,7 @@ export function AvailabilityBlock({ n }: { n: number }) {
               </tbody>
             </table>
           </div>
-          <div className="scroll-x border-t-2 border-ink">
+          <div className="scroll-x border-t-2 border-ink max-sm:hidden">
             <table className="w-full min-w-[560px] border-collapse text-[13px]" aria-label={t("availability.poolsTable")}>
               <thead>
                 <tr className="border-b border-ink">

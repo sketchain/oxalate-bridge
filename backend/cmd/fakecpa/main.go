@@ -28,27 +28,11 @@ import (
 	"github.com/sketchain/oxalate-bridge/backend/internal/fakecpa"
 )
 
-// profile shapes one demo account.
-type profile struct {
-	tier                 string
-	fiveUsed, weekUsed   float64
-	fiveTotal, weekTotal float64
-	fiveReset, weekReset time.Duration
-}
-
-// profiles cover the states the panel shows: plenty of room, above the 5-hour
-// watermark (penalized), a full 5-hour window, and a quiet account.
-var profiles = []profile{
-	{"max20x", 18, 32, 40, 400, 3 * time.Hour, 4 * 24 * time.Hour},
-	{"max5x", 78, 55, 10, 100, 90 * time.Minute, 2 * 24 * time.Hour},
-	{"max5x", 100, 71, 10, 100, 40 * time.Minute, 5 * 24 * time.Hour},
-	{"pro", 5, 12, 4, 40, 4 * time.Hour, 6 * 24 * time.Hour},
-}
-
 func main() {
 	listen := flag.String("listen", "127.0.0.1:18400", "host:port of the first instance; the others use the next ports")
 	n := flag.Int("n", 4, "number of instances (accounts)")
 	delay := flag.Duration("delay", 300*time.Millisecond, "time to first byte of relay responses")
+	health := flag.Bool("healthcheck", false, "probe the instances given by -listen and -n and exit 0 when all answer (container health checks)")
 	flag.Parse()
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
@@ -62,6 +46,9 @@ func main() {
 		log.Error("bad -listen port or -n")
 		os.Exit(2)
 	}
+	if *health {
+		os.Exit(probe(host, port, *n))
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -69,10 +56,10 @@ func main() {
 	var servers []*http.Server
 	for i := 1; i <= *n; i++ {
 		addr := net.JoinHostPort(host, strconv.Itoa(port+i-1))
-		c := fakecpa.NewUnstarted(fmt.Sprintf("demo-%d", i))
-		p := profiles[(i-1)%len(profiles)]
-		c.Tier, c.FiveUsed, c.WeekUsed, c.FiveTotal, c.WeekTotal = p.tier, p.fiveUsed, p.weekUsed, p.fiveTotal, p.weekTotal
-		c.FiveReset, c.WeekReset = now.Add(p.fiveReset).Truncate(time.Second), now.Add(p.weekReset).Truncate(time.Minute)
+		// The quota figures come from fakecpa.DemoProfiles, which seed-demo
+		// also uses for the demonstration cpa-quota estimates.
+		c := fakecpa.NewUnstarted(fakecpa.DemoInstance(i))
+		c.ApplyDemo(fakecpa.DemoProfileFor(i), now)
 		c.BaseURL, c.Drift, c.Delay = "http://"+addr, true, *delay
 		srv := &http.Server{Addr: addr, Handler: c, ReadHeaderTimeout: 10 * time.Second}
 		servers = append(servers, srv)
@@ -90,4 +77,26 @@ func main() {
 	for _, s := range servers {
 		_ = s.Shutdown(sctx)
 	}
+}
+
+// probe checks /_fake/healthz on every instance; "0.0.0.0" or "" is probed
+// on the loopback address.
+func probe(host string, port, n int) int {
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	hc := &http.Client{Timeout: 2 * time.Second}
+	for i := 0; i < n; i++ {
+		resp, err := hc.Get("http://" + net.JoinHostPort(host, strconv.Itoa(port+i)) + "/_fake/healthz") //nolint:noctx // CLI probe
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "healthcheck:", err)
+			return 1
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode >= 300 {
+			fmt.Fprintln(os.Stderr, "healthcheck:", resp.Status)
+			return 1
+		}
+	}
+	return 0
 }

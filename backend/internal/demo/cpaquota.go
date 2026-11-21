@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/sketchain/oxalate-bridge/backend/internal/cpaquota"
+	"github.com/sketchain/oxalate-bridge/backend/internal/fakecpa"
 )
 
 // cpaQuota creates a demonstration cpa-quota schema (estimates, k trend,
@@ -24,6 +25,11 @@ func (s *seeder) cpaQuota(ctx context.Context) error {
 	if exists {
 		s.log.Info("cpa-quota schema exists; demo cpa-quota data skipped", "schema", schema)
 		return nil
+	}
+	// Refresh the bridge's own snapshots first so they and the estimates
+	// below are read from the fakes at the same moment.
+	if err := s.app.Jobs.PollQuotas(ctx); err != nil {
+		s.log.Warn("poll quotas before the demo estimates", "err", err)
 	}
 	q := pgx.Identifier{schema}.Sanitize()
 	bridge := pgx.Identifier{s.app.Cfg.Schema}.Sanitize()
@@ -42,17 +48,40 @@ func (s *seeder) cpaQuota(ctx context.Context) error {
 	}
 	now := time.Now().UTC()
 	for i, acc := range s.accounts {
-		instance, auth := fmt.Sprintf("demo-%d", i+1), fmt.Sprintf("acct-demo-%d", i+1)
-		peak5, peak7 := 55.0+float64(i)*18, 45.0+float64(i)*12
-		k := 5.2 + float64(i)*0.6
-		detail, _ := json.Marshal(map[string]any{"auth_index": auth, "provider": "claude", "k": k, "demo": true})
+		instance := fakecpa.DemoInstance(i + 1)
+		prof := fakecpa.DemoProfileFor(i + 1)
+		// The estimate mirrors what the fake reports right now (the same
+		// fakecpa.DemoProfiles entry plus the usage of the seeded requests),
+		// so the runtime and estimate sections of the account page agree.
+		qctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		quota, err := s.app.CPA.Quota(qctx, s.fakeURL(i+1), "quota-"+instance)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("read /quota of %s: %w", instance, err)
+		}
+		if len(quota.Accounts) == 0 || quota.Accounts[0].FiveHour == nil || quota.Accounts[0].Week == nil {
+			return fmt.Errorf("/quota of %s has no windows", instance)
+		}
+		qa := quota.Accounts[0]
+		auth := qa.AuthIndex
+		five, week := qa.FiveHour, qa.Week
+		k := prof.K
+		peak5, peak7 := five.UsedPercent, week.UsedPercent
+		detail, _ := json.Marshal(map[string]any{"auth_index": auth, "provider": "claude", "k": k, "demo": true,
+			"profile": map[string]any{"tier": prof.Tier, "five_hour_total_usd": prof.FiveTotal, "weekly_total_usd": prof.WeekTotal,
+				"safety_factor": prof.Safety}})
+		observed := now
+		if qa.ObservedAt != nil {
+			observed = *qa.ObservedAt
+		}
 		if _, err := tx.Exec(ctx, `INSERT INTO `+q+`.estimates (instance, auth_index, provider, subscription, tier, state, segment_window, basis,
 			k, k_source, totals_from, safety_factor, used_5h, reset_5h, used_7d, reset_7d, five_hour_total_usd, weekly_total_usd,
 			remaining_five_hour_usd, remaining_week_usd, clean_blocks, total_blocks, segments, excluded_segments, ratio, observed_at,
 			estimated_at, detail)
-			VALUES ($1, $2, 'claude', 'claude', 'max5x', 'estimated', '5h', 'raw', $3, 'fit', 'tier', 0.9, $4, $5, $6, $7, 10, 100,
-			$8, $9, 12, 14, 240, 6, 1.02, $10, $10, $11)`,
-			instance, auth, k, peak5/2, now.Add(3*time.Hour), peak7/2, now.Add(4*24*time.Hour), 9*(1-peak5/200), 90*(1-peak7/200), now, detail); err != nil {
+			VALUES ($1, $2, 'claude', $3, $4, $5, '5h', 'raw', $6, 'fit', 'tier', $7, $8, $9, $10, $11, $12, $13,
+			$14, $15, 12, 14, 240, 6, 1.02, $16, $17, $18)`,
+			instance, auth, quota.Subscription, quota.Tier, qa.State, k, qa.SafetyFactor, five.UsedPercent, five.ResetAt,
+			week.UsedPercent, week.ResetAt, five.TotalUSD, week.TotalUSD, five.RemainingUSD, week.RemainingUSD, observed, now, detail); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO `+q+`.k_trend_daily (instance, auth_index, day, gain_5h, gain_7d, k, segments, excluded_segments, cost_usd, gain)
@@ -65,8 +94,17 @@ func (s *seeder) cpaQuota(ctx context.Context) error {
 		for _, w := range []struct {
 			seconds, step, span int
 			peak                float64
-		}{{18000, 600, 7 * 86400, peak5}, {604800, 3600, 30 * 86400, peak7}} {
+			reset               *time.Time
+		}{{18000, 600, 7 * 86400, peak5, five.ResetAt}, {604800, 3600, 30 * 86400, peak7, week.ResetAt}} {
+			// Windows start at reset − period, so the latest point lands near
+			// the currently reported usage and reset.
 			anchor := now.Unix() - int64(i*4000) - int64(w.seconds/3)
+			elapsed := float64(w.seconds) / 3
+			if w.reset != nil {
+				anchor = w.reset.Unix() - int64(w.seconds)
+				elapsed = max(1, float64(now.Unix()-anchor))
+			}
+			peak := min(100, w.peak*float64(w.seconds)/elapsed)
 			if _, err := tx.Exec(ctx, `WITH pts AS (
 					SELECT (extract(epoch FROM t))::bigint AS s
 					FROM generate_series(now() - make_interval(secs => $6::float8), now(), make_interval(secs => $5::float8)) t
@@ -80,7 +118,7 @@ func (s *seeder) cpaQuota(ctx context.Context) error {
 				SELECT id, $1::text, $2::text, 'claude', 'unified', $3::bigint, at_ns,
 				       least(100, (phase::float8 / $3::bigint) * $7::float8 + random() * 2),
 				       (at_ns / 1000000000 + $3::bigint - phase) * 1000000000
-				FROM p`, instance, auth, int64(w.seconds), anchor, w.step, w.span, w.peak); err != nil {
+				FROM p`, instance, auth, int64(w.seconds), anchor, w.step, w.span, peak); err != nil {
 				return err
 			}
 		}
