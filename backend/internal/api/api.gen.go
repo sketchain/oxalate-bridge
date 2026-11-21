@@ -465,17 +465,20 @@ func (e GetMyUsageSummaryParamsGranularity) Valid() bool {
 
 // Account defines model for Account.
 type Account struct {
-	AuthIndex      string                 `json:"auth_index"`
-	BaseUrl        string                 `json:"base_url"`
-	CreatedAt      time.Time              `json:"created_at"`
-	Enabled        bool                   `json:"enabled"`
-	Id             openapi_types.UUID     `json:"id"`
-	Instance       string                 `json:"instance"`
-	MaxConcurrency nullable.Nullable[int] `json:"max_concurrency,omitempty"`
-	Name           string                 `json:"name"`
-	Note           string                 `json:"note"`
-	Provider       string                 `json:"provider"`
-	Runtime        AccountRuntime         `json:"runtime"`
+	AuthIndex string             `json:"auth_index"`
+	BaseUrl   string             `json:"base_url"`
+	CreatedAt time.Time          `json:"created_at"`
+	Enabled   bool               `json:"enabled"`
+	Id        openapi_types.UUID `json:"id"`
+	Instance  string             `json:"instance"`
+
+	// K The k of the account's cpa-quota estimate; null when cpa-quota has none or is unavailable.
+	K              nullable.Nullable[float64] `json:"k,omitempty"`
+	MaxConcurrency nullable.Nullable[int]     `json:"max_concurrency,omitempty"`
+	Name           string                     `json:"name"`
+	Note           string                     `json:"note"`
+	Provider       string                     `json:"provider"`
+	Runtime        AccountRuntime             `json:"runtime"`
 
 	// SoldUpstreamMicro sold_weekly_quota_micro ÷ plan multiplier, comparable with week_total_micro (the overcommit warning uses the same figures).
 	SoldUpstreamMicro int64 `json:"sold_upstream_micro"`

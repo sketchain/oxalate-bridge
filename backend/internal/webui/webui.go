@@ -1,5 +1,8 @@
 // Package webui serves the embedded panel frontend. The frontend build
-// (web/) writes its output to ./dist, which is embedded at compile time.
+// (web/, `pnpm build`) writes its output to ./dist, which is embedded at
+// compile time. The repository only holds dist/.gitkeep; without a build the
+// placeholder page in ./placeholder is served instead, so the Go code always
+// compiles.
 package webui
 
 import (
@@ -13,6 +16,15 @@ import (
 //go:embed all:dist
 var dist embed.FS
 
+//go:embed placeholder/index.html
+var placeholder []byte
+
+// Built reports whether a frontend build is embedded.
+func Built() bool {
+	_, err := fs.Stat(dist, "dist/index.html")
+	return err == nil
+}
+
 // Handler serves static files and falls back to index.html for SPA routes.
 func Handler() http.Handler {
 	sub, err := fs.Sub(dist, "dist")
@@ -20,9 +32,16 @@ func Handler() http.Handler {
 		panic(err)
 	}
 	files := http.FileServer(http.FS(sub))
+	built := Built()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !built {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-cache")
+			_, _ = w.Write(placeholder)
 			return
 		}
 		p := strings.TrimPrefix(path.Clean(r.URL.Path), "/")

@@ -43,3 +43,7 @@ WHERE instance = $1 AND auth_index = $2 AND accounting = 'complete'
   AND requested_ns >= sqlc.arg('from_ns')::bigint AND requested_ns < sqlc.arg('to_ns')::bigint
 GROUP BY 1
 ORDER BY 1;
+
+-- name: ListEstimateK :many
+-- k of every estimate (account list).
+SELECT instance, auth_index, k FROM estimates;

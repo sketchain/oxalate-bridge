@@ -12,6 +12,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/sketchain/oxalate-bridge/backend/internal/billing"
+	"github.com/sketchain/oxalate-bridge/backend/internal/cpaquota/cqsql"
 	"github.com/sketchain/oxalate-bridge/backend/internal/db/sqlc"
 	"github.com/sketchain/oxalate-bridge/backend/internal/router"
 	"github.com/sketchain/oxalate-bridge/backend/internal/settle"
@@ -73,6 +74,36 @@ func (s *Server) fillSold(ctx context.Context, a *Account, st *router.AccountSta
 	a.SoldUpstreamMicro = int64(float64(sold) / mult)
 	if st != nil && st.Snapshot != nil && st.Snapshot.HasData && st.Snapshot.Account.Week != nil && st.Snapshot.Account.Week.TotalUSD > 0 {
 		a.WeekTotalMicro = nullable.NewNullableWithValue(billing.USDToMicro(st.Snapshot.Account.Week.TotalUSD))
+	}
+}
+
+// fillK sets each account's k from the cpa-quota estimates (one query). A
+// missing or unreadable cpa-quota schema leaves k null.
+func (s *Server) fillK(ctx context.Context, items []Account) {
+	for i := range items {
+		items[i].K = nullable.NewNullNullable[float64]()
+	}
+	if s.CPAQuota == nil || len(items) == 0 {
+		return
+	}
+	ks := map[string]float64{}
+	err := s.CPAQuota.Read(ctx, func(ctx context.Context, q *cqsql.Queries) error {
+		rows, err := q.ListEstimateK(ctx)
+		for _, r := range rows {
+			if r.K != nil {
+				ks[r.Instance+"\x00"+r.AuthIndex] = *r.K
+			}
+		}
+		return err
+	})
+	if err != nil {
+		s.Log.Debug("cpa-quota k", "err", err)
+		return
+	}
+	for i := range items {
+		if k, ok := ks[items[i].Instance+"\x00"+items[i].AuthIndex]; ok {
+			items[i].K = nullable.NewNullableWithValue(k)
+		}
 	}
 }
 

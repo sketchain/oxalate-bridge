@@ -1,0 +1,160 @@
+@import "tailwindcss";
+@import "@fontsource-variable/archivo/wdth.css";
+@import "@fontsource/ibm-plex-mono/latin-400.css";
+@import "@fontsource/ibm-plex-mono/latin-500.css";
+@import "@fontsource/ibm-plex-mono/latin-700.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * "Reagent label" palette. These are the only colours: no other hues, no
+ * shadows, no gradients except the hazard stripe used for cooldown / full.
+ */
+:root {
+  --bg: #ffffff;
+  --ink: #0a0a0a;
+  --muted: #5e5e5e;
+  --rule: #e2e2e2;
+  --chart: #a8a8a8;
+  --yellow: #f2c200;
+  --red: #d7261e;
+  --on-yellow: #0a0a0a;
+  --on-red: #ffffff;
+  --hazard: repeating-linear-gradient(-45deg, #f2c200 0 6px, #0a0a0a 6px 12px);
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #0b0b0b;
+  --ink: #f2f2f2;
+  --muted: #a3a3a3;
+  --rule: #333333;
+  --chart: #6b6b6b;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-rule: var(--rule);
+  --color-chart: var(--chart);
+  --color-yellow: var(--yellow);
+  --color-red: var(--red);
+  --color-on-yellow: var(--on-yellow);
+  --color-on-red: var(--on-red);
+  --font-sans: "Archivo Variable", "Archivo", "PingFang SC", "HarmonyOS Sans SC", MiSans, "Noto Sans SC", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "PingFang SC", "Noto Sans SC", monospace;
+  --radius: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --breakpoint-xs: 30rem;
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--ink);
+    border-radius: 0;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100dvh;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: var(--yellow);
+    color: var(--on-yellow);
+  }
+  /* Focus ring: 2px solid ink with a 2px offset, always visible. */
+  :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+  button,
+  [role="button"] {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+  svg.lucide {
+    stroke-linecap: square;
+    stroke-linejoin: miter;
+    flex-shrink: 0;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@utility font-display {
+  font-family: var(--font-sans);
+  font-stretch: 75%;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.05;
+}
+
+@utility num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+@utility hazard {
+  background: var(--hazard);
+}
+
+@utility label-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+@layer components {
+  .skeleton {
+    background: var(--rule);
+    animation: ob-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes ob-pulse {
+    50% {
+      opacity: 0.45;
+    }
+  }
+  .scroll-x {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Recharts: keep outlines square and use our focus ring. */
+  .recharts-wrapper:focus-visible,
+  .recharts-surface:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+}

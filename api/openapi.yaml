@@ -1726,6 +1726,11 @@ components:
           format: int64
           nullable: true
           description: The account's reported week total (week.total_usd, before the safety factor); null when unknown.
+        k:
+          type: number
+          format: double
+          nullable: true
+          description: The k of the account's cpa-quota estimate; null when cpa-quota has none or is unavailable.
     AccountList:
       type: object
       required: [items]

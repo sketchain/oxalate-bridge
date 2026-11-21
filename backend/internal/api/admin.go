@@ -461,6 +461,7 @@ func (s *Server) AdminListAccounts(ctx context.Context, _ AdminListAccountsReque
 	for i, row := range rows {
 		items[i] = s.accountOf(ctx, row, states[row.ID], now)
 	}
+	s.fillK(ctx, items)
 	return AdminListAccounts200JSONResponse{Items: items}, nil
 }
 
@@ -471,7 +472,9 @@ func (s *Server) AdminGetAccount(ctx context.Context, req AdminGetAccountRequest
 		return nil, mapDomainErr(err)
 	}
 	states := s.accountStates(ctx, row.ID)
-	return AdminGetAccount200JSONResponse(s.accountOf(ctx, row, states[row.ID], time.Now().UTC())), nil
+	items := []Account{s.accountOf(ctx, row, states[row.ID], time.Now().UTC())}
+	s.fillK(ctx, items)
+	return AdminGetAccount200JSONResponse(items[0]), nil
 }
 
 func checkAccountNumbers(wm *float64, conc *int32) error {

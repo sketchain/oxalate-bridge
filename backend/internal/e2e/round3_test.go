@@ -220,3 +220,25 @@ func TestAccountValidateSoldAndKeyAdmin(t *testing.T) {
 		t.Fatalf("status filter: ok=%s denied=%s", ok, denied)
 	}
 }
+
+// The account views carry k from the cpa-quota estimates when available.
+func TestAccountK(t *testing.T) {
+	e := setup(t, envOpts{balanceMicro: 1_000_000, noPlan: true})
+	cq := cpaQuotaSchema(t, e, false)
+	if k := gjson.Get(rawGet(t, e.admin, "/admin/accounts"), "items.0.k"); k.Type != gjson.Null {
+		t.Fatalf("k without cpa-quota: %s", k.Raw)
+	}
+	cpaQuotaSchema(t, e, true)
+	_, err := e.rep.App.Pool.Exec(context.Background(), `INSERT INTO `+cq+`.estimates (instance, auth_index, provider, subscription, tier, state,
+		segment_window, basis, k, k_source, totals_from, safety_factor, used_5h, used_7d, five_hour_total_usd, weekly_total_usd,
+		remaining_five_hour_usd, remaining_week_usd, clean_blocks, total_blocks, segments, excluded_segments, ratio, estimated_at, detail)
+		VALUES ('a', 'acct-a', 'claude', 'claude', 'max5x', 'estimated', '5h', 'raw', 6.5, 'fit', 'tier', 0.9, 10, 20, 10, 100, 9, 72,
+		1, 1, 1, 0, 1, now(), '{}')`)
+	testutil.Must(t, err)
+	if k := gjson.Get(rawGet(t, e.admin, "/admin/accounts"), "items.0.k").Float(); k != 6.5 {
+		t.Fatalf("list k %v", k)
+	}
+	if k := gjson.Get(rawGet(t, e.admin, "/admin/accounts/"+e.accA), "k").Float(); k != 6.5 {
+		t.Fatalf("detail k %v", k)
+	}
+}
