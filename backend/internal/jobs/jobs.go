@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -14,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/sketchain/oxalate-bridge/backend/internal/avail"
 	"github.com/sketchain/oxalate-bridge/backend/internal/billing"
 	"github.com/sketchain/oxalate-bridge/backend/internal/cpa"
 	"github.com/sketchain/oxalate-bridge/backend/internal/db"
@@ -45,6 +47,8 @@ type Runner struct {
 	ID       string
 	// RefreshPricesFn fetches the ratio table and stores it in PG and Redis.
 	RefreshPricesFn func(context.Context) error
+	// Avail is recomputed after every quota poll.
+	Avail *avail.Service
 
 	leader atomic.Bool
 	mu     sync.Mutex
@@ -190,6 +194,11 @@ func (r *Runner) PollQuotas(ctx context.Context) error {
 	if changed.Load() {
 		_ = r.Store.InTx(ctx, func(tx *store.Tx) error { return tx.RoutingChanged(ctx) })
 	}
+	if r.Avail != nil {
+		if _, err := r.Avail.Refresh(ctx); err != nil {
+			r.Log.Warn("refresh availability", "err", err)
+		}
+	}
 	return nil
 }
 
@@ -219,6 +228,17 @@ func (r *Runner) pollQuota(ctx context.Context, a sqlc.Account) bool {
 	}
 	changed := false
 	snap.LastAttemptAt = now
+	if err == nil && !cpa.IsClaude(resp) {
+		// The instance switched to a subscription the bridge does not serve:
+		// keep the old identity (the schema only allows claude) and take the
+		// account out of routing until an admin looks at it.
+		err = fmt.Errorf("unsupported subscription %q: only claude accounts can be used", resp.Subscription)
+		if !a.ErrorStatus {
+			if perr := r.Store.Q.SetAccountError(ctx, sqlc.SetAccountErrorParams{ID: a.ID, ErrorReason: err.Error()}); perr == nil {
+				changed = true
+			}
+		}
+	}
 	if err != nil {
 		snap.LastError = err.Error()
 		if snap.FailingSince.IsZero() {

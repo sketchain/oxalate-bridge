@@ -29,3 +29,36 @@ sql:
               pointer: true
           - db_type: jsonb
             go_type: encoding/json.RawMessage
+  # Read-only queries against cpa-quota's schema. schema.sql is a reference
+  # copy of its tables for type checking, not a migration of this project.
+  - engine: postgresql
+    schema: internal/cpaquota/schema.sql
+    queries: internal/cpaquota/queries
+    gen:
+      go:
+        package: cqsql
+        out: internal/cpaquota/cqsql
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+        emit_empty_slices: true
+        overrides:
+          - db_type: uuid
+            go_type: github.com/google/uuid.UUID
+          - db_type: uuid
+            nullable: true
+            go_type:
+              import: github.com/google/uuid
+              type: UUID
+              pointer: true
+          - db_type: timestamptz
+            go_type: time.Time
+          - db_type: timestamptz
+            nullable: true
+            go_type:
+              import: time
+              type: Time
+              pointer: true
+          - db_type: jsonb
+            go_type: encoding/json.RawMessage
+          - db_type: date
+            go_type: time.Time

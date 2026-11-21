@@ -84,8 +84,9 @@ func Headroom(in HeadroomInput) int64 {
 }
 
 // Weight is an account's random-pick weight: the 5-hour remaining fraction,
-// multiplied by penalty once 5-hour usage reaches the watermark; accounts
-// without a 5-hour window use the week remaining fraction and no watermark.
+// multiplied by penalty once 5-hour usage reaches the watermark. Claude
+// accounts always report a 5-hour window; only when that data is missing
+// does the week remaining fraction (without watermark) serve as a fallback.
 func Weight(snap *cpa.Snapshot, now time.Time, watermark, penalty float64) float64 {
 	if snap == nil || !snap.HasData {
 		return 1

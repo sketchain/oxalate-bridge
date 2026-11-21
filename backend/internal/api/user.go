@@ -81,7 +81,7 @@ func (s *Server) Login(ctx context.Context, req LoginRequestObject) (LoginRespon
 	_ = s.St.R.Del(ctx, s.St.LoginLimitKey("u:"+strings.ToLower(req.Body.Username))).Err()
 	token := secret.RandomToken(32)
 	raw, _ := json.Marshal(sessionData{UserID: user.ID, At: time.Now().UTC()})
-	if err := s.St.R.Set(ctx, s.St.SessionKey(token), raw, s.sessionTTL()).Err(); err != nil {
+	if err := s.St.CreateSession(ctx, user.ID, token, raw, s.sessionTTL()); err != nil {
 		return nil, err
 	}
 	cookie := s.cookie(token, int(s.sessionTTL().Seconds()))
@@ -91,7 +91,7 @@ func (s *Server) Login(ctx context.Context, req LoginRequestObject) (LoginRespon
 // Logout implements POST /auth/logout.
 func (s *Server) Logout(ctx context.Context, _ LogoutRequestObject) (LogoutResponseObject, error) {
 	if t := sessionToken(ctx); t != "" {
-		_ = s.St.R.Del(ctx, s.St.SessionKey(t)).Err()
+		_ = s.St.DeleteSession(ctx, currentUser(ctx).ID, t)
 	}
 	cookie := s.cookie("", -1)
 	return Logout204Response{Headers: Logout204ResponseHeaders{SetCookie: &cookie}}, nil
@@ -121,6 +121,8 @@ func (s *Server) ChangePassword(ctx context.Context, req ChangePasswordRequestOb
 	if err := s.Store.Q.UpdateUserPassword(ctx, sqlc.UpdateUserPasswordParams{ID: u.ID, PasswordHash: secret.HashPassword(req.Body.NewPassword)}); err != nil {
 		return nil, err
 	}
+	// Keep the session that changed the password; sign out everywhere else.
+	s.revokeSessions(ctx, u.ID, sessionToken(ctx))
 	return ChangePassword204Response{}, nil
 }
 

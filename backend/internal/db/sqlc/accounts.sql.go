@@ -164,6 +164,31 @@ func (q *Queries) ListAccounts(ctx context.Context) ([]Account, error) {
 	return items, nil
 }
 
+const lockAccountForShare = `-- name: LockAccountForShare :one
+SELECT id FROM accounts WHERE id = $1 AND deleted_at IS NULL FOR SHARE
+`
+
+// Taken by subscription binds inside their transaction: fails once the
+// account is deleted, and blocks a concurrent delete until the bind commits.
+func (q *Queries) LockAccountForShare(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockAccountForShare, id)
+	var id_2 uuid.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
+const lockAccountForUpdate = `-- name: LockAccountForUpdate :one
+SELECT id FROM accounts WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
+`
+
+// Serializes deleting an account against binding subscriptions to it.
+func (q *Queries) LockAccountForUpdate(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockAccountForUpdate, id)
+	var id_2 uuid.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
 const setAccountEnabled = `-- name: SetAccountEnabled :one
 UPDATE accounts SET enabled = $2, error_status = CASE WHEN $2 THEN false ELSE error_status END,
                     error_reason = CASE WHEN $2 THEN '' ELSE error_reason END, updated_at = now()

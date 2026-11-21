@@ -27,3 +27,12 @@ WHERE hour >= sqlc.arg('from_at')::timestamptz AND hour < sqlc.arg('to_at')::tim
   AND (sqlc.narg('account_id')::uuid IS NULL OR account_id = sqlc.narg('account_id')::uuid)
 GROUP BY 1, 2, 3
 ORDER BY 1, 2, 3;
+
+-- name: AccountCostByBucket :many
+-- This bridge's upstream cost of one account per UTC bucket (request start hour).
+SELECT date_trunc(sqlc.arg('bucket')::text, hour, 'UTC')::timestamptz AS bucket,
+       sum(upstream_cost_micro)::bigint AS upstream_cost_micro, sum(requests)::bigint AS requests
+FROM usage_hourly
+WHERE account_id = $1 AND hour >= sqlc.arg('from_at')::timestamptz AND hour < sqlc.arg('to_at')::timestamptz
+GROUP BY 1
+ORDER BY 1;

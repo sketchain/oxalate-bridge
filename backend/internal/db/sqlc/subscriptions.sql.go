@@ -139,6 +139,48 @@ func (q *Queries) GetSubscriptionForUpdate(ctx context.Context, id uuid.UUID) (P
 	return i, err
 }
 
+const listBlockingSubscriptionsByAccount = `-- name: ListBlockingSubscriptionsByAccount :many
+SELECT s.id, s.user_id, u.username, s.status, s.plan_name
+FROM plan_subscriptions s JOIN users u ON u.id = s.user_id
+WHERE s.account_id = $1 AND s.status IN ('active', 'pending_assignment')
+ORDER BY s.created_at, s.id
+`
+
+type ListBlockingSubscriptionsByAccountRow struct {
+	ID       uuid.UUID
+	UserID   uuid.UUID
+	Username string
+	Status   string
+	PlanName string
+}
+
+// Subscriptions that prevent deleting their account.
+func (q *Queries) ListBlockingSubscriptionsByAccount(ctx context.Context, accountID *uuid.UUID) ([]ListBlockingSubscriptionsByAccountRow, error) {
+	rows, err := q.db.Query(ctx, listBlockingSubscriptionsByAccount, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListBlockingSubscriptionsByAccountRow{}
+	for rows.Next() {
+		var i ListBlockingSubscriptionsByAccountRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Username,
+			&i.Status,
+			&i.PlanName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDueRenewals = `-- name: ListDueRenewals :many
 SELECT id FROM plan_subscriptions
 WHERE status = 'active' AND auto_renew AND expires_at <= $1

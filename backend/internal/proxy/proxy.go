@@ -1,6 +1,6 @@
-// Package proxy implements the /v1 relay: authentication, limits, tier
-// admission, holds, forwarding to CPA with retries, usage capture and
-// settlement.
+// Package proxy implements the /v1 relay for the Claude Messages protocol:
+// authentication, limits, tier admission, holds, forwarding to CPA with
+// retries, usage capture and settlement.
 package proxy
 
 import (
@@ -20,7 +20,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 
 	"github.com/sketchain/oxalate-bridge/backend/internal/authcache"
 	"github.com/sketchain/oxalate-bridge/backend/internal/billing"
@@ -77,16 +76,16 @@ func NewTransport() *http.Transport {
 }
 
 type endpoint struct {
-	path     string
-	protocol usage.Protocol
-	count    bool
+	path  string
+	count bool
 }
 
+// endpoints are the relayed POST endpoints. Only the Claude Messages
+// protocol is served; requests are accepted from any client and forwarded
+// unchanged (client policy is enforced by CPA-side plugins).
 var endpoints = map[string]endpoint{
-	"/v1/messages":              {"/v1/messages", usage.Messages, false},
-	"/v1/messages/count_tokens": {"/v1/messages/count_tokens", usage.Messages, true},
-	"/v1/responses":             {"/v1/responses", usage.Responses, false},
-	"/v1/chat/completions":      {"/v1/chat/completions", usage.Chat, false},
+	"/v1/messages":              {"/v1/messages", false},
+	"/v1/messages/count_tokens": {"/v1/messages/count_tokens", true},
 }
 
 func (p *Proxy) now() time.Time {
@@ -104,6 +103,11 @@ func (p *Proxy) Routes(handle func(method, pattern string, h http.HandlerFunc)) 
 	handle(http.MethodGet, "/v1/models", p.ServeModels)
 }
 
+// ServeUnknown answers paths under /v1 that the relay does not serve.
+func (p *Proxy) ServeUnknown(w http.ResponseWriter, r *http.Request) {
+	writeError(w, http.StatusNotFound, "not_found_error", "only the Claude Messages API is served (/v1/messages, /v1/messages/count_tokens, /v1/models)")
+}
+
 // apiKey extracts the client's API key.
 func apiKey(r *http.Request) string {
 	if h := r.Header.Get("Authorization"); h != "" {
@@ -117,32 +121,33 @@ func apiKey(r *http.Request) string {
 	return strings.TrimSpace(r.Header.Get("X-Api-Key"))
 }
 
-func (p *Proxy) authenticate(w http.ResponseWriter, r *http.Request, proto usage.Protocol) (authcache.Info, bool) {
+func (p *Proxy) authenticate(w http.ResponseWriter, r *http.Request) (authcache.Info, bool) {
 	key := apiKey(r)
 	if key == "" {
-		writeError(w, proto, http.StatusUnauthorized, "authentication_error", "missing API key")
+		writeError(w, http.StatusUnauthorized, "authentication_error", "missing API key")
 		return authcache.Info{}, false
 	}
 	info, err := p.Auth.Lookup(r.Context(), key)
 	if err != nil {
 		p.Log.Error("auth lookup", "err", err)
-		writeError(w, proto, http.StatusServiceUnavailable, "api_error", "authentication temporarily unavailable")
+		writeError(w, http.StatusServiceUnavailable, "api_error", "authentication temporarily unavailable")
 		return authcache.Info{}, false
 	}
 	if !info.Found {
-		writeError(w, proto, http.StatusUnauthorized, "authentication_error", "invalid API key")
+		writeError(w, http.StatusUnauthorized, "authentication_error", "invalid API key")
 		return authcache.Info{}, false
 	}
 	if !info.Usable() {
-		writeError(w, proto, http.StatusForbidden, "permission_error", "API key or user is disabled")
+		writeError(w, http.StatusForbidden, "permission_error", "API key or user is disabled")
 		return authcache.Info{}, false
 	}
 	return info, true
 }
 
-// ServeModels lists the models served by usable accounts.
+// ServeModels lists the union of the models served by enabled accounts, in
+// the Anthropic list shape.
 func (p *Proxy) ServeModels(w http.ResponseWriter, r *http.Request) {
-	if _, ok := p.authenticate(w, r, usage.Chat); !ok {
+	if _, ok := p.authenticate(w, r); !ok {
 		return
 	}
 	type model struct {
@@ -180,15 +185,12 @@ type reqInfo struct {
 
 func parseBody(body []byte) reqInfo {
 	var ri reqInfo
-	res := gjson.GetManyBytes(body, "model", "stream", "max_tokens", "max_output_tokens", "max_completion_tokens")
+	res := gjson.GetManyBytes(body, "model", "stream", "max_tokens")
 	ri.model = res[0].String()
 	ri.normModel = billing.NormalizeModel(ri.model)
 	ri.stream = res[1].Bool()
-	for _, r := range res[2:] {
-		if r.Exists() && r.Type == gjson.Number {
-			ri.maxTokens, ri.hasMax = r.Int(), true
-			break
-		}
+	if res[2].Exists() && res[2].Type == gjson.Number {
+		ri.maxTokens, ri.hasMax = res[2].Int(), true
 	}
 	ri.oneHour = oneHourTTL.Match(body)
 	return ri
@@ -233,13 +235,13 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	start := p.now()
-	auth, ok := p.authenticate(w, r, ep.protocol)
+	auth, ok := p.authenticate(w, r)
 	if !ok {
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
 	if err != nil {
-		writeError(w, ep.protocol, http.StatusRequestEntityTooLarge, "invalid_request_error", "request body too large or unreadable")
+		writeError(w, http.StatusRequestEntityTooLarge, "invalid_request_error", "request body too large or unreadable")
 		return
 	}
 	requestID, _ := uuid.NewV7()
@@ -270,7 +272,7 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 			metrics.Rejections.WithLabelValues(rej.Tier, rej.Code).Inc()
 		}
 		msg := RejectionMessage(rejections)
-		writeErrorWith(w, ep.protocol, http.StatusTooManyRequests, "rate_limit_error", msg, map[string]any{"rejections": rejections})
+		writeErrorWith(w, http.StatusTooManyRequests, "rate_limit_error", msg, map[string]any{"rejections": rejections})
 		c.settleRejected(http.StatusTooManyRequests, "tier_rejected")
 		return
 	}
@@ -295,14 +297,14 @@ func (c *call) admitLimits(ctx context.Context, w http.ResponseWriter) bool {
 	}
 	if a.UserMaxConc == 0 {
 		// 0 means the user may not make requests at all.
-		writeError(w, c.ep.protocol, http.StatusTooManyRequests, "rate_limit_error", "用户并发上限为 0")
+		writeError(w, http.StatusTooManyRequests, "rate_limit_error", "用户并发上限为 0")
 		c.settleRejected(http.StatusTooManyRequests, "rate_limited")
 		return false
 	}
 	ok, idx, err := c.p.St.Admit(ctx, c.requestID.String(), conc, rpm, leaseTTL, c.p.now())
 	if err != nil {
 		c.p.Log.Error("admit limits", "err", err)
-		writeError(w, c.ep.protocol, http.StatusServiceUnavailable, "api_error", "rate limiter unavailable")
+		writeError(w, http.StatusServiceUnavailable, "api_error", "rate limiter unavailable")
 		return false
 	}
 	if !ok {
@@ -310,7 +312,7 @@ func (c *call) admitLimits(ctx context.Context, w http.ResponseWriter) bool {
 		if idx >= len(conc) {
 			msg = "每分钟请求数已达上限"
 		}
-		writeError(w, c.ep.protocol, http.StatusTooManyRequests, "rate_limit_error", msg)
+		writeError(w, http.StatusTooManyRequests, "rate_limit_error", msg)
 		c.settleRejected(http.StatusTooManyRequests, "rate_limited")
 		return false
 	}
@@ -799,12 +801,6 @@ func (c *call) markAccountError(a *router.Account, reason string) {
 // before any byte reached the client.
 func (c *call) serve(w http.ResponseWriter, adm *admission) {
 	body := c.body
-	stripUsage := false
-	if c.ep.protocol == usage.Chat && c.ri.stream && !gjson.GetBytes(body, "stream_options.include_usage").Bool() {
-		if nb, err := sjson.SetBytes(body, "stream_options.include_usage", true); err == nil {
-			body, stripUsage = nb, true
-		}
-	}
 	account := adm.account
 	cands := adm.candidates
 	retries := 0
@@ -840,7 +836,7 @@ func (c *call) serve(w http.ResponseWriter, adm *admission) {
 		if c.r.Context().Err() != nil {
 			status, typ = 499, "client_closed"
 		} else {
-			writeError(w, c.ep.protocol, http.StatusBadGateway, "api_error", "upstream unreachable")
+			writeError(w, http.StatusBadGateway, "api_error", "upstream unreachable")
 		}
 		c.settle(adm, account, status, typ, usage.Usage{}, retries, 0, nil)
 		return
@@ -851,7 +847,7 @@ func (c *call) serve(w http.ResponseWriter, adm *admission) {
 		return
 	}
 	metrics.FirstByte.WithLabelValues(adm.tier).Observe(float64(res.firstMs) / 1000)
-	u, status, errType := c.stream(w, res, stripUsage)
+	u, status, errType := c.stream(w, res)
 	c.settle(adm, account, status, errType, u, retries, res.firstMs, nil)
 }
 
@@ -881,7 +877,7 @@ func (c *call) writeUpstreamError(w http.ResponseWriter, res attemptResult) {
 }
 
 // stream copies the response to the client while reading usage.
-func (c *call) stream(w http.ResponseWriter, res attemptResult, stripUsage bool) (usage.Usage, int, string) {
+func (c *call) stream(w http.ResponseWriter, res attemptResult) (usage.Usage, int, string) {
 	resp := res.resp
 	defer func() {
 		resp.Body.Close()
@@ -906,10 +902,10 @@ func (c *call) stream(w http.ResponseWriter, res attemptResult, stripUsage bool)
 		buf, err := io.ReadAll(resp.Body)
 		if len(buf) > 0 {
 			if _, werr := w.Write(buf); werr != nil {
-				return usage.FromBody(c.ep.protocol, buf), 499, "client_closed"
+				return usage.FromBody(buf), 499, "client_closed"
 			}
 		}
-		u = usage.FromBody(c.ep.protocol, buf)
+		u = usage.FromBody(buf)
 		if err != nil {
 			return u, resp.StatusCode, "upstream_read_error"
 		}
@@ -929,24 +925,14 @@ func (c *call) stream(w http.ResponseWriter, res attemptResult, stripUsage bool)
 			_ = rc.Flush()
 		}
 	}
-	sc := &usage.SSEScanner{Raw: stripUsage}
-	sc.OnEvent = func(event string, data, raw []byte) {
-		dropped := u.Event(c.ep.protocol, event, data)
-		if stripUsage {
-			if !dropped {
-				write(raw)
-			}
-		}
-	}
+	sc := &usage.SSEScanner{OnEvent: u.Event}
 	buf := make([]byte, 32<<10)
 	var readErr error
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
 			chunk := buf[:n]
-			if !stripUsage {
-				write(chunk)
-			}
+			write(chunk)
 			sc.Feed(chunk)
 			if writeErr != nil {
 				break
@@ -986,7 +972,7 @@ func (c *call) settle(adm *admission, account *router.Account, status int, errTy
 	}
 
 	table := c.p.Prices.Table()
-	b := u.Breakdown(c.ep.protocol)
+	b := u.Breakdown()
 	rec.InputTokens, rec.CacheReadTokens, rec.CacheWriteTokens, rec.OutputTokens, rec.ReasoningTokens =
 		b.Uncached, b.CacheRead, b.CacheWrite, b.Output, b.Reasoning
 	switch {
@@ -1053,26 +1039,17 @@ func statusClass(status int) string {
 	return "2xx"
 }
 
-// writeError writes a protocol-shaped error.
-func writeError(w http.ResponseWriter, proto usage.Protocol, status int, typ, msg string) {
-	writeErrorWith(w, proto, status, typ, msg, nil)
+// writeError writes an Anthropic-shaped error.
+func writeError(w http.ResponseWriter, status int, typ, msg string) {
+	writeErrorWith(w, status, typ, msg, nil)
 }
 
-func writeErrorWith(w http.ResponseWriter, proto usage.Protocol, status int, typ, msg string, extra map[string]any) {
-	var body map[string]any
-	if proto == usage.Messages {
-		e := map[string]any{"type": typ, "message": msg}
-		for k, v := range extra {
-			e[k] = v
-		}
-		body = map[string]any{"type": "error", "error": e}
-	} else {
-		e := map[string]any{"type": typ, "message": msg, "code": typ}
-		for k, v := range extra {
-			e[k] = v
-		}
-		body = map[string]any{"error": e}
+func writeErrorWith(w http.ResponseWriter, status int, typ, msg string, extra map[string]any) {
+	e := map[string]any{"type": typ, "message": msg}
+	for k, v := range extra {
+		e[k] = v
 	}
+	body := map[string]any{"type": "error", "error": e}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)

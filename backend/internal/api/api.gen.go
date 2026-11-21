@@ -46,6 +46,30 @@ func (e AccountRuntimeStatus) Valid() bool {
 	}
 }
 
+// Defines values for AvailabilityHorizonHorizon.
+const (
+	AvailabilityHorizonHorizonN1h  AvailabilityHorizonHorizon = "1h"
+	AvailabilityHorizonHorizonN24h AvailabilityHorizonHorizon = "24h"
+	AvailabilityHorizonHorizonN5h  AvailabilityHorizonHorizon = "5h"
+	AvailabilityHorizonHorizonN7d  AvailabilityHorizonHorizon = "7d"
+)
+
+// Valid indicates whether the value is a known member of the AvailabilityHorizonHorizon enum.
+func (e AvailabilityHorizonHorizon) Valid() bool {
+	switch e {
+	case AvailabilityHorizonHorizonN1h:
+		return true
+	case AvailabilityHorizonHorizonN24h:
+		return true
+	case AvailabilityHorizonHorizonN5h:
+		return true
+	case AvailabilityHorizonHorizonN7d:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for BalanceAdjustType.
 const (
 	Adjust BalanceAdjustType = "adjust"
@@ -58,6 +82,24 @@ func (e BalanceAdjustType) Valid() bool {
 	case Adjust:
 		return true
 	case Topup:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CostCompareBucket.
+const (
+	CostCompareBucketDay  CostCompareBucket = "day"
+	CostCompareBucketHour CostCompareBucket = "hour"
+)
+
+// Valid indicates whether the value is a known member of the CostCompareBucket enum.
+func (e CostCompareBucket) Valid() bool {
+	switch e {
+	case CostCompareBucketDay:
+		return true
+	case CostCompareBucketHour:
 		return true
 	default:
 		return false
@@ -115,6 +157,51 @@ func (e LedgerType) Valid() bool {
 	}
 }
 
+// Defines values for PlanAvailabilityAccountStatus.
+const (
+	PlanAvailabilityAccountStatusCooldown    PlanAvailabilityAccountStatus = "cooldown"
+	PlanAvailabilityAccountStatusError       PlanAvailabilityAccountStatus = "error"
+	PlanAvailabilityAccountStatusLessThannil PlanAvailabilityAccountStatus = "<nil>"
+	PlanAvailabilityAccountStatusNormal      PlanAvailabilityAccountStatus = "normal"
+	PlanAvailabilityAccountStatusStale       PlanAvailabilityAccountStatus = "stale"
+)
+
+// Valid indicates whether the value is a known member of the PlanAvailabilityAccountStatus enum.
+func (e PlanAvailabilityAccountStatus) Valid() bool {
+	switch e {
+	case PlanAvailabilityAccountStatusCooldown:
+		return true
+	case PlanAvailabilityAccountStatusError:
+		return true
+	case PlanAvailabilityAccountStatusLessThannil:
+		return true
+	case PlanAvailabilityAccountStatusNormal:
+		return true
+	case PlanAvailabilityAccountStatusStale:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanAvailabilityStatus.
+const (
+	PlanAvailabilityStatusActive            PlanAvailabilityStatus = "active"
+	PlanAvailabilityStatusPendingAssignment PlanAvailabilityStatus = "pending_assignment"
+)
+
+// Valid indicates whether the value is a known member of the PlanAvailabilityStatus enum.
+func (e PlanAvailabilityStatus) Valid() bool {
+	switch e {
+	case PlanAvailabilityStatusActive:
+		return true
+	case PlanAvailabilityStatusPendingAssignment:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PriceStatusOrigin.
 const (
 	Database PriceStatusOrigin = "database"
@@ -130,6 +217,24 @@ func (e PriceStatusOrigin) Valid() bool {
 	case None:
 		return true
 	case Remote:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for QuotaSeriesWindow.
+const (
+	QuotaSeriesWindowN5h QuotaSeriesWindow = "5h"
+	QuotaSeriesWindowN7d QuotaSeriesWindow = "7d"
+)
+
+// Valid indicates whether the value is a known member of the QuotaSeriesWindow enum.
+func (e QuotaSeriesWindow) Valid() bool {
+	switch e {
+	case QuotaSeriesWindowN5h:
+		return true
+	case QuotaSeriesWindowN7d:
 		return true
 	default:
 		return false
@@ -156,15 +261,12 @@ func (e Role) Valid() bool {
 
 // Defines values for SubscriptionKind.
 const (
-	Chatgpt SubscriptionKind = "chatgpt"
-	Claude  SubscriptionKind = "claude"
+	Claude SubscriptionKind = "claude"
 )
 
 // Valid indicates whether the value is a known member of the SubscriptionKind enum.
 func (e SubscriptionKind) Valid() bool {
 	switch e {
-	case Chatgpt:
-		return true
 	case Claude:
 		return true
 	default:
@@ -265,6 +367,42 @@ func (e Granularity) Valid() bool {
 	case GranularityDay:
 		return true
 	case GranularityHour:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminGetAccountCostCompareParamsBucket.
+const (
+	AdminGetAccountCostCompareParamsBucketDay  AdminGetAccountCostCompareParamsBucket = "day"
+	AdminGetAccountCostCompareParamsBucketHour AdminGetAccountCostCompareParamsBucket = "hour"
+)
+
+// Valid indicates whether the value is a known member of the AdminGetAccountCostCompareParamsBucket enum.
+func (e AdminGetAccountCostCompareParamsBucket) Valid() bool {
+	switch e {
+	case AdminGetAccountCostCompareParamsBucketDay:
+		return true
+	case AdminGetAccountCostCompareParamsBucketHour:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminGetAccountQuotaSeriesParamsWindow.
+const (
+	AdminGetAccountQuotaSeriesParamsWindowN5h AdminGetAccountQuotaSeriesParamsWindow = "5h"
+	AdminGetAccountQuotaSeriesParamsWindowN7d AdminGetAccountQuotaSeriesParamsWindow = "7d"
+)
+
+// Valid indicates whether the value is a known member of the AdminGetAccountQuotaSeriesParamsWindow enum.
+func (e AdminGetAccountQuotaSeriesParamsWindow) Valid() bool {
+	switch e {
+	case AdminGetAccountQuotaSeriesParamsWindowN5h:
+		return true
+	case AdminGetAccountQuotaSeriesParamsWindowN7d:
 		return true
 	default:
 		return false
@@ -546,6 +684,43 @@ type AutoRenewRequest struct {
 	AutoRenew bool `json:"auto_renew"`
 }
 
+// Availability defines model for Availability.
+type Availability struct {
+	// BalanceAvailableMicro Real-time available balance (may be negative).
+	BalanceAvailableMicro int64 `json:"balance_available_micro"`
+
+	// ComputedAt When the cached pool figures were computed.
+	ComputedAt time.Time `json:"computed_at"`
+
+	// Estimated Always true.
+	Estimated bool `json:"estimated"`
+
+	// Force Forced calls (force tier), per horizon.
+	Force []AvailabilityHorizon `json:"force"`
+
+	// Normal Normal calls (standard tier), per horizon.
+	Normal []AvailabilityHorizon `json:"normal"`
+
+	// Plans One item per active or pending subscription of the caller.
+	Plans []PlanAvailability `json:"plans"`
+}
+
+// AvailabilityHorizon defines model for AvailabilityHorizon.
+type AvailabilityHorizon struct {
+	// AvailableMicro min(pool_micro, balance_available_micro), never below 0.
+	AvailableMicro int64                      `json:"available_micro"`
+	Horizon        AvailabilityHorizonHorizon `json:"horizon"`
+
+	// LimitedByBalance True when the balance is smaller than the pool.
+	LimitedByBalance bool `json:"limited_by_balance"`
+
+	// PoolMicro Estimated pool capacity over the horizon, at the user price (× tier multiplier).
+	PoolMicro int64 `json:"pool_micro"`
+}
+
+// AvailabilityHorizonHorizon defines model for AvailabilityHorizon.Horizon.
+type AvailabilityHorizonHorizon string
+
 // Balance defines model for Balance.
 type Balance struct {
 	// AvailableMicro Real-time available amount (Redis)
@@ -575,6 +750,15 @@ type BalanceAdjust struct {
 // BalanceAdjustType defines model for BalanceAdjust.Type.
 type BalanceAdjustType string
 
+// BlockingSubscription defines model for BlockingSubscription.
+type BlockingSubscription struct {
+	Id       openapi_types.UUID `json:"id"`
+	PlanName string             `json:"plan_name"`
+	Status   SubscriptionStatus `json:"status"`
+	UserId   openapi_types.UUID `json:"user_id"`
+	Username string             `json:"username"`
+}
+
 // CancelSubscriptionRequest defines model for CancelSubscriptionRequest.
 type CancelSubscriptionRequest struct {
 	Note        *string `json:"note,omitempty"`
@@ -585,6 +769,71 @@ type CancelSubscriptionRequest struct {
 type ChangePasswordRequest struct {
 	NewPassword string `json:"new_password"`
 	OldPassword string `json:"old_password"`
+}
+
+// CostCompare defines model for CostCompare.
+type CostCompare struct {
+	BridgeTotalMicro   int64             `json:"bridge_total_micro"`
+	Bucket             CostCompareBucket `json:"bucket"`
+	CpaQuotaTotalMicro int64             `json:"cpa_quota_total_micro"`
+	DiffMicro          int64             `json:"diff_micro"`
+	From               time.Time         `json:"from"`
+	Items              []CostCompareRow  `json:"items"`
+	To                 time.Time         `json:"to"`
+}
+
+// CostCompareBucket defines model for CostCompare.Bucket.
+type CostCompareBucket string
+
+// CostCompareRow defines model for CostCompareRow.
+type CostCompareRow struct {
+	BridgeRequests          int64     `json:"bridge_requests"`
+	BridgeUpstreamCostMicro int64     `json:"bridge_upstream_cost_micro"`
+	Bucket                  time.Time `json:"bucket"`
+
+	// CpaQuotaCostMicro Σ cost_usd of complete-accounting requests
+	CpaQuotaCostMicro int64 `json:"cpa_quota_cost_micro"`
+
+	// CpaQuotaRequests Number of complete-accounting requests.
+	CpaQuotaRequests int64 `json:"cpa_quota_requests"`
+
+	// DiffMicro cpa_quota_cost_micro − bridge_upstream_cost_micro.
+	DiffMicro int64 `json:"diff_micro"`
+}
+
+// CpaQuotaEstimate A row of cpa-quota's `estimates` table (schema version 1), unchanged.
+type CpaQuotaEstimate struct {
+	AuthIndex   string `json:"auth_index"`
+	Basis       string `json:"basis"`
+	CleanBlocks int    `json:"clean_blocks"`
+
+	// Detail The full quota-endpoint account object as cpa-quota stored it.
+	Detail               json.RawMessage              `json:"detail"`
+	EstimatedAt          time.Time                    `json:"estimated_at"`
+	ExcludedSegments     int                          `json:"excluded_segments"`
+	FiveHourTotalUsd     float64                      `json:"five_hour_total_usd"`
+	Instance             string                       `json:"instance"`
+	K                    nullable.Nullable[float64]   `json:"k,omitempty"`
+	KSource              string                       `json:"k_source"`
+	ObservedAt           nullable.Nullable[time.Time] `json:"observed_at,omitempty"`
+	PauseReason          string                       `json:"pause_reason"`
+	Provider             string                       `json:"provider"`
+	Ratio                float64                      `json:"ratio"`
+	RemainingFiveHourUsd float64                      `json:"remaining_five_hour_usd"`
+	RemainingWeekUsd     float64                      `json:"remaining_week_usd"`
+	Reset5h              nullable.Nullable[time.Time] `json:"reset_5h,omitempty"`
+	Reset7d              nullable.Nullable[time.Time] `json:"reset_7d,omitempty"`
+	SafetyFactor         float64                      `json:"safety_factor"`
+	SegmentWindow        string                       `json:"segment_window"`
+	Segments             int                          `json:"segments"`
+	State                string                       `json:"state"`
+	Subscription         string                       `json:"subscription"`
+	Tier                 string                       `json:"tier"`
+	TotalBlocks          int                          `json:"total_blocks"`
+	TotalsFrom           string                       `json:"totals_from"`
+	Used5h               float64                      `json:"used_5h"`
+	Used7d               float64                      `json:"used_7d"`
+	WeeklyTotalUsd       float64                      `json:"weekly_total_usd"`
 }
 
 // DurationUnit defines model for DurationUnit.
@@ -601,9 +850,13 @@ type Error struct {
 		// Code Fixed codes: bad_request, validation_failed, unauthorized,
 		// forbidden, csrf_header_missing, not_found, conflict,
 		// rate_limited, insufficient_balance, invalid_state,
-		// upstream_validation_failed, internal.
+		// upstream_validation_failed, unsupported_subscription,
+		// account_has_subscriptions, cpa_quota_unavailable, internal.
 		Code    string `json:"code"`
 		Message string `json:"message"`
+
+		// Subscriptions Only with `account_has_subscriptions`; the subscriptions that block the delete.
+		Subscriptions *[]BlockingSubscription `json:"subscriptions,omitempty"`
 	} `json:"error"`
 }
 
@@ -615,6 +868,25 @@ type GrantSubscriptionRequest struct {
 	Charge *bool              `json:"charge,omitempty"`
 	PlanId openapi_types.UUID `json:"plan_id"`
 	UserId openapi_types.UUID `json:"user_id"`
+}
+
+// KTrend defines model for KTrend.
+type KTrend struct {
+	Days  int         `json:"days"`
+	Items []KTrendDay `json:"items"`
+}
+
+// KTrendDay defines model for KTrendDay.
+type KTrendDay struct {
+	CostUsd          float64                    `json:"cost_usd"`
+	Day              openapi_types.Date         `json:"day"`
+	ExcludedSegments int                        `json:"excluded_segments"`
+	Gain             float64                    `json:"gain"`
+	Gain5h           float64                    `json:"gain_5h"`
+	Gain7d           float64                    `json:"gain_7d"`
+	K                nullable.Nullable[float64] `json:"k,omitempty"`
+	Segments         int                        `json:"segments"`
+	UpdatedAt        time.Time                  `json:"updated_at"`
 }
 
 // LedgerEntry defines model for LedgerEntry.
@@ -680,30 +952,64 @@ type PeriodUsage struct {
 // Plan defines model for Plan.
 type Plan struct {
 	// AllowedModels Normalized model names; empty means unrestricted.
-	AllowedModels    []string           `json:"allowed_models"`
-	CreatedAt        time.Time          `json:"created_at"`
-	Description      string             `json:"description"`
-	DurationUnit     DurationUnit       `json:"duration_unit"`
-	DurationValue    int                `json:"duration_value"`
-	Id               openapi_types.UUID `json:"id"`
-	Name             string             `json:"name"`
-	OnSale           bool               `json:"on_sale"`
-	PriceMicro       int64              `json:"price_micro"`
-	SortOrder        int                `json:"sort_order"`
-	Subscription     SubscriptionKind   `json:"subscription"`
-	WeeklyQuotaMicro int64              `json:"weekly_quota_micro"`
+	AllowedModels []string           `json:"allowed_models"`
+	CreatedAt     time.Time          `json:"created_at"`
+	Description   string             `json:"description"`
+	DurationUnit  DurationUnit       `json:"duration_unit"`
+	DurationValue int                `json:"duration_value"`
+	Id            openapi_types.UUID `json:"id"`
+	Name          string             `json:"name"`
+	OnSale        bool               `json:"on_sale"`
+	PriceMicro    int64              `json:"price_micro"`
+	SortOrder     int                `json:"sort_order"`
+
+	// Subscription Only Claude subscriptions are served (since v0.2.0).
+	Subscription     SubscriptionKind `json:"subscription"`
+	WeeklyQuotaMicro int64            `json:"weekly_quota_micro"`
 }
+
+// PlanAvailability defines model for PlanAvailability.
+type PlanAvailability struct {
+	// AccountStatus State of the bound upstream account only (no account details). Null while pending.
+	AccountStatus nullable.Nullable[PlanAvailabilityAccountStatus] `json:"account_status,omitempty"`
+
+	// FiveHour min(remaining, r5 × plan multiplier).
+	FiveHour nullable.Nullable[PlanWindowAvailability] `json:"five_hour,omitempty"`
+
+	// Period min(remaining, min(C5, C7) until the period end × plan multiplier).
+	Period      nullable.Nullable[PlanWindowAvailability] `json:"period,omitempty"`
+	PeriodEnd   nullable.Nullable[time.Time]              `json:"period_end,omitempty"`
+	PeriodStart nullable.Nullable[time.Time]              `json:"period_start,omitempty"`
+	PlanName    string                                    `json:"plan_name"`
+	QuotaMicro  nullable.Nullable[int64]                  `json:"quota_micro,omitempty"`
+
+	// RemainingMicro Real-time remaining of the period (billed).
+	RemainingMicro nullable.Nullable[int64] `json:"remaining_micro,omitempty"`
+	Status         PlanAvailabilityStatus   `json:"status"`
+	SubscriptionId openapi_types.UUID       `json:"subscription_id"`
+
+	// UsedMicro Billed usage of the period.
+	UsedMicro nullable.Nullable[int64] `json:"used_micro,omitempty"`
+}
+
+// PlanAvailabilityAccountStatus State of the bound upstream account only (no account details). Null while pending.
+type PlanAvailabilityAccountStatus string
+
+// PlanAvailabilityStatus defines model for PlanAvailability.Status.
+type PlanAvailabilityStatus string
 
 // PlanInput defines model for PlanInput.
 type PlanInput struct {
-	AllowedModels    *[]string        `json:"allowed_models,omitempty"`
-	Description      *string          `json:"description,omitempty"`
-	DurationUnit     DurationUnit     `json:"duration_unit"`
-	DurationValue    int              `json:"duration_value"`
-	Name             string           `json:"name"`
-	OnSale           *bool            `json:"on_sale,omitempty"`
-	PriceMicro       int64            `json:"price_micro"`
-	SortOrder        *int             `json:"sort_order,omitempty"`
+	AllowedModels *[]string    `json:"allowed_models,omitempty"`
+	Description   *string      `json:"description,omitempty"`
+	DurationUnit  DurationUnit `json:"duration_unit"`
+	DurationValue int          `json:"duration_value"`
+	Name          string       `json:"name"`
+	OnSale        *bool        `json:"on_sale,omitempty"`
+	PriceMicro    int64        `json:"price_micro"`
+	SortOrder     *int         `json:"sort_order,omitempty"`
+
+	// Subscription Only Claude subscriptions are served (since v0.2.0).
 	Subscription     SubscriptionKind `json:"subscription"`
 	WeeklyQuotaMicro int64            `json:"weekly_quota_micro"`
 }
@@ -711,6 +1017,17 @@ type PlanInput struct {
 // PlanList defines model for PlanList.
 type PlanList struct {
 	Items []Plan `json:"items"`
+}
+
+// PlanWindowAvailability defines model for PlanWindowAvailability.
+type PlanWindowAvailability struct {
+	AvailableMicro int64 `json:"available_micro"`
+
+	// EndsAt period: end of the current plan period.
+	EndsAt nullable.Nullable[time.Time] `json:"ends_at,omitempty"`
+
+	// ResetAt five_hour: next 5-hour reset (null without a 5-hour window).
+	ResetAt nullable.Nullable[time.Time] `json:"reset_at,omitempty"`
 }
 
 // PriceStatus defines model for PriceStatus.
@@ -730,6 +1047,30 @@ type PriceStatusOrigin string
 type PurchaseRequest struct {
 	AutoRenew *bool `json:"auto_renew,omitempty"`
 }
+
+// QuotaPoint defines model for QuotaPoint.
+type QuotaPoint struct {
+	At          time.Time                    `json:"at"`
+	ResetAt     nullable.Nullable[time.Time] `json:"reset_at,omitempty"`
+	UsedPercent float64                      `json:"used_percent"`
+}
+
+// QuotaSeries defines model for QuotaSeries.
+type QuotaSeries struct {
+	// BucketSeconds Bucket width when downsampled.
+	BucketSeconds nullable.Nullable[int64] `json:"bucket_seconds,omitempty"`
+	Downsampled   bool                     `json:"downsampled"`
+	From          time.Time                `json:"from"`
+	Items         []QuotaPoint             `json:"items"`
+	To            time.Time                `json:"to"`
+
+	// TotalPoints Points in the range before downsampling.
+	TotalPoints int64             `json:"total_points"`
+	Window      QuotaSeriesWindow `json:"window"`
+}
+
+// QuotaSeriesWindow defines model for QuotaSeries.Window.
+type QuotaSeriesWindow string
 
 // QuotaWindow defines model for QuotaWindow.
 type QuotaWindow struct {
@@ -872,27 +1213,29 @@ type SettingsPatch struct {
 
 // Subscription defines model for Subscription.
 type Subscription struct {
-	AccountId        nullable.Nullable[openapi_types.UUID] `json:"account_id,omitempty"`
-	ActivatedAt      nullable.Nullable[time.Time]          `json:"activated_at,omitempty"`
-	AllowedModels    []string                              `json:"allowed_models"`
-	AutoRenew        bool                                  `json:"auto_renew"`
-	CancelledAt      nullable.Nullable[time.Time]          `json:"cancelled_at,omitempty"`
-	CreatedAt        time.Time                             `json:"created_at"`
-	CurrentPeriod    nullable.Nullable[PeriodUsage]        `json:"current_period,omitempty"`
-	DurationUnit     DurationUnit                          `json:"duration_unit"`
-	DurationValue    int                                   `json:"duration_value"`
-	ExpiresAt        nullable.Nullable[time.Time]          `json:"expires_at,omitempty"`
-	Id               openapi_types.UUID                    `json:"id"`
-	PlanId           openapi_types.UUID                    `json:"plan_id"`
-	PlanName         string                                `json:"plan_name"`
-	PriceMicro       int64                                 `json:"price_micro"`
-	Status           SubscriptionStatus                    `json:"status"`
-	Subscription     SubscriptionKind                      `json:"subscription"`
-	UserId           openapi_types.UUID                    `json:"user_id"`
-	WeeklyQuotaMicro int64                                 `json:"weekly_quota_micro"`
+	AccountId     nullable.Nullable[openapi_types.UUID] `json:"account_id,omitempty"`
+	ActivatedAt   nullable.Nullable[time.Time]          `json:"activated_at,omitempty"`
+	AllowedModels []string                              `json:"allowed_models"`
+	AutoRenew     bool                                  `json:"auto_renew"`
+	CancelledAt   nullable.Nullable[time.Time]          `json:"cancelled_at,omitempty"`
+	CreatedAt     time.Time                             `json:"created_at"`
+	CurrentPeriod nullable.Nullable[PeriodUsage]        `json:"current_period,omitempty"`
+	DurationUnit  DurationUnit                          `json:"duration_unit"`
+	DurationValue int                                   `json:"duration_value"`
+	ExpiresAt     nullable.Nullable[time.Time]          `json:"expires_at,omitempty"`
+	Id            openapi_types.UUID                    `json:"id"`
+	PlanId        openapi_types.UUID                    `json:"plan_id"`
+	PlanName      string                                `json:"plan_name"`
+	PriceMicro    int64                                 `json:"price_micro"`
+	Status        SubscriptionStatus                    `json:"status"`
+
+	// Subscription Only Claude subscriptions are served (since v0.2.0).
+	Subscription     SubscriptionKind   `json:"subscription"`
+	UserId           openapi_types.UUID `json:"user_id"`
+	WeeklyQuotaMicro int64              `json:"weekly_quota_micro"`
 }
 
-// SubscriptionKind defines model for SubscriptionKind.
+// SubscriptionKind Only Claude subscriptions are served (since v0.2.0).
 type SubscriptionKind string
 
 // SubscriptionList defines model for SubscriptionList.
@@ -1008,6 +1351,36 @@ type UserId = openapi_types.UUID
 
 // UserIdFilter defines model for UserIdFilter.
 type UserIdFilter = openapi_types.UUID
+
+// AdminGetAccountCostCompareParams defines parameters for AdminGetAccountCostCompare.
+type AdminGetAccountCostCompareParams struct {
+	From   FromRequired                            `form:"from" json:"from"`
+	To     ToRequired                              `form:"to" json:"to"`
+	Bucket *AdminGetAccountCostCompareParamsBucket `form:"bucket,omitempty" json:"bucket,omitempty"`
+}
+
+// AdminGetAccountCostCompareParamsBucket defines parameters for AdminGetAccountCostCompare.
+type AdminGetAccountCostCompareParamsBucket string
+
+// AdminGetAccountKTrendParams defines parameters for AdminGetAccountKTrend.
+type AdminGetAccountKTrendParams struct {
+	// Days Days back from today (UTC), today included.
+	Days *int `form:"days,omitempty" json:"days,omitempty"`
+}
+
+// AdminGetAccountQuotaSeriesParams defines parameters for AdminGetAccountQuotaSeries.
+type AdminGetAccountQuotaSeriesParams struct {
+	Window AdminGetAccountQuotaSeriesParamsWindow `form:"window" json:"window"`
+
+	// From Default `to` − 7 days for `5h`, `to` − 30 days for `7d`.
+	From *time.Time `form:"from,omitempty" json:"from,omitempty"`
+
+	// To Default now.
+	To *time.Time `form:"to,omitempty" json:"to,omitempty"`
+}
+
+// AdminGetAccountQuotaSeriesParamsWindow defines parameters for AdminGetAccountQuotaSeries.
+type AdminGetAccountQuotaSeriesParamsWindow string
 
 // AdminListAuditLogsParams defines parameters for AdminListAuditLogs.
 type AdminListAuditLogsParams struct {
@@ -1172,7 +1545,7 @@ type ServerInterface interface {
 	// AdminCreateAccount Import an account. /quota and /v1/models must both succeed before it is saved.
 	// (POST /admin/accounts)
 	AdminCreateAccount(w http.ResponseWriter, r *http.Request)
-
+	// AdminDeleteAccount Delete an account (soft delete).
 	// (DELETE /admin/accounts/{accountId})
 	AdminDeleteAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
 
@@ -1181,9 +1554,21 @@ type ServerInterface interface {
 	// AdminUpdateAccount Edit an account. The edited connection is validated like an import; saving clears the error state.
 	// (PATCH /admin/accounts/{accountId})
 	AdminUpdateAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
+	// AdminGetAccountCostCompare Upstream cost per time bucket as seen by cpa-quota and by this bridge.
+	// (GET /admin/accounts/{accountId}/cost-compare)
+	AdminGetAccountCostCompare(w http.ResponseWriter, r *http.Request, accountId AccountId, params AdminGetAccountCostCompareParams)
 	// AdminSetAccountEnabled Enable or disable; enabling also clears the error state.
 	// (PUT /admin/accounts/{accountId}/enabled)
 	AdminSetAccountEnabled(w http.ResponseWriter, r *http.Request, accountId AccountId)
+	// AdminGetAccountEstimate The account's row of the cpa-quota `estimates` table (read only).
+	// (GET /admin/accounts/{accountId}/estimate)
+	AdminGetAccountEstimate(w http.ResponseWriter, r *http.Request, accountId AccountId)
+	// AdminGetAccountKTrend Rows of the cpa-quota `k_trend_daily` table for the account (read only).
+	// (GET /admin/accounts/{accountId}/k-trend)
+	AdminGetAccountKTrend(w http.ResponseWriter, r *http.Request, accountId AccountId, params AdminGetAccountKTrendParams)
+	// AdminGetAccountQuotaSeries Reported utilization of one window over time (cpa-quota `quota_report_windows`, read only).
+	// (GET /admin/accounts/{accountId}/quota-series)
+	AdminGetAccountQuotaSeries(w http.ResponseWriter, r *http.Request, accountId AccountId, params AdminGetAccountQuotaSeriesParams)
 	// AdminTestAccount Call /quota and /v1/models now; a full pass clears the error state and cooldown.
 	// (POST /admin/accounts/{accountId}/test)
 	AdminTestAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
@@ -1301,6 +1686,9 @@ type ServerInterface interface {
 
 	// (GET /me)
 	GetMe(w http.ResponseWriter, r *http.Request)
+	// GetMyAvailability Estimated usable amount for the caller (normal / force calls and own plans).
+	// (GET /me/availability)
+	GetMyAvailability(w http.ResponseWriter, r *http.Request)
 
 	// (POST /me/password)
 	ChangePassword(w http.ResponseWriter, r *http.Request)
@@ -1345,6 +1733,7 @@ func (_ Unimplemented) AdminCreateAccount(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// AdminDeleteAccount Delete an account (soft delete).
 // (DELETE /admin/accounts/{accountId})
 func (_ Unimplemented) AdminDeleteAccount(w http.ResponseWriter, r *http.Request, accountId AccountId) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -1361,9 +1750,33 @@ func (_ Unimplemented) AdminUpdateAccount(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// AdminGetAccountCostCompare Upstream cost per time bucket as seen by cpa-quota and by this bridge.
+// (GET /admin/accounts/{accountId}/cost-compare)
+func (_ Unimplemented) AdminGetAccountCostCompare(w http.ResponseWriter, r *http.Request, accountId AccountId, params AdminGetAccountCostCompareParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // AdminSetAccountEnabled Enable or disable; enabling also clears the error state.
 // (PUT /admin/accounts/{accountId}/enabled)
 func (_ Unimplemented) AdminSetAccountEnabled(w http.ResponseWriter, r *http.Request, accountId AccountId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminGetAccountEstimate The account's row of the cpa-quota `estimates` table (read only).
+// (GET /admin/accounts/{accountId}/estimate)
+func (_ Unimplemented) AdminGetAccountEstimate(w http.ResponseWriter, r *http.Request, accountId AccountId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminGetAccountKTrend Rows of the cpa-quota `k_trend_daily` table for the account (read only).
+// (GET /admin/accounts/{accountId}/k-trend)
+func (_ Unimplemented) AdminGetAccountKTrend(w http.ResponseWriter, r *http.Request, accountId AccountId, params AdminGetAccountKTrendParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminGetAccountQuotaSeries Reported utilization of one window over time (cpa-quota `quota_report_windows`, read only).
+// (GET /admin/accounts/{accountId}/quota-series)
+func (_ Unimplemented) AdminGetAccountQuotaSeries(w http.ResponseWriter, r *http.Request, accountId AccountId, params AdminGetAccountQuotaSeriesParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1572,6 +1985,12 @@ func (_ Unimplemented) GetMe(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// GetMyAvailability Estimated usable amount for the caller (normal / force calls and own plans).
+// (GET /me/availability)
+func (_ Unimplemented) GetMyAvailability(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (POST /me/password)
 func (_ Unimplemented) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -1734,6 +2153,74 @@ func (siw *ServerInterfaceWrapper) AdminUpdateAccount(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
+// AdminGetAccountCostCompare operation middleware
+func (siw *ServerInterfaceWrapper) AdminGetAccountCostCompare(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "accountId" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "accountId", chi.URLParam(r, "accountId"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "accountId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminGetAccountCostCompareParams
+
+	// ------------- Required query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "to", r.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "bucket" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "bucket", r.URL.Query(), &params.Bucket, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "bucket"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "bucket", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminGetAccountCostCompare(w, r, accountId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // AdminSetAccountEnabled operation middleware
 func (siw *ServerInterfaceWrapper) AdminSetAccountEnabled(w http.ResponseWriter, r *http.Request) {
 
@@ -1751,6 +2238,142 @@ func (siw *ServerInterfaceWrapper) AdminSetAccountEnabled(w http.ResponseWriter,
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminSetAccountEnabled(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminGetAccountEstimate operation middleware
+func (siw *ServerInterfaceWrapper) AdminGetAccountEstimate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "accountId" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "accountId", chi.URLParam(r, "accountId"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "accountId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminGetAccountEstimate(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminGetAccountKTrend operation middleware
+func (siw *ServerInterfaceWrapper) AdminGetAccountKTrend(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "accountId" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "accountId", chi.URLParam(r, "accountId"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "accountId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminGetAccountKTrendParams
+
+	// ------------- Optional query parameter "days" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "days", r.URL.Query(), &params.Days, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "days"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "days", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminGetAccountKTrend(w, r, accountId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminGetAccountQuotaSeries operation middleware
+func (siw *ServerInterfaceWrapper) AdminGetAccountQuotaSeries(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "accountId" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "accountId", chi.URLParam(r, "accountId"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "accountId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminGetAccountQuotaSeriesParams
+
+	// ------------- Required query parameter "window" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "window", r.URL.Query(), &params.Window, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "window"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "window", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "to", r.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminGetAccountQuotaSeries(w, r, accountId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3015,6 +3638,20 @@ func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request)
 	handler.ServeHTTP(w, r)
 }
 
+// GetMyAvailability operation middleware
+func (siw *ServerInterfaceWrapper) GetMyAvailability(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMyAvailability(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ChangePassword operation middleware
 func (siw *ServerInterfaceWrapper) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
@@ -3458,6 +4095,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/me/password", wrapper.ChangePassword)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/me/availability", wrapper.GetMyAvailability)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/keys", wrapper.ListKeys)
 	})
 	r.Group(func(r chi.Router) {
@@ -3543,6 +4183,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/admin/accounts/{accountId}/test", wrapper.AdminTestAccount)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/accounts/{accountId}/estimate", wrapper.AdminGetAccountEstimate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/accounts/{accountId}/k-trend", wrapper.AdminGetAccountKTrend)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/accounts/{accountId}/quota-series", wrapper.AdminGetAccountQuotaSeries)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/accounts/{accountId}/cost-compare", wrapper.AdminGetAccountCostCompare)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/admin/plans", wrapper.AdminListPlans)
@@ -3802,6 +4454,46 @@ func (response AdminUpdateAccountdefaultJSONResponse) VisitAdminUpdateAccountRes
 	return err
 }
 
+type AdminGetAccountCostCompareRequestObject struct {
+	AccountId AccountId `json:"accountId"`
+	Params    AdminGetAccountCostCompareParams
+}
+
+type AdminGetAccountCostCompareResponseObject interface {
+	VisitAdminGetAccountCostCompareResponse(w http.ResponseWriter) error
+}
+
+type AdminGetAccountCostCompare200JSONResponse CostCompare
+
+func (response AdminGetAccountCostCompare200JSONResponse) VisitAdminGetAccountCostCompareResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetAccountCostComparedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminGetAccountCostComparedefaultJSONResponse) VisitAdminGetAccountCostCompareResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AdminSetAccountEnabledRequestObject struct {
 	AccountId AccountId `json:"accountId"`
 	Body      *AdminSetAccountEnabledJSONRequestBody
@@ -3831,6 +4523,125 @@ type AdminSetAccountEnableddefaultJSONResponse struct {
 }
 
 func (response AdminSetAccountEnableddefaultJSONResponse) VisitAdminSetAccountEnabledResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetAccountEstimateRequestObject struct {
+	AccountId AccountId `json:"accountId"`
+}
+
+type AdminGetAccountEstimateResponseObject interface {
+	VisitAdminGetAccountEstimateResponse(w http.ResponseWriter) error
+}
+
+type AdminGetAccountEstimate200JSONResponse CpaQuotaEstimate
+
+func (response AdminGetAccountEstimate200JSONResponse) VisitAdminGetAccountEstimateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetAccountEstimatedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminGetAccountEstimatedefaultJSONResponse) VisitAdminGetAccountEstimateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetAccountKTrendRequestObject struct {
+	AccountId AccountId `json:"accountId"`
+	Params    AdminGetAccountKTrendParams
+}
+
+type AdminGetAccountKTrendResponseObject interface {
+	VisitAdminGetAccountKTrendResponse(w http.ResponseWriter) error
+}
+
+type AdminGetAccountKTrend200JSONResponse KTrend
+
+func (response AdminGetAccountKTrend200JSONResponse) VisitAdminGetAccountKTrendResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetAccountKTrenddefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminGetAccountKTrenddefaultJSONResponse) VisitAdminGetAccountKTrendResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetAccountQuotaSeriesRequestObject struct {
+	AccountId AccountId `json:"accountId"`
+	Params    AdminGetAccountQuotaSeriesParams
+}
+
+type AdminGetAccountQuotaSeriesResponseObject interface {
+	VisitAdminGetAccountQuotaSeriesResponse(w http.ResponseWriter) error
+}
+
+type AdminGetAccountQuotaSeries200JSONResponse QuotaSeries
+
+func (response AdminGetAccountQuotaSeries200JSONResponse) VisitAdminGetAccountQuotaSeriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetAccountQuotaSeriesdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminGetAccountQuotaSeriesdefaultJSONResponse) VisitAdminGetAccountQuotaSeriesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -5383,6 +6194,44 @@ func (response GetMedefaultJSONResponse) VisitGetMeResponse(w http.ResponseWrite
 	return err
 }
 
+type GetMyAvailabilityRequestObject struct {
+}
+
+type GetMyAvailabilityResponseObject interface {
+	VisitGetMyAvailabilityResponse(w http.ResponseWriter) error
+}
+
+type GetMyAvailability200JSONResponse Availability
+
+func (response GetMyAvailability200JSONResponse) VisitGetMyAvailabilityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyAvailabilitydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetMyAvailabilitydefaultJSONResponse) VisitGetMyAvailabilityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ChangePasswordRequestObject struct {
 	Body *ChangePasswordJSONRequestBody
 }
@@ -5735,7 +6584,7 @@ type StrictServerInterface interface {
 	// AdminCreateAccount Import an account. /quota and /v1/models must both succeed before it is saved.
 	// (POST /admin/accounts)
 	AdminCreateAccount(ctx context.Context, request AdminCreateAccountRequestObject) (AdminCreateAccountResponseObject, error)
-
+	// AdminDeleteAccount Delete an account (soft delete).
 	// (DELETE /admin/accounts/{accountId})
 	AdminDeleteAccount(ctx context.Context, request AdminDeleteAccountRequestObject) (AdminDeleteAccountResponseObject, error)
 
@@ -5744,9 +6593,21 @@ type StrictServerInterface interface {
 	// AdminUpdateAccount Edit an account. The edited connection is validated like an import; saving clears the error state.
 	// (PATCH /admin/accounts/{accountId})
 	AdminUpdateAccount(ctx context.Context, request AdminUpdateAccountRequestObject) (AdminUpdateAccountResponseObject, error)
+	// AdminGetAccountCostCompare Upstream cost per time bucket as seen by cpa-quota and by this bridge.
+	// (GET /admin/accounts/{accountId}/cost-compare)
+	AdminGetAccountCostCompare(ctx context.Context, request AdminGetAccountCostCompareRequestObject) (AdminGetAccountCostCompareResponseObject, error)
 	// AdminSetAccountEnabled Enable or disable; enabling also clears the error state.
 	// (PUT /admin/accounts/{accountId}/enabled)
 	AdminSetAccountEnabled(ctx context.Context, request AdminSetAccountEnabledRequestObject) (AdminSetAccountEnabledResponseObject, error)
+	// AdminGetAccountEstimate The account's row of the cpa-quota `estimates` table (read only).
+	// (GET /admin/accounts/{accountId}/estimate)
+	AdminGetAccountEstimate(ctx context.Context, request AdminGetAccountEstimateRequestObject) (AdminGetAccountEstimateResponseObject, error)
+	// AdminGetAccountKTrend Rows of the cpa-quota `k_trend_daily` table for the account (read only).
+	// (GET /admin/accounts/{accountId}/k-trend)
+	AdminGetAccountKTrend(ctx context.Context, request AdminGetAccountKTrendRequestObject) (AdminGetAccountKTrendResponseObject, error)
+	// AdminGetAccountQuotaSeries Reported utilization of one window over time (cpa-quota `quota_report_windows`, read only).
+	// (GET /admin/accounts/{accountId}/quota-series)
+	AdminGetAccountQuotaSeries(ctx context.Context, request AdminGetAccountQuotaSeriesRequestObject) (AdminGetAccountQuotaSeriesResponseObject, error)
 	// AdminTestAccount Call /quota and /v1/models now; a full pass clears the error state and cooldown.
 	// (POST /admin/accounts/{accountId}/test)
 	AdminTestAccount(ctx context.Context, request AdminTestAccountRequestObject) (AdminTestAccountResponseObject, error)
@@ -5864,6 +6725,9 @@ type StrictServerInterface interface {
 
 	// (GET /me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// GetMyAvailability Estimated usable amount for the caller (normal / force calls and own plans).
+	// (GET /me/availability)
+	GetMyAvailability(ctx context.Context, request GetMyAvailabilityRequestObject) (GetMyAvailabilityResponseObject, error)
 
 	// (POST /me/password)
 	ChangePassword(ctx context.Context, request ChangePasswordRequestObject) (ChangePasswordResponseObject, error)
@@ -6072,6 +6936,33 @@ func (sh *strictHandler) AdminUpdateAccount(w http.ResponseWriter, r *http.Reque
 	}
 }
 
+// AdminGetAccountCostCompare operation middleware
+func (sh *strictHandler) AdminGetAccountCostCompare(w http.ResponseWriter, r *http.Request, accountId AccountId, params AdminGetAccountCostCompareParams) {
+	var request AdminGetAccountCostCompareRequestObject
+
+	request.AccountId = accountId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminGetAccountCostCompare(ctx, request.(AdminGetAccountCostCompareRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminGetAccountCostCompare")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminGetAccountCostCompareResponseObject); ok {
+		if err := validResponse.VisitAdminGetAccountCostCompareResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // AdminSetAccountEnabled operation middleware
 func (sh *strictHandler) AdminSetAccountEnabled(w http.ResponseWriter, r *http.Request, accountId AccountId) {
 	var request AdminSetAccountEnabledRequestObject
@@ -6098,6 +6989,86 @@ func (sh *strictHandler) AdminSetAccountEnabled(w http.ResponseWriter, r *http.R
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AdminSetAccountEnabledResponseObject); ok {
 		if err := validResponse.VisitAdminSetAccountEnabledResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminGetAccountEstimate operation middleware
+func (sh *strictHandler) AdminGetAccountEstimate(w http.ResponseWriter, r *http.Request, accountId AccountId) {
+	var request AdminGetAccountEstimateRequestObject
+
+	request.AccountId = accountId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminGetAccountEstimate(ctx, request.(AdminGetAccountEstimateRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminGetAccountEstimate")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminGetAccountEstimateResponseObject); ok {
+		if err := validResponse.VisitAdminGetAccountEstimateResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminGetAccountKTrend operation middleware
+func (sh *strictHandler) AdminGetAccountKTrend(w http.ResponseWriter, r *http.Request, accountId AccountId, params AdminGetAccountKTrendParams) {
+	var request AdminGetAccountKTrendRequestObject
+
+	request.AccountId = accountId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminGetAccountKTrend(ctx, request.(AdminGetAccountKTrendRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminGetAccountKTrend")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminGetAccountKTrendResponseObject); ok {
+		if err := validResponse.VisitAdminGetAccountKTrendResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminGetAccountQuotaSeries operation middleware
+func (sh *strictHandler) AdminGetAccountQuotaSeries(w http.ResponseWriter, r *http.Request, accountId AccountId, params AdminGetAccountQuotaSeriesParams) {
+	var request AdminGetAccountQuotaSeriesRequestObject
+
+	request.AccountId = accountId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminGetAccountQuotaSeries(ctx, request.(AdminGetAccountQuotaSeriesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminGetAccountQuotaSeries")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminGetAccountQuotaSeriesResponseObject); ok {
+		if err := validResponse.VisitAdminGetAccountQuotaSeriesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -7171,6 +8142,30 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetMeResponseObject); ok {
 		if err := validResponse.VisitGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMyAvailability operation middleware
+func (sh *strictHandler) GetMyAvailability(w http.ResponseWriter, r *http.Request) {
+	var request GetMyAvailabilityRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMyAvailability(ctx, request.(GetMyAvailabilityRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMyAvailability")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMyAvailabilityResponseObject); ok {
+		if err := validResponse.VisitGetMyAvailabilityResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

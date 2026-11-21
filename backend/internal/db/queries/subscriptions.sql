@@ -43,3 +43,10 @@ SELECT id FROM plan_subscriptions WHERE status = 'active' AND expires_at <= now(
 -- name: SumQuotaByAccount :one
 SELECT COALESCE(sum(weekly_quota_micro), 0)::bigint FROM plan_subscriptions
 WHERE account_id = $1 AND status IN ('active', 'pending_assignment') AND id <> $2;
+
+-- name: ListBlockingSubscriptionsByAccount :many
+-- Subscriptions that prevent deleting their account.
+SELECT s.id, s.user_id, u.username, s.status, s.plan_name
+FROM plan_subscriptions s JOIN users u ON u.id = s.user_id
+WHERE s.account_id = $1 AND s.status IN ('active', 'pending_assignment')
+ORDER BY s.created_at, s.id;

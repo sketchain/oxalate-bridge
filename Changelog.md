@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.2.0
+
+### 升级须知
+
+- 只服务 Claude：删除了 `/v1/responses` 和 `/v1/chat/completions`（现在返回 Anthropic 格式的 404），只保留 `/v1/messages`、`/v1/messages/count_tokens`、`GET /v1/models`。用这两个端点的客户端需要改用 Messages 协议。
+- 新迁移 `00002_claude_only` 给账号、plan、订阅加了只允许 `claude` 的 CHECK 约束（已删除的账号与 plan、已过期或取消的订阅不受约束）。库里还有未删除的非 Claude 账号或 plan、或 active / pending 的非 Claude 订阅时迁移会报错停止：先用 v0.1.x 删除或取消它们再升级。
+- 面板 API 的 `SubscriptionKind` 只剩 `claude`；新增错误码 `unsupported_subscription`、`account_has_subscriptions`、`cpa_quota_unavailable`。升级前已登录的面板会话不在新的会话集合里，下一次请求时自动补登记。
+
+### 后端
+
+- 只保留 Claude Messages 协议：删除 Responses / Chat Completions 的转发、usage 解析，以及 Chat 流式 `include_usage` 的插入与剥离。对客户端不做任何校验，任何客户端发到 `/v1/messages` 的请求都原样透传；会话标识提取保持完整。`GET /v1/models` 返回启用账号可用模型的并集。
+- 上游账号只接受 Claude 订阅：导入、编辑、测试时 `/quota` 返回的 subscription 不是 claude 即拒绝（`unsupported_subscription`）；plan 只能是 claude；已导入的账号之后报告别的订阅时由轮询置为 error。去掉了账号类型与 plan 类型不一致的判定（约束保证一致）。
+- 会话失效：Redis 为每个用户维护会话集合。用户自己改密码保留当前会话、删除其他会话；管理员重置密码、停用、修改角色或删除用户时删除该用户全部会话，多副本立即生效。
+- 上游账号删除保护：绑定了 active / pending_assignment 订阅的账号禁止删除，返回 409 `account_has_subscriptions` 并列出这些订阅；停用不受影响。删除与订阅绑定在账号行上互斥。
+- 管理员账号详情（只读读取 cpa-quota 的表）：`GET /admin/accounts/{id}/estimate`、`/k-trend`、`/quota-series`（超过 2000 点按时间桶降采样）、`/cost-compare`（cpa-quota 与本项目的上游成本按时间桶并排）。只读事务、3 秒语句超时；schema 或表不存在时 503 `cpa_quota_unavailable`。
+- 用户可用额度 `GET /me/availability`：按账号的 5h / 周窗口容量（含未来重置、plan 预留）估算普通与强制调用在 1h / 5h / 24h / 7d 的可用量，换算为用户价格并与余额取小；列出每份 plan 的 5h 与本期可用量。不返回任何账号信息。账号无关部分由 leader 在每次额度刷新后写入 Redis 缓存。
+
 ## v0.1.0
 
 ### 升级须知
