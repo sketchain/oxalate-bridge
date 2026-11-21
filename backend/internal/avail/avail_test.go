@@ -24,7 +24,12 @@ func TestResetsBoundaries(t *testing.T) {
 		{"reset exactly at now+T does not count", at(time.Hour), Period5h, time.Hour, 0},
 		{"reset after the horizon", at(2 * time.Hour), Period5h, time.Hour, 0},
 		{"reset just inside", at(time.Hour - time.Second), Period5h, time.Hour, 1},
-		{"first reset inside, next one exactly at now+T", at(time.Hour), Period5h, 6 * time.Hour, 2},
+		{"first reset inside, next one exactly at now+T", at(time.Hour), Period5h, 6 * time.Hour, 1},
+		{"first reset inside, next one just before now+T", at(time.Hour), Period5h, 6*time.Hour + time.Second, 2},
+		{"exactly two whole periods after the first reset", at(time.Hour), Period5h, 11 * time.Hour, 2},
+		{"reset exactly at now (whole periods to now+T)", now, Period5h, 10 * time.Hour, 2},
+		{"week: first reset inside, second exactly at now+T", at(24 * time.Hour), Period7d, 8 * 24 * time.Hour, 1},
+		{"week: second reset just inside", at(24 * time.Hour), Period7d, 8*24*time.Hour + time.Second, 2},
 		{"first reset inside, next one just after", at(time.Hour), Period5h, 6*time.Hour - time.Second, 1},
 		{"24h with resets every 5h from +1h", at(time.Hour), Period5h, 24 * time.Hour, 5},
 		{"week reset in 3 days over 7 days", at(72 * time.Hour), Period7d, Period7d, 1},
@@ -53,7 +58,7 @@ func TestCapacitiesAndForcedNormal(t *testing.T) {
 	if got := a.Forced(now, 5*time.Hour); got != 11_000_000 {
 		t.Fatalf("F(5h) %d", got)
 	}
-	// 7d: 5h resets 1 + floor((168-2)/5) = 34 -> C5 huge; week resets once -> r7 + T7.
+	// 7d: 5h resets ceil((168-2)/5) = 34 -> C5 huge; week resets once -> r7 + T7.
 	if got := a.Forced(now, Period7d); got != 120_000_000 {
 		t.Fatalf("F(7d) %d", got)
 	}

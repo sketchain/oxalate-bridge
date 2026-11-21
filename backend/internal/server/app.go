@@ -163,7 +163,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		Log: log, Transport: transport, ClientIP: a.ClientIP, OnAccountError: a.requestCatalogReload}
 	a.API = &api.Server{Store: a.Store, St: a.St, Box: box, Settings: a.Settings, Router: a.Router, Cat: a.Cat, Subs: a.Subs,
 		Prices: a.Prices, CPA: a.CPA, Hub: a.Hub, Auth: a.Auth, Log: log, CookieSecure: cfg.CookieSecure,
-		RefreshPrices: a.refreshPrices, Avail: a.Avail, CPAQuota: &cpaquota.Reader{Pool: pool, Schema: cfg.CPAQuotaSchema}}
+		RefreshPrices: a.refreshPrices, Avail: a.Avail, Location: cfg.Location, CPAQuota: &cpaquota.Reader{Pool: pool, Schema: cfg.CPAQuotaSchema}}
 	a.Hub.OnInvalidate = a.Auth.DropL1
 	a.Hub.OnSettings = func() {
 		if err := a.Settings.Load(context.Background(), a.Store.Q); err != nil {

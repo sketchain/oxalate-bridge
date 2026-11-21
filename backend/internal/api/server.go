@@ -52,6 +52,8 @@ type Server struct {
 	CPAQuota *cpaquota.Reader
 	// Avail serves the cached availability snapshot.
 	Avail *avail.Service
+	// Location is the server time zone used to cut days (admin overview).
+	Location *time.Location
 }
 
 var _ StrictServerInterface = (*Server)(nil)

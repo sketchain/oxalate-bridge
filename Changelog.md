@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.3.0
+
+### 升级须知
+
+- 面向普通用户的接口改用单独的 schema，去掉了上游成本、倍率与账号字段：`GET /usage/logs` 返回 `MyRequestLogPage`（无 `upstream_cost_micro`、`tier_multiplier`、`model_multiplier`、`retries`、`account_id`、`session_hash`、`client_ip`），`GET /usage/summary` 返回 `MyUsageSummary`（无 `upstream_cost_micro`），`/subscriptions`、购买、续费、自动续费返回 `MySubscription`（无 `account_id`、`user_id`、`current_period.used_upstream_micro`）。管理端接口不变。
+- `GET /me/availability` 中 plan 的 `account_status` 只剩 `normal` / `stale` / `cooldown` / `unavailable`（原来的 `error` 改为 `unavailable`，停用的账号也是 `unavailable`），此时 `five_hour` 与 `period` 的可用量为 0。
+- 新环境变量 `BRIDGE_TIMEZONE`（默认 `Asia/Shanghai`），用于管理概览按天切分；二进制内置时区库。
+- 前端构建改用 pnpm，产物不再提交到仓库（`backend/internal/webui/dist` 只保留 `.gitkeep`，未构建时返回 `placeholder/index.html`）。Docker 镜像与 CI 先构建前端再构建 Go。
+
+### 前端
+
+- 完整的面板：React + Vite + TypeScript（strict）、TanStack Router（文件式路由）/ Query / Table / Virtual、react-hook-form + zod、Recharts、i18next（zh-CN 默认，en）。shadcn/ui 组件源码在仓库内并按「试剂标签」设计规范改造（零圆角、无阴影、墨 / 试剂黄 / 危险红，Archivo 压窄 + IBM Plex Mono，字体自托管）。深浅色跟随系统，可手动切换并记住。
+- 用户侧：登录、概览（汇总条、每 30 秒刷新的可用额度、近 14 天按档位花费、Plan 订阅卡片、最近请求、我的 Key）、API Key（档位开关与拖动 / 键盘排序、绑定订阅、完整 key 展示与复制）、用量明细（筛选、按天 / 小时与按模型图表、游标分页 + 虚拟滚动、详情抽屉）、Plan 订阅（续费、自动续费、购买前显示购买后余额）、余额与账单、设置。
+- 管理侧：概览（今日汇总、账号状态分布、待分配提醒、Stream 积压与对账、SSE 实时请求流）、用户（搜索、新建、详情：资料、余额调整、key 停用、订阅、近期用量、重置密码、停用）、上游账号（汇总条、筛选、卡片网格与 SSE 实时刷新、先校验后保存的导入、详情页的配置 / 运行时 / 图表 / 估算明细 / 绑定订阅，删除冲突时逐条列出并可去换绑）、Plan、订阅（待分配队列、分配时显示预留与容量和超卖预警、换绑、取消退款、直接开通）、请求日志、账本、审计日志、safeguard 事件、分组的系统设置（美元与人类可读时长输入）。
+- 桌面端左侧导航 + ⌘K / Ctrl+K 命令面板；手机端用户侧底部四个标签、管理侧抽屉菜单；宽表格在手机上改为卡片。后端错误码映射为中英文文案；破坏性操作二次确认；开关类操作乐观更新并在失败时回滚。
+
+### 后端
+
+- 可用额度的重置次数统一为只计严格早于 now+T 的重置：n(T) = ⌈(now+T − reset) / 周期⌉（reset ≥ now+T 时为 0），5h 与 7d 相同；原实现在后续重置恰好落在 now+T 时多算一次。
+- 新增 `GET /admin/overview`：今日（服务器时区）请求数与 billed / upstream 合计及按档位拆分、账号按状态计数（含降权中）与总空闲 / 总预留、待分配订阅数、Stream 积压、最近一次对账。
+- 新增面板所需接口与字段：`POST /admin/accounts/validate`（导入前校验，不保存）、`GET /admin/users/{id}/keys`、`PUT /admin/keys/{id}/enabled`、管理端请求日志的 `status_code` 筛选；管理端订阅带 `username`、`account_name`；账号带 `sold_weekly_quota_micro`、`sold_upstream_micro`、`week_total_micro`、`k`（来自 cpa-quota），运行时带 `penalized`；SSE 事件数据定义为 `AccountStatusEvent`、`RequestSettledEvent`。
+- `cmd/fakecpa`：可单独运行的多实例假 CPA（额度随调用增长、窗口到点重置、上报 unified 限额响应头、提供演示用倍率表）；`bridge seed-demo` 生成演示数据；`make dev` 一键启动本地环境。
+
 ## v0.2.0
 
 ### 升级须知

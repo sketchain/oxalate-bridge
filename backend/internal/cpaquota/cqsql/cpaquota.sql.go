@@ -138,6 +138,37 @@ func (q *Queries) GetEstimate(ctx context.Context, arg GetEstimateParams) (Estim
 	return i, err
 }
 
+const listEstimateK = `-- name: ListEstimateK :many
+SELECT instance, auth_index, k FROM estimates
+`
+
+type ListEstimateKRow struct {
+	Instance  string
+	AuthIndex string
+	K         *float64
+}
+
+// k of every estimate (account list).
+func (q *Queries) ListEstimateK(ctx context.Context) ([]ListEstimateKRow, error) {
+	rows, err := q.db.Query(ctx, listEstimateK)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListEstimateKRow{}
+	for rows.Next() {
+		var i ListEstimateKRow
+		if err := rows.Scan(&i.Instance, &i.AuthIndex, &i.K); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listKTrend = `-- name: ListKTrend :many
 SELECT day, gain_5h, gain_7d, k, segments, excluded_segments, cost_usd, gain, updated_at
 FROM k_trend_daily

@@ -46,3 +46,7 @@ SELECT u.id, u.balance_micro, COALESCE(l.total, 0)::bigint AS ledger_total
 FROM users u
 LEFT JOIN (SELECT user_id, sum(amount_micro) AS total FROM ledger_entries GROUP BY user_id) l ON l.user_id = u.id
 WHERE u.balance_micro <> COALESCE(l.total, 0);
+
+-- name: ListUsernames :many
+-- Usernames for display (deleted users included).
+SELECT id, username FROM users WHERE id = ANY(sqlc.arg('ids')::uuid[]);

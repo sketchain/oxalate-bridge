@@ -4,3 +4,11 @@
 node_modules/
 *.test
 *.out
+dump.rdb
+# Frontend build output: only the placeholder index.html is committed.
+/backend/internal/webui/dist/*
+!/backend/internal/webui/dist/.gitkeep
+/web/playwright-report/
+/web/test-results/
+/web/node_modules/
+/.dev/
