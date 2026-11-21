@@ -36,8 +36,10 @@ type Account struct {
 	State        string     `json:"state"`
 	SafetyFactor float64    `json:"safety_factor"`
 	ObservedAt   *time.Time `json:"observed_at"`
-	FiveHour     *Window    `json:"five_hour"`
-	Week         *Window    `json:"week"`
+	// K is the plugin's k = week total ÷ 5-hour total (absent on older plugins).
+	K        *float64 `json:"k,omitempty"`
+	FiveHour *Window  `json:"five_hour"`
+	Week     *Window  `json:"week"`
 }
 
 // QuotaResponse is the quota endpoint response.

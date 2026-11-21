@@ -555,11 +555,16 @@ type SettleOp struct {
 	AffinityTTL time.Duration
 	// Record is the JSON settlement record appended to the stream.
 	Record []byte
+	// Key, when set, has its hold released and Charge added to its meter
+	// (scope "a", and "b" too when KeyBalance: a balance tier charged).
+	Key        uuid.UUID
+	KeyBalance bool
 }
 
 var settleScript = redis.NewScript(`
--- KEYS: wb, wh, wa, wp, spend, aff, stream
--- ARGV: request_id, charge, has_wallet, minute, cost, account, aff_ttl_ms, record, spend_ttl_s
+-- KEYS: wb, wh, wa, wp, spend, aff, stream, kp, kh, khv, kwh:a, kwh:b, kwr
+-- ARGV: request_id, charge, has_wallet, minute, cost, account, aff_ttl_ms, record, spend_ttl_s,
+--       has_key, key_balance, kwm_a_prefix, kwm_b_prefix, key_ttl_s
 local id = ARGV[1]
 redis.call('ZREM', KEYS[2], id)
 redis.call('HDEL', KEYS[3], id)
@@ -575,11 +580,34 @@ end
 if ARGV[6] ~= '' and tonumber(ARGV[7]) > 0 then
   redis.call('SET', KEYS[6], ARGV[6], 'PX', tonumber(ARGV[7]))
 end
+if ARGV[10] == '1' then
+  redis.call('ZREM', KEYS[9], id)
+  redis.call('HDEL', KEYS[10], id)
+  if charge ~= 0 then
+    local minute = ARGV[4]
+    local hour = tostring(math.floor(tonumber(minute) / 60))
+    local ttl = tonumber(ARGV[14])
+    redis.call('HINCRBY', KEYS[8], 'a', ARGV[2])
+    redis.call('HINCRBY', KEYS[11], hour, ARGV[2])
+    redis.call('EXPIRE', KEYS[11], ttl)
+    redis.call('HINCRBY', ARGV[12] .. hour, minute, ARGV[2])
+    redis.call('EXPIRE', ARGV[12] .. hour, ttl)
+    if ARGV[11] == '1' then
+      redis.call('HINCRBY', KEYS[8], 'b', ARGV[2])
+      redis.call('HINCRBY', KEYS[12], hour, ARGV[2])
+      redis.call('EXPIRE', KEYS[12], ttl)
+      redis.call('HINCRBY', ARGV[13] .. hour, minute, ARGV[2])
+      redis.call('EXPIRE', ARGV[13] .. hour, ttl)
+    end
+    redis.call('EXPIRE', KEYS[13], ttl)
+  end
+end
 return redis.call('XADD', KEYS[7], '*', 'r', ARGV[8])
 `)
 
-// Settle releases the hold, charges the wallet, records account spend, renews
-// affinity and appends the settlement record to the stream, atomically.
+// Settle releases the wallet and key holds, charges the wallet and the key
+// meter (pending and window buckets), records account spend, renews affinity
+// and appends the settlement record to the stream, atomically.
 func (s *State) Settle(ctx context.Context, op SettleOp) (string, error) {
 	w := op.Wallet
 	if w == "" {
@@ -600,9 +628,21 @@ func (s *State) Settle(ctx context.Context, op SettleOp) (string, error) {
 	if op.Wallet != "" {
 		hasWallet = "1"
 	}
-	return settleScript.Run(ctx, s.R, []string{keys[0], keys[1], keys[2], keys[3], spend, aff, s.StreamKey()},
+	none := s.k("none")
+	kp, kh, khv, kwa, kwb, kwr, pa, pb := none, none, none, none, none, none, "", ""
+	hasKey, keyBal := "0", "0"
+	if op.Key != uuid.Nil {
+		_, kp, kh, khv, kwr = s.keyKeys(op.Key)
+		kwa, kwb = s.keyHourKey(op.Key, "a"), s.keyHourKey(op.Key, "b")
+		pa, pb = s.keyMinutePrefix(op.Key, "a"), s.keyMinutePrefix(op.Key, "b")
+		hasKey = "1"
+		if op.KeyBalance {
+			keyBal = "1"
+		}
+	}
+	return settleScript.Run(ctx, s.R, []string{keys[0], keys[1], keys[2], keys[3], spend, aff, s.StreamKey(), kp, kh, khv, kwa, kwb, kwr},
 		op.RequestID, op.Charge, hasWallet, strconv.FormatInt(op.At.Unix()/60, 10), op.AccountCost, account, affTTL,
-		op.Record, int64((SpendRetention + time.Hour).Seconds())).Text()
+		op.Record, int64((SpendRetention + time.Hour).Seconds()), hasKey, keyBal, pa, pb, int64(KeyBucketRetention.Seconds())).Text()
 }
 
 // Persisted is one stream entry whose PG transaction committed.
@@ -610,6 +650,17 @@ type Persisted struct {
 	MessageID string
 	Wallet    Wallet
 	Amount    int64
+	// Key meter pending amounts to decrement with the same exactly-once guard.
+	Key        uuid.UUID
+	KeyAll     int64
+	KeyBalance int64
+}
+
+// KeySync is a committed (all, balance, version) of a key meter.
+type KeySync struct {
+	Key          uuid.UUID
+	All, Balance int64
+	Version      int64
 }
 
 // BaseSync is a committed (base, version) of a wallet.
@@ -620,45 +671,66 @@ type BaseSync struct {
 }
 
 var persistedScript = redis.NewScript(`
--- KEYS: stream ; ARGV: group, n, nsync, then per entry: msg_id, marker_key, pending_key, amount
--- then per sync: base_key, base, version
+-- KEYS: stream ; ARGV: group, n, nsync, nksync, then per sync: base_key, base, version
+-- then per key sync: kb_key, all, balance, version
+-- then per entry: msg_id, marker_key, pending_key, amount, kp_key, kall, kbal
 local n = tonumber(ARGV[2])
 local nsync = tonumber(ARGV[3])
-local base = 4
+local nksync = tonumber(ARGV[4])
+local base = 5
 for i = 1, nsync do
   local key, b, v = ARGV[base], ARGV[base + 1], ARGV[base + 2]
   local cur = redis.call('HGET', key, 'v')
   if (not cur) or tonumber(cur) < tonumber(v) then redis.call('HSET', key, 'b', b, 'v', v) end
   base = base + 3
 end
+for i = 1, nksync do
+  local key, a, b, v = ARGV[base], ARGV[base + 1], ARGV[base + 2], ARGV[base + 3]
+  local cur = redis.call('HGET', key, 'v')
+  if (not cur) or tonumber(cur) < tonumber(v) then redis.call('HSET', key, 'a', a, 'b', b, 'v', v) end
+  base = base + 4
+end
 for i = 1, n do
   local msg = ARGV[base]
-  if ARGV[base + 2] ~= '' and redis.call('SET', ARGV[base + 1], '1', 'NX', 'EX', 172800) then
-    redis.call('DECRBY', ARGV[base + 2], tonumber(ARGV[base + 3]))
+  if (ARGV[base + 2] ~= '' or ARGV[base + 4] ~= '') and redis.call('SET', ARGV[base + 1], '1', 'NX', 'EX', 172800) then
+    if ARGV[base + 2] ~= '' then redis.call('DECRBY', ARGV[base + 2], tonumber(ARGV[base + 3])) end
+    if ARGV[base + 4] ~= '' then
+      redis.call('HINCRBY', ARGV[base + 4], 'a', ARGV[base + 5])
+      redis.call('HINCRBY', ARGV[base + 4], 'b', ARGV[base + 6])
+    end
   end
   redis.call('XACK', KEYS[1], ARGV[1], msg)
-  base = base + 4
+  base = base + 7
 end
 return n
 `)
 
-// MarkPersisted installs the committed bases, decrements the pending
-// amounts of committed entries exactly once (per message id) and
+// MarkPersisted installs the committed wallet and key bases, decrements the
+// pending amounts of committed entries exactly once (per message id) and
 // acknowledges them, atomically.
-func (s *State) MarkPersisted(ctx context.Context, group string, entries []Persisted, syncs []BaseSync) error {
-	if len(entries) == 0 && len(syncs) == 0 {
+func (s *State) MarkPersisted(ctx context.Context, group string, entries []Persisted, syncs []BaseSync, ksyncs ...KeySync) error {
+	if len(entries) == 0 && len(syncs) == 0 && len(ksyncs) == 0 {
 		return nil
 	}
-	args := []any{group, len(entries), len(syncs)}
+	args := []any{group, len(entries), len(syncs), len(ksyncs)}
 	for _, b := range syncs {
 		args = append(args, s.k("wb", string(b.Wallet)), b.Base, b.Version)
+	}
+	for _, k := range ksyncs {
+		kb, _, _, _, _ := s.keyKeys(k.Key)
+		args = append(args, kb, k.All, k.Balance, k.Version)
 	}
 	for _, e := range entries {
 		pending := ""
 		if e.Wallet != "" && e.Amount != 0 {
 			pending = s.k("wp", string(e.Wallet))
 		}
-		args = append(args, e.MessageID, s.k("pd", e.MessageID), pending, e.Amount)
+		kp := ""
+		if e.Key != uuid.Nil && (e.KeyAll != 0 || e.KeyBalance != 0) {
+			_, kp, _, _, _ = s.keyKeys(e.Key)
+		}
+		// Key pending deltas are passed negated (strings, never Lua floats).
+		args = append(args, e.MessageID, s.k("pd", e.MessageID), pending, e.Amount, kp, -e.KeyAll, -e.KeyBalance)
 	}
 	// Scripts touch keys passed as arguments; the bridge requires a single
 	// (non-cluster) Redis, see README.

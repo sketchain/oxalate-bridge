@@ -37,6 +37,44 @@ type Info struct {
 	Role           string     `json:"role"`
 	KeyEnabled     bool       `json:"key_enabled"`
 	UserActive     bool       `json:"user_active"`
+
+	// Key limits (nil / empty = unlimited).
+	QuotaLimit      *int64     `json:"quota_limit,omitempty"`
+	QuotaScope      string     `json:"quota_scope,omitempty"`
+	Limit5h         *int64     `json:"limit_5h,omitempty"`
+	Limit1d         *int64     `json:"limit_1d,omitempty"`
+	Limit7d         *int64     `json:"limit_7d,omitempty"`
+	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
+	ModelAllowlist  []string   `json:"model_allowlist,omitempty"`
+	IPAllowlist     []string   `json:"ip_allowlist,omitempty"`
+	AllowOwnerQuery bool       `json:"allow_owner_query,omitempty"`
+}
+
+// Expired reports whether the key has expired at now.
+func (i Info) Expired(now time.Time) bool { return i.ExpiresAt != nil && !now.Before(*i.ExpiresAt) }
+
+// Scope is the meter scope of the key's limits: "a" (all) or "b" (balance).
+func (i Info) Scope() string {
+	if i.QuotaScope == "balance" {
+		return "b"
+	}
+	return "a"
+}
+
+// Counts reports whether a charge of tier counts toward the key's limits.
+func (i Info) Counts(tier string) bool {
+	return i.Scope() == "a" || tier == "standard" || tier == "force"
+}
+
+// Limits returns the key's limits in meter form (negative = unlimited).
+func (i Info) Limits() rstate.KeyLimits {
+	v := func(p *int64) int64 {
+		if p == nil {
+			return -1
+		}
+		return *p
+	}
+	return rstate.KeyLimits{Scope: i.Scope(), Quota: v(i.QuotaLimit), Windows: [3]int64{v(i.Limit5h), v(i.Limit1d), v(i.Limit7d)}}
 }
 
 // Usable reports whether the key may make requests.
@@ -154,7 +192,10 @@ func (c *Cache) loadPG(ctx context.Context, h string) (Info, error) {
 	return Info{Found: !row.KeyDeleted, KeyID: row.KeyID, UserID: row.UserID, Tiers: row.Tiers,
 		SubscriptionID: row.SubscriptionID, KeyMaxConc: row.KeyMaxConcurrency, KeyRPM: row.KeyRpm,
 		UserMaxConc: row.UserMaxConcurrency, UserRPM: row.UserRpm, Role: row.Role,
-		KeyEnabled: row.KeyEnabled, UserActive: row.UserStatus == "active"}, nil
+		KeyEnabled: row.KeyEnabled, UserActive: row.UserStatus == "active",
+		QuotaLimit: row.QuotaLimitMicro, QuotaScope: row.QuotaScope, Limit5h: row.Limit5hMicro, Limit1d: row.Limit1dMicro,
+		Limit7d: row.Limit7dMicro, ExpiresAt: row.ExpiresAt, ModelAllowlist: row.ModelAllowlist, IPAllowlist: row.IpAllowlist,
+		AllowOwnerQuery: row.AllowOwnerQuery}, nil
 }
 
 // DropL1 removes key hashes from this replica's L1 (pub/sub handler).

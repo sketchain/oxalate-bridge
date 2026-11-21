@@ -60,6 +60,8 @@ type CPA struct {
 	FiveReset, WeekReset time.Time
 	State                string
 	DatabaseStatus       string
+	// OmitK leaves accounts[0].k out of /quota (older cpa-quota versions).
+	OmitK bool
 	// Safety is the reported safety factor (0 = 0.9).
 	Safety      float64
 	QuotaStatus int
@@ -197,6 +199,10 @@ func (c *CPA) safety() float64 {
 
 func (c *CPA) quotaBody() map[string]any {
 	sf := c.safety()
+	var k any
+	if c.FiveTotal > 0 && !c.OmitK {
+		k = c.WeekTotal / c.FiveTotal
+	}
 	window := func(used, total float64, reset time.Time) map[string]any {
 		return map[string]any{"used_percent": used, "reset_at": reset.Format(time.RFC3339), "total_usd": total,
 			"remaining_usd": sf * total * (1 - used/100)}
@@ -207,7 +213,7 @@ func (c *CPA) quotaBody() map[string]any {
 		"estimates": map[string]any{"loaded": true},
 		"accounts": []map[string]any{{
 			"auth_index": c.AuthIndex, "provider": "claude",
-			"subscription": c.Sub, "tier": c.Tier, "state": c.State, "safety_factor": sf,
+			"subscription": c.Sub, "tier": c.Tier, "state": c.State, "safety_factor": sf, "k": k,
 			"observed_at": time.Now().UTC().Add(-time.Minute).Format(time.RFC3339),
 			"five_hour":   window(c.FiveUsed, c.FiveTotal, c.FiveReset),
 			"week":        window(c.WeekUsed, c.WeekTotal, c.WeekReset),

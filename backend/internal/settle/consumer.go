@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -183,9 +184,10 @@ func (c *Consumer) process(ctx context.Context, msgs []redis.XMessage) error {
 	batchID := msgs[0].ID + "~" + msgs[len(msgs)-1].ID
 	var settled []Summary
 	var syncs []rstate.BaseSync
+	var ksyncs []rstate.KeySync
 	err := c.Store.InTx(ctx, func(tx *store.Tx) error {
 		var err error
-		settled, syncs, err = persist(ctx, tx, entries, batchID)
+		settled, syncs, ksyncs, err = persist(ctx, tx, entries, batchID)
 		return err
 	})
 	if err != nil {
@@ -200,9 +202,15 @@ func (c *Consumer) process(ctx context.Context, msgs []redis.XMessage) error {
 			p.Wallet, _ = rstate.ParseWallet(e.rec.Wallet)
 			p.Amount = e.rec.Billed
 		}
+		if !e.bad && e.rec.KeyID != uuid.Nil && e.rec.Billed != 0 {
+			p.Key, p.KeyAll = e.rec.KeyID, e.rec.Billed
+			if BalanceTier(e.rec.Tier) {
+				p.KeyBalance = e.rec.Billed
+			}
+		}
 		persisted = append(persisted, p)
 	}
-	if err := c.St.MarkPersisted(context.WithoutCancel(ctx), Group, persisted, syncs); err != nil {
+	if err := c.St.MarkPersisted(context.WithoutCancel(ctx), Group, persisted, syncs, ksyncs...); err != nil {
 		c.Log.Error("ack settlement batch", "batch", batchID, "err", err)
 		return err
 	}
@@ -234,7 +242,13 @@ type periodAgg struct {
 	upstream int64
 }
 
-func persist(ctx context.Context, tx *store.Tx, entries []entry, batchID string) ([]Summary, []rstate.BaseSync, error) {
+type keyCharge struct {
+	at           time.Time
+	all, balance int64
+}
+
+func persist(ctx context.Context, tx *store.Tx, entries []entry, batchID string) ([]Summary, []rstate.BaseSync, []rstate.KeySync, error) {
+	keyCharges := map[uuid.UUID][]keyCharge{}
 	hours := map[hourKey]*sqlc.AddUsageHourlyParams{}
 	periods := map[periodKey]*periodAgg{}
 	charges := map[uuid.UUID]int64{}
@@ -261,7 +275,7 @@ func persist(ctx context.Context, tx *store.Tx, entries []entry, batchID string)
 			if isNoRows(err) {
 				continue // duplicate delivery
 			}
-			return nil, nil, fmt.Errorf("insert request log %s: %w", r.RequestID, err)
+			return nil, nil, nil, fmt.Errorf("insert request log %s: %w", r.RequestID, err)
 		}
 		_ = inserted
 		settled = append(settled, r.Summarize())
@@ -304,6 +318,13 @@ func persist(ctx context.Context, tx *store.Tx, entries []entry, batchID string)
 			}
 			charges[r.UserID] += r.Billed
 		}
+		if r.KeyID != uuid.Nil && r.Billed != 0 {
+			kc := keyCharge{at: r.CreatedAt, all: r.Billed}
+			if BalanceTier(r.Tier) {
+				kc.balance = r.Billed
+			}
+			keyCharges[r.KeyID] = append(keyCharges[r.KeyID], kc)
+		}
 		if r.KeyID != uuid.Nil && r.CreatedAt.After(keyLast[r.KeyID]) {
 			keyLast[r.KeyID] = r.CreatedAt
 		}
@@ -312,20 +333,20 @@ func persist(ctx context.Context, tx *store.Tx, entries []entry, batchID string)
 			if err := tx.Q.InsertSafeguardEvent(ctx, sqlc.InsertSafeguardEventParams{ID: id, RequestID: r.RequestID,
 				UserID: &r.UserID, KeyID: &r.KeyID, AccountID: r.AccountID, Model: r.Model, Category: r.Safeguard.Category,
 				Reason: r.Safeguard.Reason, CreatedAt: r.CreatedAt}); err != nil {
-				return nil, nil, fmt.Errorf("insert safeguard event: %w", err)
+				return nil, nil, nil, fmt.Errorf("insert safeguard event: %w", err)
 			}
 		}
 	}
 	for _, h := range hours {
 		if err := tx.Q.AddUsageHourly(ctx, *h); err != nil {
-			return nil, nil, fmt.Errorf("add usage hourly: %w", err)
+			return nil, nil, nil, fmt.Errorf("add usage hourly: %w", err)
 		}
 	}
 	for pk, p := range periods {
 		row, err := tx.Q.AddPeriodUsage(ctx, sqlc.AddPeriodUsageParams{SubscriptionID: pk.sub, PeriodStart: pk.start, PeriodEnd: p.end,
 			QuotaMicro: p.quota, UsedBilledMicro: p.billed, UsedUpstreamMicro: p.upstream})
 		if err != nil {
-			return nil, nil, fmt.Errorf("add period usage: %w", err)
+			return nil, nil, nil, fmt.Errorf("add period usage: %w", err)
 		}
 		syncs = append(syncs, rstate.BaseSync{Wallet: rstate.PeriodWallet(pk.sub, pk.start), Base: row.Base, Version: row.Version})
 	}
@@ -334,7 +355,7 @@ func persist(ctx context.Context, tx *store.Tx, entries []entry, batchID string)
 		entry, inserted, version, err := tx.AppendLedgerVersion(ctx, store.LedgerParams{UserID: user, Type: "api_charge", Amount: -amount,
 			RefType: "settle_batch", RefID: batchID, IdempotencyKey: "api_charge:" + batchID + ":" + user.String()})
 		if err != nil {
-			return nil, nil, fmt.Errorf("append api charge: %w", err)
+			return nil, nil, nil, fmt.Errorf("append api charge: %w", err)
 		}
 		if inserted {
 			syncs = append(syncs, rstate.BaseSync{Wallet: rstate.UserWallet(user), Base: entry.BalanceAfterMicro, Version: version})
@@ -350,10 +371,48 @@ func persist(ctx context.Context, tx *store.Tx, entries []entry, batchID string)
 			}
 		}
 		if err := tx.Q.TouchAPIKeys(ctx, sqlc.TouchAPIKeysParams{Column1: ids, Column2: latest}); err != nil {
-			return nil, nil, fmt.Errorf("touch keys: %w", err)
+			return nil, nil, nil, fmt.Errorf("touch keys: %w", err)
 		}
 	}
-	return settled, syncs, nil
+	ksyncs, err := persistKeyUsage(ctx, tx, keyCharges)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return settled, syncs, ksyncs, nil
+}
+
+// persistKeyUsage adds the batch's charges to the key meters in PostgreSQL,
+// in key order (no deadlock between consumers), counting only requests that
+// started at or after the key's last reset.
+func persistKeyUsage(ctx context.Context, tx *store.Tx, charges map[uuid.UUID][]keyCharge) ([]rstate.KeySync, error) {
+	ids := make([]uuid.UUID, 0, len(charges))
+	for id := range charges {
+		ids = append(ids, id)
+	}
+	slices.SortFunc(ids, func(a, b uuid.UUID) int { return strings.Compare(a.String(), b.String()) })
+	var out []rstate.KeySync
+	for _, id := range ids {
+		resetAt, err := tx.Q.LockAPIKeyUsage(ctx, id)
+		if isNoRows(err) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("lock key usage: %w", err)
+		}
+		var all, bal int64
+		for _, c := range charges[id] {
+			if !c.at.Before(resetAt) {
+				all += c.all
+				bal += c.balance
+			}
+		}
+		row, err := tx.Q.AddAPIKeyUsage(ctx, sqlc.AddAPIKeyUsageParams{ID: id, UsedAllMicro: all, UsedBalanceMicro: bal})
+		if err != nil {
+			return nil, fmt.Errorf("add key usage: %w", err)
+		}
+		out = append(out, rstate.KeySync{Key: id, All: row.UsedAllMicro, Balance: row.UsedBalanceMicro, Version: row.UsageVersion})
+	}
+	return out, nil
 }
 
 func isNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }

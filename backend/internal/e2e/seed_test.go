@@ -74,7 +74,7 @@ func TestSeedDemo(t *testing.T) {
 			{gjson.Get(est, "used_7d").Float(), rt.Get("week.used_percent").Float()},
 			{gjson.Get(est, "remaining_week_usd").Float(), rt.Get("week.remaining_usd").Float()},
 			{gjson.Get(est, "k").Float(), acc.Get("k").Float()},
-			{gjson.Get(est, "k").Float(), prof.K},
+			{gjson.Get(est, "k").Float(), prof.K()},
 		}
 		for j, p := range pairs {
 			if math.Abs(p[0]-p[1]) > 1e-6 {

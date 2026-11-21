@@ -77,13 +77,19 @@ func (s *Server) fillSold(ctx context.Context, a *Account, st *router.AccountSta
 	}
 }
 
-// fillK sets each account's k from the cpa-quota estimates (one query). A
-// missing or unreadable cpa-quota schema leaves k null.
+// fillK sets each account's k: the /quota response's accounts[0].k first,
+// else the cpa-quota estimate's k (one query). Neither leaves k null.
 func (s *Server) fillK(ctx context.Context, items []Account) {
+	missing := 0
 	for i := range items {
 		items[i].K = nullable.NewNullNullable[float64]()
+		if snap := s.Cat.Snapshot(items[i].Id); snap != nil && snap.HasData && snap.Account.K != nil {
+			items[i].K = nullable.NewNullableWithValue(*snap.Account.K)
+			continue
+		}
+		missing++
 	}
-	if s.CPAQuota == nil || len(items) == 0 {
+	if s.CPAQuota == nil || missing == 0 {
 		return
 	}
 	ks := map[string]float64{}
@@ -101,6 +107,9 @@ func (s *Server) fillK(ctx context.Context, items []Account) {
 		return
 	}
 	for i := range items {
+		if items[i].K.IsSpecified() && !items[i].K.IsNull() {
+			continue
+		}
 		if k, ok := ks[items[i].Instance+"\x00"+items[i].AuthIndex]; ok {
 			items[i].K = nullable.NewNullableWithValue(k)
 		}
@@ -150,8 +159,9 @@ func (s *Server) AdminSetKeyEnabled(ctx context.Context, req AdminSetKeyEnabledR
 	}
 	var row sqlc.ApiKey
 	err = s.Store.InTx(ctx, func(tx *store.Tx) error {
-		row, err = tx.Q.UpdateAPIKey(ctx, sqlc.UpdateAPIKeyParams{ID: k.ID, Name: k.Name, Tiers: k.Tiers, SubscriptionID: k.SubscriptionID,
-			MaxConcurrency: k.MaxConcurrency, Rpm: k.Rpm, Enabled: req.Body.Enabled, Note: k.Note})
+		p := updateParamsOf(k)
+		p.Enabled = req.Body.Enabled
+		row, err = tx.Q.UpdateAPIKey(ctx, p)
 		if err != nil {
 			return err
 		}
@@ -228,6 +238,9 @@ func CountAccounts(items []Account) OverviewAccounts {
 		out.Total++
 		rt := a.Runtime
 		out.ReservedMicro += rt.ReservedMicro
+		if rt.Assignable {
+			out.Assignable++
+		}
 		switch rt.DisplayStatus {
 		case AccountDisplayStatusDisabled:
 			out.Disabled++

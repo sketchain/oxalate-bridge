@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/oapi-codegen/nullable"
 
 	"github.com/sketchain/oxalate-bridge/backend/internal/avail"
@@ -16,21 +17,30 @@ import (
 // pool snapshot with the caller's balance, multipliers and subscriptions;
 // it never names, counts or identifies upstream accounts.
 func (s *Server) GetMyAvailability(ctx context.Context, _ GetMyAvailabilityRequestObject) (GetMyAvailabilityResponseObject, error) {
-	snap, err := s.Avail.Get(ctx)
+	out, err := s.availabilityFor(ctx, currentUser(ctx).ID)
 	if err != nil {
 		return nil, err
 	}
-	u, err := s.Store.Q.GetUser(ctx, currentUser(ctx).ID)
+	return GetMyAvailability200JSONResponse(out), nil
+}
+
+// availabilityFor is the /me/availability figures of a user.
+func (s *Server) availabilityFor(ctx context.Context, userID uuid.UUID) (Availability, error) {
+	snap, err := s.Avail.Get(ctx)
 	if err != nil {
-		return nil, mapDomainErr(err)
+		return Availability{}, err
+	}
+	u, err := s.Store.Q.GetUser(ctx, userID)
+	if err != nil {
+		return Availability{}, mapDomainErr(err)
 	}
 	_, balance, _, err := s.walletFigures(ctx, rstate.UserWallet(u.ID), u.BalanceMicro, u.BalanceVersion)
 	if err != nil {
-		return nil, err
+		return Availability{}, err
 	}
 	subs, err := s.Store.Q.ListSubscriptionsByUser(ctx, u.ID)
 	if err != nil {
-		return nil, err
+		return Availability{}, err
 	}
 	now := time.Now().UTC()
 	set := s.Settings.Get()
@@ -48,7 +58,7 @@ func (s *Server) GetMyAvailability(ctx context.Context, _ GetMyAvailabilityReque
 			out.Plans = append(out.Plans, PlanFigures(snap, set, sub, period, now))
 		}
 	}
-	return GetMyAvailability200JSONResponse(out), nil
+	return out, nil
 }
 
 // BuildAvailability turns the pool snapshot into the caller's normal and

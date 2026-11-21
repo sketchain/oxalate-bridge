@@ -34,23 +34,55 @@ type Account struct {
 	DeletedAt          *time.Time
 }
 
-type ApiKey struct {
-	ID             uuid.UUID
+type Announcement struct {
+	ID        uuid.UUID
+	Title     string
+	Body      string
+	Level     string
+	StartsAt  *time.Time
+	EndsAt    *time.Time
+	Enabled   bool
+	CreatedBy *uuid.UUID
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type AnnouncementDismissal struct {
+	AnnouncementID uuid.UUID
 	UserID         uuid.UUID
-	Name           string
-	KeyHash        []byte
-	KeyEnc         []byte
-	KeyPrefix      string
-	Tiers          []string
-	SubscriptionID *uuid.UUID
-	MaxConcurrency *int32
-	Rpm            *int32
-	Enabled        bool
-	Note           string
-	LastUsedAt     *time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	DeletedAt      *time.Time
+	DismissedAt    time.Time
+}
+
+type ApiKey struct {
+	ID               uuid.UUID
+	UserID           uuid.UUID
+	Name             string
+	KeyHash          []byte
+	KeyEnc           []byte
+	KeyPrefix        string
+	Tiers            []string
+	SubscriptionID   *uuid.UUID
+	MaxConcurrency   *int32
+	Rpm              *int32
+	Enabled          bool
+	Note             string
+	LastUsedAt       *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	DeletedAt        *time.Time
+	QuotaLimitMicro  *int64
+	QuotaScope       string
+	Limit5hMicro     *int64
+	Limit1dMicro     *int64
+	Limit7dMicro     *int64
+	ExpiresAt        *time.Time
+	ModelAllowlist   []string
+	IpAllowlist      []string
+	AllowOwnerQuery  bool
+	UsedAllMicro     int64
+	UsedBalanceMicro int64
+	UsageVersion     int64
+	UsageResetAt     time.Time
 }
 
 type AuditLog struct {
@@ -153,6 +185,30 @@ type ReconcileRun struct {
 	BalanceMismatches int32
 	ChargeDiffMicro   int64
 	Detail            json.RawMessage
+}
+
+type RedeemBatch struct {
+	ID          uuid.UUID
+	Prefix      string
+	AmountMicro int64
+	Count       int32
+	ExpiresAt   *time.Time
+	Note        string
+	CreatedBy   *uuid.UUID
+	CreatedAt   time.Time
+}
+
+type RedeemCode struct {
+	ID        uuid.UUID
+	BatchID   uuid.UUID
+	CodeHash  []byte
+	CodeEnc   []byte
+	CodeHint  string
+	Status    string
+	UsedBy    *uuid.UUID
+	UsedAt    *time.Time
+	VoidedAt  *time.Time
+	CreatedAt time.Time
 }
 
 type RequestLog struct {
