@@ -25,7 +25,6 @@ var (
 	ErrNotOnSale       = errors.New("plan is not on sale")
 	ErrInsufficient    = store.ErrInsufficientBalance
 	ErrBadState        = errors.New("subscription state does not allow this")
-	ErrTypeMismatch    = errors.New("account subscription type does not match the plan")
 	ErrAccountDisabled = errors.New("account is disabled or deleted")
 )
 
@@ -126,13 +125,16 @@ func (s *Service) Grant(ctx context.Context, operator, user, planID, accountID u
 	if err != nil {
 		return sqlc.PlanSubscription{}, "", err
 	}
-	if _, err := s.checkAccount(ctx, accountID, plan.Subscription); err != nil {
+	if _, err := s.checkAccount(ctx, accountID); err != nil {
 		return sqlc.PlanSubscription{}, "", err
 	}
 	now := s.now()
 	expires := AddDuration(now, plan.DurationValue, plan.DurationUnit)
 	var sub sqlc.PlanSubscription
 	err = s.Store.InTx(ctx, func(tx *store.Tx) error {
+		if err := lockAccount(ctx, tx, accountID); err != nil {
+			return err
+		}
 		id, _ := uuid.NewV7()
 		sub, err = tx.Q.CreateSubscription(ctx, sqlc.CreateSubscriptionParams{ID: id, UserID: user, PlanID: plan.ID, PlanName: plan.Name,
 			Subscription: plan.Subscription, WeeklyQuotaMicro: plan.WeeklyQuotaMicro, AllowedModels: plan.AllowedModels,
@@ -157,7 +159,10 @@ func (s *Service) Grant(ctx context.Context, operator, user, planID, accountID u
 	return sub, warning, nil
 }
 
-func (s *Service) checkAccount(ctx context.Context, accountID uuid.UUID, subscription string) (sqlc.Account, error) {
+// checkAccount loads an account a subscription is bound to. Accounts and
+// plans are both Claude-only (database CHECK constraints), so there is no
+// type to compare.
+func (s *Service) checkAccount(ctx context.Context, accountID uuid.UUID) (sqlc.Account, error) {
 	acc, err := s.Store.Q.GetAccount(ctx, accountID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return acc, ErrNotFound
@@ -168,10 +173,17 @@ func (s *Service) checkAccount(ctx context.Context, accountID uuid.UUID, subscri
 	if !acc.Enabled {
 		return acc, ErrAccountDisabled
 	}
-	if acc.Subscription != subscription {
-		return acc, ErrTypeMismatch
-	}
 	return acc, nil
+}
+
+// lockAccount share-locks a live account for the rest of the transaction so
+// a concurrent delete cannot slip between the delete guard and the bind.
+func lockAccount(ctx context.Context, tx *store.Tx, accountID uuid.UUID) error {
+	_, err := tx.Q.LockAccountForShare(ctx, accountID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	return err
 }
 
 // OvercommitWarning reports when the weekly quotas sold on an account (in
@@ -212,7 +224,10 @@ func (s *Service) Assign(ctx context.Context, subID, accountID uuid.UUID) (sqlc.
 		if sub.Status != "pending_assignment" {
 			return ErrBadState
 		}
-		if _, err := s.checkAccount(ctx, accountID, sub.Subscription); err != nil {
+		if _, err := s.checkAccount(ctx, accountID); err != nil {
+			return err
+		}
+		if err := lockAccount(ctx, tx, accountID); err != nil {
 			return err
 		}
 		now := s.now()
@@ -245,7 +260,10 @@ func (s *Service) Rebind(ctx context.Context, subID, accountID uuid.UUID) (sqlc.
 		if sub.Status != "active" && sub.Status != "pending_assignment" {
 			return ErrBadState
 		}
-		if _, err := s.checkAccount(ctx, accountID, sub.Subscription); err != nil {
+		if _, err := s.checkAccount(ctx, accountID); err != nil {
+			return err
+		}
+		if err := lockAccount(ctx, tx, accountID); err != nil {
 			return err
 		}
 		out, err = tx.Q.UpdateSubscriptionState(ctx, sqlc.UpdateSubscriptionStateParams{ID: sub.ID, AccountID: &accountID,

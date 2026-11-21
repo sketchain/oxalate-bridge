@@ -20,10 +20,6 @@ import (
 // cache write) on claude-opus-4-8 ($5 / $25 / $0.5 / $6.25 per M).
 const messagesCost = 3500
 
-// Chat / Responses report cache inside the prompt and no cache writes:
-// 100 uncached, 1000 cached, 50 out.
-const openaiCost = 2250
-
 func TestPassthroughHeadersAndLedger(t *testing.T) {
 	e := setup(t, envOpts{balanceMicro: 1_000_000, noPlan: true})
 	body := []byte("{\"model\":  \"claude-opus-4-8\", \"max_tokens\":64,\n  \"stream\": true,\n \"messages\":[{\"role\":\"user\",\"content\":\"h\\u00e9llo\"}],\"metadata\":{\"user_id\":\"x\"}}")
@@ -58,22 +54,23 @@ func TestPassthroughHeadersAndLedger(t *testing.T) {
 		}
 	}
 
-	// Responses (non-stream) is forwarded byte for byte too.
-	rbody := []byte(`{"model":"claude-opus-4-8","input":"hi",  "prompt_cache_key":"pk-1"}`)
-	resp, out = e.relay("/v1/responses", rbody, nil)
-	if resp.StatusCode != 200 || !bytes.Equal(e.cpaA.Requests()[1].Body, rbody) {
-		t.Fatalf("responses: %d %s", resp.StatusCode, out)
+	// Any client is accepted: a non-stream request without a Claude client
+	// User-Agent is forwarded byte for byte as well.
+	nbody := []byte(`{"model":"claude-opus-4-8","max_tokens":16,  "messages":[{"role":"user","content":"hi"}]}`)
+	resp, out = e.relay("/v1/messages", nbody, map[string]string{"User-Agent": "curl/8.0"})
+	if resp.StatusCode != 200 || !bytes.Equal(e.cpaA.Requests()[1].Body, nbody) || e.cpaA.Requests()[1].Header.Get("User-Agent") != "curl/8.0" {
+		t.Fatalf("non-stream messages: %d %s", resp.StatusCode, out)
 	}
-
-	// Chat stream without include_usage: inserted upstream, usage chunk hidden.
-	cbody := []byte(`{"model":"claude-opus-4-8","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
-	resp, out = e.relay("/v1/chat/completions", cbody, nil)
-	up := e.cpaA.Requests()[2].Body
-	if resp.StatusCode != 200 || !gjson.GetBytes(up, "stream_options.include_usage").Bool() {
-		t.Fatalf("include_usage not inserted: %s", up)
+	// The OpenAI-style endpoints are gone: 404 in the Anthropic error shape,
+	// nothing forwarded, nothing logged.
+	for _, path := range []string{"/v1/responses", "/v1/chat/completions"} {
+		resp, out = e.relay(path, []byte(`{"model":"claude-opus-4-8","input":"hi"}`), nil)
+		if resp.StatusCode != 404 || gjson.GetBytes(out, "error.type").String() != "not_found_error" {
+			t.Fatalf("%s: %d %s", path, resp.StatusCode, out)
+		}
 	}
-	if bytes.Contains(out, []byte(`"usage"`)) || !bytes.Contains(out, []byte("[DONE]")) {
-		t.Fatalf("usage chunk leaked or stream cut: %s", out)
+	if n := len(e.cpaA.Requests()); n != 2 {
+		t.Fatalf("upstream requests %d", n)
 	}
 	// count_tokens is logged but not billed.
 	resp, _ = e.relay("/v1/messages/count_tokens", []byte(`{"model":"claude-opus-4-8","messages":[]}`), nil)
@@ -82,18 +79,18 @@ func TestPassthroughHeadersAndLedger(t *testing.T) {
 	}
 
 	e.persist()
-	total := int64(messagesCost + 2*openaiCost)
+	total := int64(2 * messagesCost)
 	if got := e.scalar("SELECT COALESCE(sum(billed_micro),0) FROM request_logs"); got != total {
 		t.Fatalf("billed %d want %d", got, total)
 	}
-	if got := e.scalar("SELECT count(*) FROM request_logs"); got != 4 {
+	if got := e.scalar("SELECT count(*) FROM request_logs"); got != 3 {
 		t.Fatalf("logs %d", got)
 	}
 	if got := e.scalar("SELECT billed_micro FROM request_logs WHERE endpoint = '/v1/messages/count_tokens'"); got != 0 {
 		t.Fatalf("count_tokens billed %d", got)
 	}
-	if got := e.scalar("SELECT input_tokens + cache_read_tokens FROM request_logs WHERE endpoint = '/v1/chat/completions'"); got != 1100 {
-		t.Fatalf("chat tokens %d", got)
+	if got := e.scalar("SELECT sum(cache_write_tokens) FROM request_logs WHERE endpoint = '/v1/messages'"); got != 400 {
+		t.Fatalf("cache write tokens %d", got)
 	}
 	if got := e.scalar("SELECT balance_micro FROM users WHERE id = $1", e.userID); got != 1_000_000-total {
 		t.Fatalf("balance %d", got)
@@ -104,7 +101,7 @@ func TestPassthroughHeadersAndLedger(t *testing.T) {
 	if got := e.scalar("SELECT sum(billed_micro) FROM usage_hourly"); got != total {
 		t.Fatalf("hourly billed %d", got)
 	}
-	if got := e.scalar("SELECT sum(requests) FROM usage_hourly"); got != 4 {
+	if got := e.scalar("SELECT sum(requests) FROM usage_hourly"); got != 3 {
 		t.Fatalf("hourly requests %d", got)
 	}
 	// Real-time balance equals PG once nothing is pending.

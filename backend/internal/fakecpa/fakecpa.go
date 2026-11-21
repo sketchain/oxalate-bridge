@@ -1,5 +1,6 @@
 // Package fakecpa is a fake CLIProxyAPI instance (with the cpa-quota plugin)
-// for tests: /quota, /v1/models, and the relay endpoints with usage.
+// serving one Claude subscription account for tests: /quota, /v1/models and
+// the Claude Messages endpoints with usage.
 package fakecpa
 
 import (
@@ -40,7 +41,7 @@ type CPA struct {
 	Key        string
 	QuotaToken string
 	Instance   string
-	Sub        string // claude | chatgpt
+	Sub        string // reported subscription; "claude" unless a test overrides it
 	Tier       string
 	AuthIndex  string
 	Models     []string
@@ -142,7 +143,7 @@ func (c *CPA) quotaBody() map[string]any {
 		"database":  map[string]any{"status": c.DatabaseStatus},
 		"estimates": map[string]any{"loaded": true},
 		"accounts": []map[string]any{{
-			"auth_index": c.AuthIndex, "provider": map[string]string{"claude": "claude", "chatgpt": "codex"}[c.Sub],
+			"auth_index": c.AuthIndex, "provider": "claude",
 			"subscription": c.Sub, "tier": c.Tier, "state": c.State, "safety_factor": 0.9,
 			"observed_at": time.Now().UTC().Add(-time.Minute).Format(time.RFC3339),
 			"five_hour":   window(c.FiveUsed, c.FiveTotal, c.FiveReset),
@@ -205,38 +206,6 @@ func (c *CPA) relay(w http.ResponseWriter, r *http.Request) {
 				"usage": map[string]any{"output_tokens": u.Output}}),
 			event("message_stop", map[string]any{"type": "message_stop"}),
 		})
-	case "/v1/responses":
-		usage := map[string]any{"input_tokens": u.Input + u.CacheRead, "input_tokens_details": map[string]any{"cached_tokens": u.CacheRead},
-			"output_tokens": u.Output, "output_tokens_details": map[string]any{"reasoning_tokens": u.Reasoning},
-			"total_tokens": u.Input + u.CacheRead + u.Output}
-		resp := map[string]any{"id": "resp_1", "object": "response", "model": model, "status": "completed", "usage": usage}
-		if !stream {
-			writeJSON(w, 200, resp)
-			return
-		}
-		sse(w, []string{
-			event("response.created", map[string]any{"type": "response.created", "response": map[string]any{"id": "resp_1", "model": model}}),
-			event("response.output_text.delta", map[string]any{"type": "response.output_text.delta", "delta": "hi"}),
-			event("response.completed", map[string]any{"type": "response.completed", "response": resp}),
-		})
-	case "/v1/chat/completions":
-		usage := map[string]any{"prompt_tokens": u.Input + u.CacheRead, "completion_tokens": u.Output,
-			"total_tokens": u.Input + u.CacheRead + u.Output, "prompt_tokens_details": map[string]any{"cached_tokens": u.CacheRead}}
-		if !stream {
-			writeJSON(w, 200, map[string]any{"id": "chat_1", "object": "chat.completion", "model": model,
-				"choices": []map[string]any{{"index": 0, "message": map[string]any{"role": "assistant", "content": "hi"}, "finish_reason": "stop"}},
-				"usage":   usage})
-			return
-		}
-		chunks := []string{
-			data(map[string]any{"id": "chat_1", "object": "chat.completion.chunk", "model": model, "choices": []map[string]any{{"index": 0, "delta": map[string]any{"content": "hi"}}}}),
-			data(map[string]any{"id": "chat_1", "object": "chat.completion.chunk", "model": model, "choices": []map[string]any{{"index": 0, "delta": map[string]any{}, "finish_reason": "stop"}}}),
-		}
-		if gjson.GetBytes(body, "stream_options.include_usage").Bool() {
-			chunks = append(chunks, data(map[string]any{"id": "chat_1", "object": "chat.completion.chunk", "model": model, "choices": []any{}, "usage": usage}))
-		}
-		chunks = append(chunks, "data: [DONE]\n\n")
-		sse(w, chunks)
 	default:
 		http.NotFound(w, r)
 	}
@@ -245,11 +214,6 @@ func (c *CPA) relay(w http.ResponseWriter, r *http.Request) {
 func event(name string, v any) string {
 	raw, _ := json.Marshal(v)
 	return fmt.Sprintf("event: %s\ndata: %s\n\n", name, raw)
-}
-
-func data(v any) string {
-	raw, _ := json.Marshal(v)
-	return "data: " + string(raw) + "\n\n"
 }
 
 func sse(w http.ResponseWriter, events []string) {

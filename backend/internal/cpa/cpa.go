@@ -54,6 +54,19 @@ type QuotaResponse struct {
 	Accounts []Account `json:"accounts"`
 }
 
+// SubscriptionClaude is the only subscription the bridge serves.
+const SubscriptionClaude = "claude"
+
+// IsClaude reports whether a /quota response describes a Claude
+// subscription (both the instance and its account must say so).
+func IsClaude(q *QuotaResponse) bool {
+	if q == nil || q.Subscription != SubscriptionClaude || len(q.Accounts) == 0 {
+		return false
+	}
+	s := q.Accounts[0].Subscription
+	return s == "" || s == SubscriptionClaude
+}
+
 // Client calls CPA instances.
 type Client struct {
 	HTTP *http.Client
@@ -198,7 +211,7 @@ func EffectiveWindow(w *Window, safety float64, observed time.Time, now time.Tim
 // HardExhausted reports whether an account cannot take any request: paused
 // by the plugin or a window at or above 100 % (after local resets).
 func HardExhausted(a Account, now time.Time) (bool, string) {
-	if a.State == "paused" && !pausedWindowsReset(a, now) {
+	if Paused(a, now) {
 		return true, "paused"
 	}
 	observed := time.Time{}
@@ -212,6 +225,12 @@ func HardExhausted(a Account, now time.Time) (bool, string) {
 		return true, "week_exhausted"
 	}
 	return false, ""
+}
+
+// Paused reports whether the plugin paused the account and the pause still
+// holds locally (see HardExhausted).
+func Paused(a Account, now time.Time) bool {
+	return a.State == "paused" && !pausedWindowsReset(a, now)
 }
 
 // pausedWindowsReset reports whether a paused account was paused by full

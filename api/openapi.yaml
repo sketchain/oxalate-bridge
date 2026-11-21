@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: oxalate-bridge panel API
-  version: 0.1.0
+  version: 0.2.0
   description: |
     Panel API of oxalate-bridge. This file is the single source of truth: the
     backend server code is generated from it with oapi-codegen (chi strict
@@ -19,7 +19,8 @@ info:
       `csrf_header_missing` (403).
     - `/admin/*` requires the `admin` role; admin writes are audited.
 
-    The relay endpoints (`/v1/*`) are not part of this API.
+    The relay endpoints (`/v1/messages`, `/v1/messages/count_tokens`,
+    `GET /v1/models`; Claude Messages protocol only) are not part of this API.
 servers:
   - url: /api/v1
 security:
@@ -95,6 +96,23 @@ paths:
         '204': { description: Password changed; other sessions stay valid until they expire. }
         default: { $ref: '#/components/responses/Error' }
 
+  /me/availability:
+    get:
+      tags: [billing]
+      operationId: getMyAvailability
+      summary: Estimated usable amount for the caller (normal / force calls and own plans).
+      description: |
+        Estimates only (`estimated` is always true). The account-independent part is
+        computed by the leader after every quota refresh and cached; the request itself
+        only combines that cache with the caller's balance, multipliers and
+        subscriptions. No upstream account names, counts or ids are returned.
+      responses:
+        '200':
+          description: Availability.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Availability' }
+        default: { $ref: '#/components/responses/Error' }
   /keys:
     get:
       tags: [keys]
@@ -418,6 +436,10 @@ paths:
       tags: [admin-accounts]
       operationId: adminCreateAccount
       summary: Import an account. /quota and /v1/models must both succeed before it is saved.
+      description: |
+        Only Claude subscriptions are accepted: when /quota reports a subscription other
+        than `claude` the import fails with 422 `unsupported_subscription` (edits are
+        checked the same way).
       requestBody:
         required: true
         content:
@@ -462,6 +484,11 @@ paths:
     delete:
       tags: [admin-accounts]
       operationId: adminDeleteAccount
+      summary: Delete an account (soft delete).
+      description: |
+        Refused with 409 `account_has_subscriptions` while subscriptions with status
+        `active` or `pending_assignment` are bound to the account; the error lists them
+        in `error.subscriptions`. Rebind or cancel them first. Disabling is always allowed.
       responses:
         '204': { description: Deleted. }
         default: { $ref: '#/components/responses/Error' }
@@ -497,6 +524,103 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AccountTestResult' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /admin/accounts/{accountId}/estimate:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    get:
+      tags: [admin-accounts]
+      operationId: adminGetAccountEstimate
+      summary: The account's row of the cpa-quota `estimates` table (read only).
+      description: |
+        Located by the account's `instance` and `auth_index`. `detail` is the full
+        account object JSON exactly as cpa-quota stored it. 404 when cpa-quota has
+        no estimate for the account yet; 503 `cpa_quota_unavailable` when the
+        cpa-quota schema or table is missing or the query times out.
+      responses:
+        '200':
+          description: The estimate row.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CpaQuotaEstimate' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/accounts/{accountId}/k-trend:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    get:
+      tags: [admin-accounts]
+      operationId: adminGetAccountKTrend
+      summary: Rows of the cpa-quota `k_trend_daily` table for the account (read only).
+      parameters:
+        - name: days
+          in: query
+          description: Days back from today (UTC), today included.
+          schema: { type: integer, minimum: 1, maximum: 365, default: 30 }
+      responses:
+        '200':
+          description: Daily k trend, oldest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KTrend' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/accounts/{accountId}/quota-series:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    get:
+      tags: [admin-accounts]
+      operationId: adminGetAccountQuotaSeries
+      summary: Reported utilization of one window over time (cpa-quota `quota_report_windows`, read only).
+      description: |
+        Rows with `limit_key = 'unified'` and `seconds` = 18000 (`5h`) or 604800 (`7d`),
+        ordered by time. When more than 2000 points fall in the range, the range is cut
+        into 2000 equal time buckets and the last point of each bucket is returned
+        (`downsampled` = true).
+      parameters:
+        - name: window
+          in: query
+          required: true
+          schema: { type: string, enum: [5h, 7d] }
+        - name: from
+          in: query
+          description: Default `to` − 7 days for `5h`, `to` − 30 days for `7d`.
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          description: Default now.
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: The series.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuotaSeries' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/accounts/{accountId}/cost-compare:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    get:
+      tags: [admin-accounts]
+      operationId: adminGetAccountCostCompare
+      summary: Upstream cost per time bucket as seen by cpa-quota and by this bridge.
+      description: |
+        For each UTC bucket: the sum of cpa-quota `requests.cost_usd` with
+        `accounting = 'complete'` (bucketed by request start, `requested_ns`) next to the
+        sum of this bridge's `usage_hourly.upstream_cost_micro` for the account
+        (bucketed by request start hour). Requests the CPA instance served without
+        going through the bridge only appear on the cpa-quota side.
+      parameters:
+        - $ref: '#/components/parameters/FromRequired'
+        - $ref: '#/components/parameters/ToRequired'
+        - name: bucket
+          in: query
+          schema: { type: string, enum: [hour, day], default: hour }
+      responses:
+        '200':
+          description: Side-by-side costs, oldest bucket first; buckets with no data on either side are omitted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CostCompare' }
         default: { $ref: '#/components/responses/Error' }
 
   /admin/plans:
@@ -932,8 +1056,13 @@ components:
                 Fixed codes: bad_request, validation_failed, unauthorized,
                 forbidden, csrf_header_missing, not_found, conflict,
                 rate_limited, insufficient_balance, invalid_state,
-                upstream_validation_failed, internal.
+                upstream_validation_failed, unsupported_subscription,
+                account_has_subscriptions, cpa_quota_unavailable, internal.
             message: { type: string }
+            subscriptions:
+              type: array
+              description: Only with `account_has_subscriptions`; the subscriptions that block the delete.
+              items: { $ref: '#/components/schemas/BlockingSubscription' }
 
     Role:
       type: string
@@ -949,7 +1078,8 @@ components:
       enum: [admin_topup, admin_adjust, plan_purchase, plan_renewal, api_charge, refund]
     SubscriptionKind:
       type: string
-      enum: [claude, chatgpt]
+      description: Only Claude subscriptions are served (since v0.2.0).
+      enum: [claude]
     SubscriptionStatus:
       type: string
       enum: [pending_assignment, active, expired, cancelled]
@@ -1448,6 +1578,185 @@ components:
           type: array
           items: { type: string }
 
+    BlockingSubscription:
+      type: object
+      required: [id, user_id, username, status, plan_name]
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        username: { type: string }
+        status: { $ref: '#/components/schemas/SubscriptionStatus' }
+        plan_name: { type: string }
+    CpaQuotaEstimate:
+      type: object
+      description: A row of cpa-quota's `estimates` table (schema version 1), unchanged.
+      required: [instance, auth_index, provider, subscription, tier, state, pause_reason, segment_window, basis, k_source,
+                 totals_from, safety_factor, used_5h, used_7d, five_hour_total_usd, weekly_total_usd, remaining_five_hour_usd,
+                 remaining_week_usd, clean_blocks, total_blocks, segments, excluded_segments, ratio, estimated_at, detail]
+      properties:
+        instance: { type: string }
+        auth_index: { type: string }
+        provider: { type: string }
+        subscription: { type: string }
+        tier: { type: string }
+        state: { type: string }
+        pause_reason: { type: string }
+        segment_window: { type: string }
+        basis: { type: string }
+        k: { type: number, format: double, nullable: true }
+        k_source: { type: string }
+        totals_from: { type: string }
+        safety_factor: { type: number, format: double }
+        used_5h: { type: number, format: double }
+        reset_5h: { type: string, format: date-time, nullable: true }
+        used_7d: { type: number, format: double }
+        reset_7d: { type: string, format: date-time, nullable: true }
+        five_hour_total_usd: { type: number, format: double }
+        weekly_total_usd: { type: number, format: double }
+        remaining_five_hour_usd: { type: number, format: double }
+        remaining_week_usd: { type: number, format: double }
+        clean_blocks: { type: integer }
+        total_blocks: { type: integer }
+        segments: { type: integer }
+        excluded_segments: { type: integer }
+        ratio: { type: number, format: double }
+        observed_at: { type: string, format: date-time, nullable: true }
+        estimated_at: { type: string, format: date-time }
+        detail:
+          type: object
+          description: The full quota-endpoint account object as cpa-quota stored it.
+          x-go-type: json.RawMessage
+    KTrendDay:
+      type: object
+      required: [day, gain_5h, gain_7d, segments, excluded_segments, cost_usd, gain, updated_at]
+      properties:
+        day: { type: string, format: date }
+        gain_5h: { type: number, format: double }
+        gain_7d: { type: number, format: double }
+        k: { type: number, format: double, nullable: true }
+        segments: { type: integer }
+        excluded_segments: { type: integer }
+        cost_usd: { type: number, format: double }
+        gain: { type: number, format: double }
+        updated_at: { type: string, format: date-time }
+    KTrend:
+      type: object
+      required: [days, items]
+      properties:
+        days: { type: integer }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/KTrendDay' }
+    QuotaPoint:
+      type: object
+      required: [at, used_percent]
+      properties:
+        at: { type: string, format: date-time }
+        used_percent: { type: number, format: double }
+        reset_at: { type: string, format: date-time, nullable: true }
+    QuotaSeries:
+      type: object
+      required: [window, from, to, downsampled, total_points, items]
+      properties:
+        window: { type: string, enum: [5h, 7d] }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        downsampled: { type: boolean }
+        bucket_seconds: { type: integer, format: int64, nullable: true, description: Bucket width when downsampled. }
+        total_points: { type: integer, format: int64, description: Points in the range before downsampling. }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/QuotaPoint' }
+    CostCompareRow:
+      type: object
+      required: [bucket, cpa_quota_cost_micro, cpa_quota_requests, bridge_upstream_cost_micro, bridge_requests, diff_micro]
+      properties:
+        bucket: { type: string, format: date-time }
+        cpa_quota_cost_micro: { type: integer, format: int64, description: Σ cost_usd of complete-accounting requests, in micro-USD. }
+        cpa_quota_requests: { type: integer, format: int64, description: Number of complete-accounting requests. }
+        bridge_upstream_cost_micro: { type: integer, format: int64 }
+        bridge_requests: { type: integer, format: int64 }
+        diff_micro: { type: integer, format: int64, description: cpa_quota_cost_micro − bridge_upstream_cost_micro. }
+    CostCompare:
+      type: object
+      required: [bucket, from, to, items, cpa_quota_total_micro, bridge_total_micro, diff_micro]
+      properties:
+        bucket: { type: string, enum: [hour, day] }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        cpa_quota_total_micro: { type: integer, format: int64 }
+        bridge_total_micro: { type: integer, format: int64 }
+        diff_micro: { type: integer, format: int64 }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CostCompareRow' }
+    AvailabilityHorizon:
+      type: object
+      required: [horizon, pool_micro, available_micro, limited_by_balance]
+      properties:
+        horizon: { type: string, enum: [1h, 5h, 24h, 7d] }
+        pool_micro:
+          type: integer
+          format: int64
+          description: Estimated pool capacity over the horizon, at the user price (× tier multiplier).
+        available_micro:
+          type: integer
+          format: int64
+          description: min(pool_micro, balance_available_micro), never below 0.
+        limited_by_balance: { type: boolean, description: True when the balance is smaller than the pool. }
+    PlanWindowAvailability:
+      type: object
+      required: [available_micro]
+      properties:
+        available_micro: { type: integer, format: int64 }
+        reset_at: { type: string, format: date-time, nullable: true, description: 'five_hour: next 5-hour reset (null without a 5-hour window).' }
+        ends_at: { type: string, format: date-time, nullable: true, description: 'period: end of the current plan period.' }
+    PlanAvailability:
+      type: object
+      required: [subscription_id, plan_name, status]
+      properties:
+        subscription_id: { type: string, format: uuid }
+        plan_name: { type: string }
+        status: { type: string, enum: [active, pending_assignment] }
+        account_status:
+          type: string
+          nullable: true
+          enum: [normal, stale, cooldown, error, null]
+          description: State of the bound upstream account only (no account details). Null while pending.
+        period_start: { type: string, format: date-time, nullable: true }
+        period_end: { type: string, format: date-time, nullable: true }
+        quota_micro: { type: integer, format: int64, nullable: true }
+        used_micro: { type: integer, format: int64, nullable: true, description: Billed usage of the period. }
+        remaining_micro: { type: integer, format: int64, nullable: true, description: Real-time remaining of the period (billed). }
+        five_hour:
+          allOf:
+            - $ref: '#/components/schemas/PlanWindowAvailability'
+          nullable: true
+          description: min(remaining, r5 × plan multiplier).
+        period:
+          allOf:
+            - $ref: '#/components/schemas/PlanWindowAvailability'
+          nullable: true
+          description: min(remaining, min(C5, C7) until the period end × plan multiplier).
+    Availability:
+      type: object
+      required: [computed_at, estimated, balance_available_micro, normal, force, plans]
+      properties:
+        computed_at: { type: string, format: date-time, description: When the cached pool figures were computed. }
+        estimated: { type: boolean, description: Always true. }
+        balance_available_micro: { type: integer, format: int64, description: Real-time available balance (may be negative). }
+        normal:
+          type: array
+          description: Normal calls (standard tier), per horizon.
+          items: { $ref: '#/components/schemas/AvailabilityHorizon' }
+        force:
+          type: array
+          description: Forced calls (force tier), per horizon.
+          items: { $ref: '#/components/schemas/AvailabilityHorizon' }
+        plans:
+          type: array
+          description: One item per active or pending subscription of the caller.
+          items: { $ref: '#/components/schemas/PlanAvailability' }
     TierMultipliers:
       type: object
       required: [plan, standard, force]

@@ -17,8 +17,10 @@ import (
 	"github.com/oapi-codegen/nullable"
 
 	"github.com/sketchain/oxalate-bridge/backend/internal/authcache"
+	"github.com/sketchain/oxalate-bridge/backend/internal/avail"
 	"github.com/sketchain/oxalate-bridge/backend/internal/billing"
 	"github.com/sketchain/oxalate-bridge/backend/internal/cpa"
+	"github.com/sketchain/oxalate-bridge/backend/internal/cpaquota"
 	"github.com/sketchain/oxalate-bridge/backend/internal/db/sqlc"
 	"github.com/sketchain/oxalate-bridge/backend/internal/events"
 	"github.com/sketchain/oxalate-bridge/backend/internal/router"
@@ -46,6 +48,10 @@ type Server struct {
 	CookieSecure  bool
 	RefreshPrices func(context.Context) error
 	SessionTTL    time.Duration
+	// CPAQuota reads the cpa-quota plugin's tables (read only).
+	CPAQuota *cpaquota.Reader
+	// Avail serves the cached availability snapshot.
+	Avail *avail.Service
 }
 
 var _ StrictServerInterface = (*Server)(nil)
@@ -56,10 +62,13 @@ const SessionCookie = "bridge_session"
 // ---- errors -----------------------------------------------------------------
 
 // APIError is a typed error rendered as {"error":{"code","message"}}.
+// Details, when set, are extra members of the error object (e.g. the
+// blocking subscriptions of account_has_subscriptions).
 type APIError struct {
 	Status  int
 	Code    string
 	Message string
+	Details map[string]any
 }
 
 func (e *APIError) Error() string { return e.Code + ": " + e.Message }
@@ -90,6 +99,17 @@ func WriteError(w http.ResponseWriter, status int, code, msg string) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
+func writeErrorDetails(w http.ResponseWriter, ae *APIError) {
+	e := map[string]any{}
+	for k, v := range ae.Details {
+		e[k] = v
+	}
+	e["code"], e["message"] = ae.Code, ae.Message
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(ae.Status)
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": e})
+}
+
 // StrictOptions maps handler errors to the error format.
 func (s *Server) StrictOptions() StrictHTTPServerOptions {
 	return StrictHTTPServerOptions{
@@ -99,6 +119,10 @@ func (s *Server) StrictOptions() StrictHTTPServerOptions {
 		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			var ae *APIError
 			if errors.As(err, &ae) {
+				if ae.Details != nil {
+					writeErrorDetails(w, ae)
+					return
+				}
 				WriteError(w, ae.Status, ae.Code, ae.Message)
 				return
 			}
@@ -121,8 +145,6 @@ func mapDomainErr(err error) error {
 		return invalidState("plan 已下架")
 	case errors.Is(err, subs.ErrBadState):
 		return invalidState("订阅当前状态不允许此操作")
-	case errors.Is(err, subs.ErrTypeMismatch):
-		return badRequest("账号类型与 plan 类型不一致")
 	case errors.Is(err, subs.ErrAccountDisabled):
 		return badRequest("账号已停用")
 	}
@@ -207,11 +229,11 @@ func (s *Server) Middleware(prefix string) func(http.Handler) http.Handler {
 			}
 			user, err := s.Store.Q.GetUser(ctx, sd.UserID)
 			if err != nil || user.Status != "active" {
-				_ = s.St.R.Del(ctx, s.St.SessionKey(c.Value)).Err()
+				_ = s.St.DeleteSession(ctx, sd.UserID, c.Value)
 				WriteError(w, http.StatusUnauthorized, "unauthorized", "user unavailable")
 				return
 			}
-			_ = s.St.R.Expire(ctx, s.St.SessionKey(c.Value), s.sessionTTL()).Err()
+			_ = s.St.TouchSession(ctx, user.ID, c.Value, s.sessionTTL())
 			if strings.HasPrefix(path, "/admin/") && user.Role != "admin" {
 				WriteError(w, http.StatusForbidden, "forbidden", "admin role required")
 				return
@@ -220,6 +242,16 @@ func (s *Server) Middleware(prefix string) func(http.Handler) http.Handler {
 			ctx = context.WithValue(ctx, ctxSession, c.Value)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
+	}
+}
+
+// revokeSessions signs a user out of every panel session except keep ("" =
+// all). It runs after the change that requires it has been committed; the
+// middleware also re-reads the user on every request, so a failure here only
+// delays the effect for a password change.
+func (s *Server) revokeSessions(ctx context.Context, user uuid.UUID, keep string) {
+	if _, err := s.St.RevokeSessions(context.WithoutCancel(ctx), user, keep); err != nil {
+		s.Log.Error("revoke sessions", "user", user, "err", err)
 	}
 }
 

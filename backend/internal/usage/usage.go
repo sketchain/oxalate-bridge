@@ -1,11 +1,9 @@
-// Package usage reads token usage from CPA responses as the client sees them
-// and converts it into the pricing package's breakdown.
+// Package usage reads token usage from CPA's Claude Messages responses as the
+// client sees them and converts it into the pricing package's breakdown.
 //
-// Token split by protocol (same semantics as cpa-quota's pricing.Split):
-//   - Claude Messages: input, cache reads and cache writes are separate counts
-//     and output already includes reasoning -> Split("claude").
-//   - OpenAI Responses / Chat Completions: cache reads and writes are part of
-//     the input / prompt count and reasoning is part of output -> Split("codex").
+// Claude Messages reports input, cache reads and cache writes as separate
+// counts and output already includes reasoning, so usage is split with
+// cpa-quota's pricing.Split("claude").
 package usage
 
 import (
@@ -16,23 +14,8 @@ import (
 	"github.com/sketchain/oxalate-bridge/backend/internal/pricing"
 )
 
-// Protocol of an endpoint.
-type Protocol int
-
-// Protocols.
-const (
-	Messages Protocol = iota
-	Responses
-	Chat
-)
-
-// SplitProvider is the pricing.Split provider for a protocol.
-func (p Protocol) SplitProvider() string {
-	if p == Messages {
-		return "claude"
-	}
-	return "codex"
-}
+// splitProvider is the pricing.Split provider for Claude Messages.
+const splitProvider = "claude"
 
 // Usage accumulates what a response reported.
 type Usage struct {
@@ -42,12 +25,12 @@ type Usage struct {
 	Model string
 }
 
-// Breakdown splits the usage the way cpa-quota does for the protocol.
-func (u Usage) Breakdown(p Protocol) pricing.Breakdown {
+// Breakdown splits the usage the way cpa-quota does for Claude.
+func (u Usage) Breakdown() pricing.Breakdown {
 	if !u.Seen {
 		return pricing.Breakdown{}
 	}
-	return pricing.Split(p.SplitProvider(), u.Detail)
+	return pricing.Split(splitProvider, u.Detail)
 }
 
 func setIf(dst *int64, r gjson.Result) {
@@ -56,9 +39,9 @@ func setIf(dst *int64, r gjson.Result) {
 	}
 }
 
-// mergeClaude merges a Claude usage object; later fields override, like
-// CPA's claudeUsageTokens.Merge.
-func (u *Usage) mergeClaude(usage gjson.Result) {
+// merge merges a Claude usage object; later fields override, like CPA's
+// claudeUsageTokens.Merge.
+func (u *Usage) merge(usage gjson.Result) {
 	if !usage.Exists() || !usage.IsObject() {
 		return
 	}
@@ -70,114 +53,37 @@ func (u *Usage) mergeClaude(usage gjson.Result) {
 	setIf(&u.Detail.ReasoningTokens, usage.Get("output_tokens_details.thinking_tokens"))
 }
 
-func (u *Usage) setResponses(usage gjson.Result) {
-	if !usage.Exists() || !usage.IsObject() {
-		return
-	}
-	u.Seen = true
-	d := pricing.Detail{}
-	setIf(&d.InputTokens, usage.Get("input_tokens"))
-	setIf(&d.OutputTokens, usage.Get("output_tokens"))
-	setIf(&d.TotalTokens, usage.Get("total_tokens"))
-	setIf(&d.CacheReadTokens, usage.Get("input_tokens_details.cached_tokens"))
-	setIf(&d.CacheCreationTokens, usage.Get("input_tokens_details.cache_write_tokens"))
-	if d.CacheCreationTokens == 0 {
-		setIf(&d.CacheCreationTokens, usage.Get("input_tokens_details.cache_creation_tokens"))
-	}
-	setIf(&d.ReasoningTokens, usage.Get("output_tokens_details.reasoning_tokens"))
-	u.Detail = d
-}
-
-func (u *Usage) setChat(usage gjson.Result) {
-	if !usage.Exists() || !usage.IsObject() {
-		return
-	}
-	u.Seen = true
-	d := pricing.Detail{}
-	setIf(&d.InputTokens, usage.Get("prompt_tokens"))
-	setIf(&d.OutputTokens, usage.Get("completion_tokens"))
-	setIf(&d.TotalTokens, usage.Get("total_tokens"))
-	setIf(&d.CacheReadTokens, usage.Get("prompt_tokens_details.cached_tokens"))
-	setIf(&d.CacheCreationTokens, usage.Get("prompt_tokens_details.cache_write_tokens"))
-	if d.CacheCreationTokens == 0 {
-		setIf(&d.CacheCreationTokens, usage.Get("prompt_tokens_details.cached_creation_tokens"))
-	}
-	setIf(&d.ReasoningTokens, usage.Get("completion_tokens_details.reasoning_tokens"))
-	u.Detail = d
-}
-
 // FromBody reads the usage of a non-streaming response body.
-func FromBody(p Protocol, body []byte) Usage {
+func FromBody(body []byte) Usage {
 	var u Usage
 	if !gjson.ValidBytes(body) {
 		return u
 	}
 	root := gjson.ParseBytes(body)
 	u.Model = root.Get("model").String()
-	switch p {
-	case Messages:
-		u.mergeClaude(root.Get("usage"))
-	case Responses:
-		u.setResponses(root.Get("usage"))
-	case Chat:
-		u.setChat(root.Get("usage"))
-	}
+	u.merge(root.Get("usage"))
 	return u
 }
 
-// Event feeds one SSE event (its event name and joined data) and returns
-// whether the event is a Chat usage-only chunk (empty choices plus usage),
-// which the proxy drops when it injected include_usage itself.
-func (u *Usage) Event(p Protocol, event string, data []byte) (usageOnlyChunk bool) {
+// Event feeds one SSE event (its event name and joined data).
+func (u *Usage) Event(event string, data []byte) {
 	if len(data) == 0 || data[0] != '{' {
-		return false
+		return
 	}
-	switch p {
-	case Messages:
-		typ := gjson.GetBytes(data, "type").String()
-		if typ == "" {
-			typ = event
-		}
-		switch typ {
-		case "message_start":
-			msg := gjson.GetBytes(data, "message")
-			if m := msg.Get("model").String(); m != "" {
-				u.Model = m
-			}
-			u.mergeClaude(msg.Get("usage"))
-		case "message_delta":
-			u.mergeClaude(gjson.GetBytes(data, "usage"))
-		}
-	case Responses:
-		typ := gjson.GetBytes(data, "type").String()
-		if typ == "" {
-			typ = event
-		}
-		switch typ {
-		case "response.completed", "response.incomplete", "response.failed", "response.done":
-			resp := gjson.GetBytes(data, "response")
-			if m := resp.Get("model").String(); m != "" {
-				u.Model = m
-			}
-			u.setResponses(resp.Get("usage"))
-		case "response.created":
-			if m := gjson.GetBytes(data, "response.model").String(); m != "" {
-				u.Model = m
-			}
-		}
-	case Chat:
-		root := gjson.ParseBytes(data)
-		if m := root.Get("model").String(); m != "" && u.Model == "" {
+	typ := gjson.GetBytes(data, "type").String()
+	if typ == "" {
+		typ = event
+	}
+	switch typ {
+	case "message_start":
+		msg := gjson.GetBytes(data, "message")
+		if m := msg.Get("model").String(); m != "" {
 			u.Model = m
 		}
-		us := root.Get("usage")
-		if us.Exists() && us.IsObject() {
-			u.setChat(us)
-			choices := root.Get("choices")
-			return !choices.Exists() || (choices.IsArray() && len(choices.Array()) == 0)
-		}
+		u.merge(msg.Get("usage"))
+	case "message_delta":
+		u.merge(gjson.GetBytes(data, "usage"))
 	}
-	return false
 }
 
 // SSEScanner splits an SSE byte stream into events without buffering more
@@ -186,11 +92,8 @@ type SSEScanner struct {
 	line  []byte
 	event string
 	data  bytes.Buffer
-	// OnEvent is called for each complete event with its raw bytes
-	// (including the terminating blank line) when Raw is true.
-	OnEvent func(event string, data []byte, raw []byte)
-	Raw     bool
-	raw     bytes.Buffer
+	// OnEvent is called for each complete event.
+	OnEvent func(event string, data []byte)
 }
 
 // Feed processes a chunk.
@@ -199,15 +102,9 @@ func (s *SSEScanner) Feed(chunk []byte) {
 		i := bytes.IndexByte(chunk, '\n')
 		if i < 0 {
 			s.line = append(s.line, chunk...)
-			if s.Raw {
-				s.raw.Write(chunk)
-			}
 			return
 		}
 		s.line = append(s.line, chunk[:i]...)
-		if s.Raw {
-			s.raw.Write(chunk[:i+1])
-		}
 		s.handleLine(bytes.TrimSuffix(s.line, []byte("\r")))
 		s.line = s.line[:0]
 		chunk = chunk[i+1:]
@@ -220,7 +117,7 @@ func (s *SSEScanner) Flush() {
 		s.handleLine(bytes.TrimSuffix(s.line, []byte("\r")))
 		s.line = s.line[:0]
 	}
-	if s.data.Len() > 0 || s.event != "" || s.raw.Len() > 0 {
+	if s.data.Len() > 0 || s.event != "" {
 		s.dispatch()
 	}
 }
@@ -248,9 +145,8 @@ func (s *SSEScanner) handleLine(line []byte) {
 
 func (s *SSEScanner) dispatch() {
 	if s.OnEvent != nil {
-		s.OnEvent(s.event, s.data.Bytes(), s.raw.Bytes())
+		s.OnEvent(s.event, s.data.Bytes())
 	}
 	s.event = ""
 	s.data.Reset()
-	s.raw.Reset()
 }
