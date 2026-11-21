@@ -65,7 +65,11 @@
     "error": "ERROR",
     "unavailable": "UNAVAILABLE",
     "disabled": "DISABLED",
-    "pending": "PENDING"
+    "pending": "PENDING",
+    "five_hour_full": "5h full",
+    "week_full": "7d full",
+    "paused": "Paused",
+    "full": "Full"
   },
   "subStatus": {
     "pending_assignment": "PENDING",
@@ -410,7 +414,8 @@
     "liveNote": "last 50",
     "liveEmpty": "Waiting for requests…",
     "liveEmptyHint": "Settled requests appear here live (not stored; cleared on reload).",
-    "user": "User"
+    "user": "User",
+    "headroomNote": "Σ max(0, H); oversold accounts never offset"
   },
   "users": {
     "title": "Users",
@@ -565,8 +570,14 @@
       "stale": "Quota data is stale, last updated {{rel}}",
       "staleUnknown": "Quota data is stale",
       "disabled": "Disabled; not routed",
-      "reset": "5h resets {{time}} ({{rel}})"
-    }
+      "reset": "5h resets {{time}} ({{rel}})",
+      "full": "{{reason}}, resets at {{time}} ({{rel}})",
+      "paused": "Paused by cpa-quota"
+    },
+    "oversoldTag": "Reserved > remaining",
+    "oversoldLine": "{{n}} oversold accounts, {{amount}} over in total",
+    "noOversold": "No oversold accounts",
+    "headroomNoteSum": "Σ max(0, H); oversold accounts never offset"
   },
   "adminPlans": {
     "title": "Plans",
@@ -625,8 +636,7 @@
     "rebindTitle": "Rebind to another account",
     "assigned": "Assigned",
     "rebound": "Rebound",
-    "overcommitPreview": "After this, the account's sold quota (upstream {{sold}}) exceeds its week total {{total}}. You can still confirm.",
-    "overcommitDone": "Done, but the account is overcommitted",
+    "overcommitDone": "Done — note the warnings below",
     "confirmAnyway": "Confirm anyway",
     "cancelTitle": "Cancel subscription",
     "cancelBody": "{{user}}'s {{plan}} (price {{price}}) is cancelled at once; keys lose its plan tier.",
@@ -637,7 +647,18 @@
     "noPending": "No pending subscriptions",
     "noPendingHint": "They appear here when users buy plans.",
     "none": "No subscriptions",
-    "userFilterHint": "Open from a user's page to filter by user"
+    "userFilterHint": "Open from a user's page to filter by user",
+    "capacityTitle": "Capacity after binding",
+    "capacitySold": "Sold weekly quota",
+    "capacityUpstream": "In upstream terms",
+    "capacityTotal": "Week total",
+    "capacityChecking": "Checking…",
+    "capacityHint": "Computed by the backend with the same rules as the real submit (dry run).",
+    "warn": {
+      "overcommit": "Sold weekly quota on this account ({{sold}} upstream) will exceed its week total {{total}}. You can still confirm.",
+      "week_total_unknown": "The account has not reported a week total yet, so overcommit cannot be checked.",
+      "account_not_normal": "The account is not in a normal state right now; the plan may not be usable at once."
+    }
   },
   "logs": {
     "title": "Request logs",
@@ -736,5 +757,22 @@
       "cooldown_429_default_seconds": "Default cooldown after 429",
       "price_url": "Price table URL"
     }
+  },
+  "reason": {
+    "disabled": "Disabled by an admin",
+    "upstream_auth": "Upstream rejected the credentials (401 / 403)",
+    "unsupported_subscription": "Upstream reports an unsupported subscription",
+    "error": "Upstream error",
+    "network": "Could not reach the upstream",
+    "upstream_429": "Upstream rate limit (429)",
+    "upstream_5xx": "Upstream server error (5xx)",
+    "error_cooldown": "Cooling down after an error",
+    "cooldown": "Cooling down",
+    "quota_stale": "Quota data is stale",
+    "5h_exhausted": "5-hour window is used up",
+    "week_exhausted": "7-day window is used up",
+    "paused": "Paused by cpa-quota",
+    "penalized": "5h usage above the watermark; routing weight reduced",
+    "other": "Other reason"
   }
 }

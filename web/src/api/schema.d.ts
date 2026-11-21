@@ -673,7 +673,12 @@ export interface paths {
         };
         get: operations["adminListSubscriptions"];
         put?: never;
-        /** Open an active subscription for a user directly on an account, optionally charging the price. */
+        /**
+         * Open an active subscription for a user directly on an account, optionally charging the price.
+         * @description With `dry_run=true` the request is fully validated (user, plan, account) and the
+         *     capacity figures and warnings are returned with status 200 and `subscription: null`;
+         *     nothing is written. Without it the warnings are exactly the ones a dry run returns.
+         */
         post: operations["adminGrantSubscription"];
         delete?: never;
         options?: never;
@@ -692,7 +697,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Activate a pending subscription on an account (warns, never blocks, on overcommit). */
+        /**
+         * Activate a pending subscription on an account (warns, never blocks, on overcommit).
+         * @description With `dry_run=true` the request is fully validated and only the capacity figures and
+         *     warnings are returned (`subscription: null`); nothing is written.
+         */
         post: operations["adminAssignSubscription"];
         delete?: never;
         options?: never;
@@ -711,6 +720,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * Move an active or pending subscription to another account (warns, never blocks, on overcommit).
+         * @description With `dry_run=true` the request is fully validated and only the capacity figures and
+         *     warnings are returned (`subscription: null`); nothing is written.
+         */
         post: operations["adminRebindSubscription"];
         delete?: never;
         options?: never;
@@ -1208,9 +1222,51 @@ export interface components {
             next_cursor?: string | null;
         };
         SubscriptionWithWarning: {
-            subscription: components["schemas"]["Subscription"];
-            /** @description Set when the account's sold weekly quotas exceed its week total. */
-            warning?: string | null;
+            /** @description The subscription after the operation; null for a dry run. */
+            subscription: components["schemas"]["Subscription"] | null;
+            dry_run: boolean;
+            capacity: components["schemas"]["BindCapacity"];
+            /** @description Warnings of the operation (never blocking). A dry run returns exactly the warnings the real call would. */
+            warnings: components["schemas"]["BindWarning"][];
+            /** @description Deprecated — the messages of `warnings` joined with "; ", null when there is none. */
+            warning: string | null;
+        };
+        /** @description The account's sold capacity as it is after the operation (this subscription included). */
+        BindCapacity: {
+            /** Format: uuid */
+            account_id: string;
+            /**
+             * Format: int64
+             * @description Weekly quota (user price) of the subscription being bound.
+             */
+            subscription_quota_micro: number;
+            /**
+             * Format: int64
+             * @description Σ weekly quota (user price) of the active and pending subscriptions on the account
+             */
+            sold_weekly_quota_micro: number;
+            /**
+             * Format: int64
+             * @description sold_weekly_quota_micro ÷ the plan tier multiplier (upstream terms).
+             */
+            sold_upstream_micro: number;
+            /**
+             * Format: int64
+             * @description The account's week.total_usd; null when unknown.
+             */
+            week_total_micro: number | null;
+            /** Format: double */
+            plan_multiplier: number;
+        };
+        BindWarning: {
+            /**
+             * @description `overcommit` (sold upstream exceeds the week total), `week_total_unknown` (no week
+             *     total reported yet), `account_not_normal` (the account is stale, cooling down, full
+             *     or in error). Clients must cope with codes they do not know.
+             */
+            code: string;
+            /** @description English text for clients that do not know the code. */
+            message: string;
         };
         AutoRenewRequest: {
             auto_renew: boolean;
@@ -1457,7 +1513,24 @@ export interface components {
         AccountRuntime: {
             /** @enum {string} */
             status: "normal" | "stale" | "cooldown" | "error" | "disabled";
+            display_status: components["schemas"]["AccountDisplayStatus"];
+            /**
+             * @description Raw detail behind `status_reason_code` (upstream error text, cooldown reason, last
+             *     /quota error); may be empty. Not translated: show it only as a detail.
+             */
             status_reason: string;
+            /**
+             * @description Machine-readable reason for `display_status` (empty when there is none). Known codes:
+             *     `disabled`, `upstream_auth` (upstream 401 / 403), `unsupported_subscription`, `error`
+             *     (any other error), `network`, `upstream_429`, `upstream_5xx`, `error_cooldown`,
+             *     `cooldown`, `quota_stale`, `5h_exhausted`, `week_exhausted`, `paused`, `penalized`.
+             *     Clients must cope with codes they do not know.
+             */
+            status_reason_code: string;
+            /** @description Why the account cannot take requests (`5h_exhausted`, `week_exhausted`, `paused`, `cooldown`), empty otherwise. */
+            hard_reason: string;
+            /** @description H_A < 0 (plan reservations exceed what is left of the week). */
+            oversold: boolean;
             /** @description 5-hour usage is at or above the effective watermark, so routing weight is multiplied by the penalty (shown as "降权中" while the status is normal). */
             penalized: boolean;
             stale: boolean;
@@ -1495,6 +1568,12 @@ export interface components {
             current_concurrency: number;
             models: string[];
         };
+        /**
+         * @description The single status to show for an account, by priority: error > disabled > cooldown >
+         *     five_hour_full / week_full / paused (hard exhausted) > stale > penalized > normal.
+         * @enum {string}
+         */
+        AccountDisplayStatus: "error" | "disabled" | "cooldown" | "five_hour_full" | "week_full" | "paused" | "stale" | "penalized" | "normal";
         Account: {
             /** Format: uuid */
             id: string;
@@ -1540,6 +1619,7 @@ export interface components {
         };
         AccountList: {
             items: components["schemas"]["Account"][];
+            summary: components["schemas"]["OverviewAccounts"];
         };
         AccountCreate: {
             name: string;
@@ -1977,19 +2057,22 @@ export interface components {
             /** @description One row per tier that has requests today, in the order plan, standard, force, other. */
             by_tier: components["schemas"]["OverviewTierTotals"][];
         };
+        /** @description Accounts counted by `display_status` (each account in exactly one bucket) and the pooled figures. */
         OverviewAccounts: {
             total: number;
             /** @description Normal and not penalized. */
             normal: number;
             /** @description Normal status with the routing weight reduced (降权中). */
             penalized: number;
+            /** @description Hard exhausted: 5-hour or week window full, or paused by the plugin. */
+            full: number;
             stale: number;
             cooldown: number;
             error: number;
             disabled: number;
             /**
              * Format: int64
-             * @description Σ max(0
+             * @description Σ max(0, H_A) over enabled accounts that are not in error. A negative H_A (oversold) never offsets other accounts.
              */
             headroom_micro: number;
             /**
@@ -1997,6 +2080,13 @@ export interface components {
              * @description Σ plan reservations over all accounts.
              */
             reserved_micro: number;
+            /** @description Accounts of the headroom set with H_A < 0. */
+            oversold_count: number;
+            /**
+             * Format: int64
+             * @description Σ −H_A over those accounts (how far reservations exceed what is left).
+             */
+            oversold_micro: number;
         };
         ReconcileRun: {
             /** Format: uuid */
@@ -2075,6 +2165,8 @@ export interface components {
         };
     };
     parameters: {
+        /** @description Validate and report capacity and warnings without changing anything. */
+        DryRun: boolean;
         KeyId: string;
         PlanId: string;
         SubscriptionId: string;
@@ -3256,7 +3348,10 @@ export interface operations {
     };
     adminGrantSubscription: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Validate and report capacity and warnings without changing anything. */
+                dry_run?: components["parameters"]["DryRun"];
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3267,7 +3362,16 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Created subscription, with an overcommit warning when applicable. */
+            /** @description Dry run only (`dry_run=true`) — capacity and warnings, nothing created. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionWithWarning"];
+                };
+            };
+            /** @description Created subscription, with capacity figures and warnings. */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -3281,7 +3385,10 @@ export interface operations {
     };
     adminAssignSubscription: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Validate and report capacity and warnings without changing anything. */
+                dry_run?: components["parameters"]["DryRun"];
+            };
             header?: never;
             path: {
                 subscriptionId: components["parameters"]["SubscriptionId"];
@@ -3294,7 +3401,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Activated subscription. */
+            /** @description Activated subscription (or the dry-run result). */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3308,7 +3415,10 @@ export interface operations {
     };
     adminRebindSubscription: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Validate and report capacity and warnings without changing anything. */
+                dry_run?: components["parameters"]["DryRun"];
+            };
             header?: never;
             path: {
                 subscriptionId: components["parameters"]["SubscriptionId"];
@@ -3321,7 +3431,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Rebound subscription. */
+            /** @description Rebound subscription (or the dry-run result). */
             200: {
                 headers: {
                     [name: string]: unknown;

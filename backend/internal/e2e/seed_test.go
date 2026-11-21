@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/tidwall/gjson"
@@ -32,6 +34,7 @@ func TestSeedDemo(t *testing.T) {
 	var urls []string
 	for i := 1; i <= 4; i++ {
 		c := fakecpa.NewUnstarted(fmt.Sprintf("demo-%d", i))
+		c.ApplyDemo(fakecpa.DemoProfileFor(i), time.Now().UTC())
 		c.Drift = true
 		c.Server = httptest.NewServer(c)
 		t.Cleanup(c.Close)
@@ -51,6 +54,36 @@ func TestSeedDemo(t *testing.T) {
 	}
 	if k := gjson.Get(rawGet(t, admin, "/admin/accounts"), "items.0.k"); k.Type == gjson.Null {
 		t.Fatal("demo cpa-quota estimates missing")
+	}
+	// The demo estimates and the runtime come from the same fake profile:
+	// tier, totals, safety factor, used percentages and resets agree.
+	for i, acc := range gjson.Get(rawGet(t, admin, "/admin/accounts"), "items").Array() {
+		prof := fakecpa.DemoProfileFor(i + 1)
+		est := rawGet(t, admin, "/admin/accounts/"+acc.Get("id").String()+"/estimate")
+		rt := acc.Get("runtime")
+		if acc.Get("tier").String() != prof.Tier || gjson.Get(est, "tier").String() != prof.Tier {
+			t.Fatalf("account %d tier %s / estimate %s, profile %s", i+1, acc.Get("tier"), gjson.Get(est, "tier"), prof.Tier)
+		}
+		pairs := [][2]float64{
+			{gjson.Get(est, "five_hour_total_usd").Float(), rt.Get("five_hour.total_usd").Float()},
+			{gjson.Get(est, "weekly_total_usd").Float(), rt.Get("week.total_usd").Float()},
+			{gjson.Get(est, "five_hour_total_usd").Float(), prof.FiveTotal},
+			{gjson.Get(est, "weekly_total_usd").Float(), prof.WeekTotal},
+			{gjson.Get(est, "safety_factor").Float(), rt.Get("safety_factor").Float()},
+			{gjson.Get(est, "used_5h").Float(), rt.Get("five_hour.used_percent").Float()},
+			{gjson.Get(est, "used_7d").Float(), rt.Get("week.used_percent").Float()},
+			{gjson.Get(est, "remaining_week_usd").Float(), rt.Get("week.remaining_usd").Float()},
+			{gjson.Get(est, "k").Float(), acc.Get("k").Float()},
+			{gjson.Get(est, "k").Float(), prof.K},
+		}
+		for j, p := range pairs {
+			if math.Abs(p[0]-p[1]) > 1e-6 {
+				t.Fatalf("account %d pair %d: estimate %v runtime/profile %v\nestimate %s\nruntime %s", i+1, j, p[0], p[1], est, rt.Raw)
+			}
+		}
+		if !gjson.Get(est, "reset_7d").Time().Equal(rt.Get("week.reset_at").Time()) {
+			t.Fatalf("account %d week reset %s vs %s", i+1, gjson.Get(est, "reset_7d"), rt.Get("week.reset_at"))
+		}
 	}
 	alice := newClient(t, rep.URL())
 	alice.login("alice", "demo-pass-123")

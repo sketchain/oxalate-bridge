@@ -786,14 +786,25 @@ paths:
       tags: [admin-subscriptions]
       operationId: adminGrantSubscription
       summary: Open an active subscription for a user directly on an account, optionally charging the price.
+      description: |
+        With `dry_run=true` the request is fully validated (user, plan, account) and the
+        capacity figures and warnings are returned with status 200 and `subscription: null`;
+        nothing is written. Without it the warnings are exactly the ones a dry run returns.
+      parameters:
+        - $ref: '#/components/parameters/DryRun'
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/GrantSubscriptionRequest' }
       responses:
+        '200':
+          description: Dry run only (`dry_run=true`) — capacity and warnings, nothing created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubscriptionWithWarning' }
         '201':
-          description: Created subscription, with an overcommit warning when applicable.
+          description: Created subscription, with capacity figures and warnings.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SubscriptionWithWarning' }
@@ -805,6 +816,11 @@ paths:
       tags: [admin-subscriptions]
       operationId: adminAssignSubscription
       summary: Activate a pending subscription on an account (warns, never blocks, on overcommit).
+      description: |
+        With `dry_run=true` the request is fully validated and only the capacity figures and
+        warnings are returned (`subscription: null`); nothing is written.
+      parameters:
+        - $ref: '#/components/parameters/DryRun'
       requestBody:
         required: true
         content:
@@ -812,7 +828,7 @@ paths:
             schema: { $ref: '#/components/schemas/AccountRef' }
       responses:
         '200':
-          description: Activated subscription.
+          description: Activated subscription (or the dry-run result).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SubscriptionWithWarning' }
@@ -823,6 +839,12 @@ paths:
     post:
       tags: [admin-subscriptions]
       operationId: adminRebindSubscription
+      summary: Move an active or pending subscription to another account (warns, never blocks, on overcommit).
+      description: |
+        With `dry_run=true` the request is fully validated and only the capacity figures and
+        warnings are returned (`subscription: null`); nothing is written.
+      parameters:
+        - $ref: '#/components/parameters/DryRun'
       requestBody:
         required: true
         content:
@@ -830,7 +852,7 @@ paths:
             schema: { $ref: '#/components/schemas/AccountRef' }
       responses:
         '200':
-          description: Rebound subscription.
+          description: Rebound subscription (or the dry-run result).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SubscriptionWithWarning' }
@@ -1041,6 +1063,12 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   parameters:
+    DryRun:
+      name: dry_run
+      in: query
+      required: false
+      description: Validate and report capacity and warnings without changing anything.
+      schema: { type: boolean, default: false }
     KeyId:
       name: keyId
       in: path
@@ -1435,10 +1463,45 @@ components:
         next_cursor: { type: string, nullable: true }
     SubscriptionWithWarning:
       type: object
-      required: [subscription]
+      required: [subscription, dry_run, capacity, warnings, warning]
       properties:
-        subscription: { $ref: '#/components/schemas/Subscription' }
-        warning: { type: string, nullable: true, description: Set when the account's sold weekly quotas exceed its week total. }
+        subscription:
+          allOf:
+            - $ref: '#/components/schemas/Subscription'
+          nullable: true
+          description: The subscription after the operation; null for a dry run.
+        dry_run: { type: boolean }
+        capacity: { $ref: '#/components/schemas/BindCapacity' }
+        warnings:
+          type: array
+          description: Warnings of the operation (never blocking). A dry run returns exactly the warnings the real call would.
+          items: { $ref: '#/components/schemas/BindWarning' }
+        warning:
+          type: string
+          nullable: true
+          description: Deprecated — the messages of `warnings` joined with "; ", null when there is none.
+    BindCapacity:
+      type: object
+      description: The account's sold capacity as it is after the operation (this subscription included).
+      required: [account_id, subscription_quota_micro, sold_weekly_quota_micro, sold_upstream_micro, week_total_micro, plan_multiplier]
+      properties:
+        account_id: { type: string, format: uuid }
+        subscription_quota_micro: { type: integer, format: int64, description: Weekly quota (user price) of the subscription being bound. }
+        sold_weekly_quota_micro: { type: integer, format: int64, description: Σ weekly quota (user price) of the active and pending subscriptions on the account, this one included. }
+        sold_upstream_micro: { type: integer, format: int64, description: sold_weekly_quota_micro ÷ the plan tier multiplier (upstream terms). }
+        week_total_micro: { type: integer, format: int64, nullable: true, description: The account's week.total_usd; null when unknown. }
+        plan_multiplier: { type: number, format: double }
+    BindWarning:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: |
+            `overcommit` (sold upstream exceeds the week total), `week_total_unknown` (no week
+            total reported yet), `account_not_normal` (the account is stale, cooling down, full
+            or in error). Clients must cope with codes they do not know.
+        message: { type: string, description: English text for clients that do not know the code. }
     AutoRenewRequest:
       type: object
       required: [auto_renew]
@@ -1658,12 +1721,32 @@ components:
         remaining_usd: { type: number, format: double, description: Already multiplied by the safety factor; local reset applied. }
     AccountRuntime:
       type: object
-      required: [status, status_reason, penalized, stale, hard_exhausted, headroom_micro, reserved_micro, spend_since_observed_micro, current_concurrency, models]
+      required: [status, display_status, status_reason, status_reason_code, hard_reason, penalized, stale, hard_exhausted, oversold, headroom_micro, reserved_micro, spend_since_observed_micro, current_concurrency, models]
       properties:
         status:
           type: string
           enum: [normal, stale, cooldown, error, disabled]
-        status_reason: { type: string }
+        display_status:
+          $ref: '#/components/schemas/AccountDisplayStatus'
+        status_reason:
+          type: string
+          description: |
+            Raw detail behind `status_reason_code` (upstream error text, cooldown reason, last
+            /quota error); may be empty. Not translated: show it only as a detail.
+        status_reason_code:
+          type: string
+          description: |
+            Machine-readable reason for `display_status` (empty when there is none). Known codes:
+            `disabled`, `upstream_auth` (upstream 401 / 403), `unsupported_subscription`, `error`
+            (any other error), `network`, `upstream_429`, `upstream_5xx`, `error_cooldown`,
+            `cooldown`, `quota_stale`, `5h_exhausted`, `week_exhausted`, `paused`, `penalized`.
+            Clients must cope with codes they do not know.
+        hard_reason:
+          type: string
+          description: Why the account cannot take requests (`5h_exhausted`, `week_exhausted`, `paused`, `cooldown`), empty otherwise.
+        oversold:
+          type: boolean
+          description: H_A < 0 (plan reservations exceed what is left of the week).
         penalized:
           type: boolean
           description: 5-hour usage is at or above the effective watermark, so routing weight is multiplied by the penalty (shown as "降权中" while the status is normal).
@@ -1693,6 +1776,12 @@ components:
         models:
           type: array
           items: { type: string }
+    AccountDisplayStatus:
+      type: string
+      description: |
+        The single status to show for an account, by priority: error > disabled > cooldown >
+        five_hour_full / week_full / paused (hard exhausted) > stale > penalized > normal.
+      enum: [error, disabled, cooldown, five_hour_full, week_full, paused, stale, penalized, normal]
     Account:
       type: object
       required: [id, name, base_url, enabled, note, instance, subscription, tier, auth_index, provider, watermark_5h_percent_effective, created_at, updated_at, runtime, sold_weekly_quota_micro, sold_upstream_micro]
@@ -1733,11 +1822,12 @@ components:
           description: The k of the account's cpa-quota estimate; null when cpa-quota has none or is unavailable.
     AccountList:
       type: object
-      required: [items]
+      required: [items, summary]
       properties:
         items:
           type: array
           items: { $ref: '#/components/schemas/Account' }
+        summary: { $ref: '#/components/schemas/OverviewAccounts' }
     AccountCreate:
       type: object
       required: [name, base_url, cpa_key, quota_token]
@@ -2130,17 +2220,24 @@ components:
           items: { $ref: '#/components/schemas/OverviewTierTotals' }
     OverviewAccounts:
       type: object
-      required: [total, normal, penalized, stale, cooldown, error, disabled, headroom_micro, reserved_micro]
+      description: Accounts counted by `display_status` (each account in exactly one bucket) and the pooled figures.
+      required: [total, normal, penalized, full, stale, cooldown, error, disabled, headroom_micro, reserved_micro, oversold_count, oversold_micro]
       properties:
         total: { type: integer }
         normal: { type: integer, description: Normal and not penalized. }
         penalized: { type: integer, description: Normal status with the routing weight reduced (降权中). }
+        full: { type: integer, description: 'Hard exhausted: 5-hour or week window full, or paused by the plugin.' }
         stale: { type: integer }
         cooldown: { type: integer }
         error: { type: integer }
         disabled: { type: integer }
-        headroom_micro: { type: integer, format: int64, description: Σ max(0, H_A) over enabled accounts that are not in error. }
+        headroom_micro:
+          type: integer
+          format: int64
+          description: Σ max(0, H_A) over enabled accounts that are not in error. A negative H_A (oversold) never offsets other accounts.
         reserved_micro: { type: integer, format: int64, description: Σ plan reservations over all accounts. }
+        oversold_count: { type: integer, description: Accounts of the headroom set with H_A < 0. }
+        oversold_micro: { type: integer, format: int64, description: Σ −H_A over those accounts (how far reservations exceed what is left). }
     ReconcileRun:
       type: object
       required: [id, started_at, finished_at, ok, balance_mismatches, charge_diff_micro]

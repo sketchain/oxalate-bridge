@@ -60,7 +60,9 @@ type CPA struct {
 	FiveReset, WeekReset time.Time
 	State                string
 	DatabaseStatus       string
-	QuotaStatus          int
+	// Safety is the reported safety factor (0 = 0.9).
+	Safety      float64
+	QuotaStatus int
 
 	// BaseURL is the address of a fake served without httptest (standalone).
 	BaseURL string
@@ -136,6 +138,8 @@ func (c *CPA) auth(r *http.Request, token string) bool {
 
 func (c *CPA) serve(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
+	case "/_fake/healthz":
+		w.WriteHeader(http.StatusNoContent)
 	case "/_fake/ratio_config":
 		// Development only: a ratio table for the bridge's price_url.
 		if !c.Drift {
@@ -184,10 +188,18 @@ func (c *CPA) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (c *CPA) safety() float64 {
+	if c.Safety > 0 {
+		return c.Safety
+	}
+	return 0.9
+}
+
 func (c *CPA) quotaBody() map[string]any {
+	sf := c.safety()
 	window := func(used, total float64, reset time.Time) map[string]any {
 		return map[string]any{"used_percent": used, "reset_at": reset.Format(time.RFC3339), "total_usd": total,
-			"remaining_usd": 0.9 * total * (1 - used/100)}
+			"remaining_usd": sf * total * (1 - used/100)}
 	}
 	return map[string]any{
 		"plugin": "cpa-quota", "instance": c.Instance, "subscription": c.Sub, "tier": c.Tier,
@@ -195,7 +207,7 @@ func (c *CPA) quotaBody() map[string]any {
 		"estimates": map[string]any{"loaded": true},
 		"accounts": []map[string]any{{
 			"auth_index": c.AuthIndex, "provider": "claude",
-			"subscription": c.Sub, "tier": c.Tier, "state": c.State, "safety_factor": 0.9,
+			"subscription": c.Sub, "tier": c.Tier, "state": c.State, "safety_factor": sf,
 			"observed_at": time.Now().UTC().Add(-time.Minute).Format(time.RFC3339),
 			"five_hour":   window(c.FiveUsed, c.FiveTotal, c.FiveReset),
 			"week":        window(c.WeekUsed, c.WeekTotal, c.WeekReset),

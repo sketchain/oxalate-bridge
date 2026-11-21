@@ -21,6 +21,10 @@
   --on-yellow: #0a0a0a;
   --on-red: #ffffff;
   --hazard: repeating-linear-gradient(-45deg, #f2c200 0 6px, #0a0a0a 6px 12px);
+  /* Narrow stripe of the "5h / 7d 已满" tags (8px wide). */
+  --hazard-sm: repeating-linear-gradient(-45deg, #f2c200 0 3px, #0a0a0a 3px 6px);
+  /* Phone bottom tab bar: 56px of tabs + its 2px top rule (safe area added on top). */
+  --tabbar-h: 58px;
   color-scheme: light;
 }
 
@@ -126,6 +130,10 @@
 
 @utility hazard {
   background: var(--hazard);
+}
+
+@utility hazard-sm {
+  background: var(--hazard-sm);
 }
 
 @utility label-mono {

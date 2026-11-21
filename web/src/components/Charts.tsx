@@ -32,9 +32,13 @@ export function useChartColors(): ChartColors {
 }
 
 /** Wraps a chart with a readable description (aria) and a fixed height. */
-export function ChartFrame({ description, height = 240, children }: { description: string; height?: number; children: ReactNode }) {
+/**
+ * Chart box with an accessible description. `fill` makes it take the height
+ * of a flex parent (at least `height`) instead of a fixed height.
+ */
+export function ChartFrame({ description, height = 240, fill, children }: { description: string; height?: number; fill?: boolean; children: ReactNode }) {
   return (
-    <figure role="img" aria-label={description} className="m-0 w-full min-w-0" style={{ height }}>
+    <figure role="img" aria-label={description} className={fill ? "m-0 w-full min-w-0 flex-1" : "m-0 w-full min-w-0"} style={fill ? { minHeight: height } : { height }}>
       <figcaption className="sr-only">{description}</figcaption>
       <div aria-hidden="true" className="h-full w-full">
         {children}
@@ -72,11 +76,11 @@ export interface TierPoint {
 }
 
 /** Bars stacked by tier: plan = ink, standard = chart grey, force = yellow with an ink stroke. */
-export function TierStackedBars({ data, description, height }: { data: TierPoint[]; description: string; height?: number }) {
+export function TierStackedBars({ data, description, height, fill }: { data: TierPoint[]; description: string; height?: number; fill?: boolean }) {
   const { t } = useTranslation();
   const c = useChartColors();
   return (
-    <ChartFrame description={description} height={height}>
+    <ChartFrame description={description} height={height} fill={fill}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} barCategoryGap="20%">
           <CartesianGrid stroke={c.rule} vertical={false} />

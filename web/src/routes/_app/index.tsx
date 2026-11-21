@@ -84,13 +84,21 @@ function Overview() {
         <AvailabilityBlock n={2} />
 
         <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
-          <Section n={3} title={t("overview.spend14")} aside={<span className="num text-[12px] text-muted">{facts.total}</span>}>
+          {/* The chart grows with the row (min 240px) so the Plan cards next to it never leave a blank band. */}
+          <Section
+            n={3}
+            title={t("overview.spend14")}
+            aside={<span className="num text-[12px] text-muted">{facts.total}</span>}
+            className="flex flex-col"
+            bodyClassName="flex min-h-0 flex-1 flex-col"
+            id="spend14"
+          >
             {history.isPending ? (
               <Skeleton className="h-60" />
             ) : history.error ? (
               <ErrorBox error={history.error} onRetry={() => history.refetch()} />
             ) : (
-              <TierStackedBars data={series} description={t("charts.tierSeries", { title: t("overview.spend14"), ...facts })} />
+              <TierStackedBars fill data={series} description={t("charts.tierSeries", { title: t("overview.spend14"), ...facts })} />
             )}
           </Section>
           <Section n={4} title={t("overview.myPlans")} aside={<Link to="/plans" className="text-[13px] font-semibold underline underline-offset-4">{t("common.viewAll")}</Link>}>

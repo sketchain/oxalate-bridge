@@ -11,6 +11,7 @@ import { accountsQuery, keys } from "@/api/queries";
 import { PageHeader } from "@/components/PageHeader";
 import { StatStrip } from "@/components/StatStrip";
 import { AccountCard } from "@/components/AccountCard";
+import { OversoldLine } from "@/components/Tags";
 import { EmptyState, ErrorBox } from "@/components/Feedback";
 import { ValidationResult } from "@/components/ValidationResult";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,7 @@ function AccountsPage() {
   const filter: Filter = search.filter ?? "all";
   const q = useQuery(accountsQuery);
   const items = q.data?.items ?? [];
+  const summary = q.data?.summary;
   const shown = items.filter((a) => (filter === "assignable" ? isAssignable(a) : filter === "attention" ? needsAttention(a) : true));
   const attention = items.filter(needsAttention).length;
   const importing = !!search.import;
@@ -71,8 +73,13 @@ function AccountsPage() {
               alert: attention > 0,
               icon: <Diamond className="size-3.5 fill-current" aria-label={attention > 0 ? t("accounts.attentionIcon") : undefined} aria-hidden={attention === 0} />,
             },
-            { label: t("accounts.headroomTotal"), value: formatUSD(items.reduce((s, a) => s + Math.max(0, a.runtime.headroom_micro), 0)), note: t("accounts.headroomNote") },
-            { label: t("accounts.reservedTotal"), value: formatUSD(items.reduce((s, a) => s + a.runtime.reserved_micro, 0)), note: t("accounts.reservedNote") },
+            {
+              // Backend summary: Σ max(0, H_A); oversold accounts are reported apart and never offset the others.
+              label: t("accounts.headroomTotal"),
+              value: formatUSD(summary?.headroom_micro ?? 0),
+              note: summary ? <OversoldLine count={summary.oversold_count} amount={formatUSD(summary.oversold_micro)} /> : t("accounts.headroomNoteSum"),
+            },
+            { label: t("accounts.reservedTotal"), value: formatUSD(summary?.reserved_micro ?? 0), note: t("accounts.reservedNote") },
           ]}
         />
 

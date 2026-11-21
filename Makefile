@@ -14,7 +14,7 @@ DEV_ENV = BRIDGE_DATABASE_URL=postgres://bridge:bridge@127.0.0.1:$(DEV_PG_PORT)/
 	BRIDGE_COOKIE_SECURE=false BRIDGE_LISTEN=127.0.0.1:8080 BRIDGE_METRICS_LISTEN=127.0.0.1:9090 \
 	BRIDGE_LOG_LEVEL=info
 
-.PHONY: generate web web-deps build test test-web lint lint-web run dev dev-down dev-reset e2e screenshots
+.PHONY: generate web web-deps build test test-web lint lint-web run dev dev-down dev-reset e2e screenshots demo demo-down demo-reset
 
 generate:
 	cd backend && go run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION) generate
@@ -77,3 +77,19 @@ e2e: web-deps
 # Regenerates docs/screenshots (same requirements as e2e).
 screenshots: web-deps
 	./scripts/e2e.sh --project=screenshots
+
+# Docker-only demo (no Go / Node needed): builds the images, starts
+# PostgreSQL, Redis, fakecpa, seeds once and serves http://localhost:8080.
+# Plain equivalent: docker compose -f docker-compose.demo.yml up --build
+DEMO_COMPOSE := docker compose -f docker-compose.demo.yml
+
+demo:
+	$(DEMO_COMPOSE) up --build
+
+# Stops the demo and keeps its data.
+demo-down:
+	$(DEMO_COMPOSE) down
+
+# Deletes the demo data (volumes); the next make demo seeds again.
+demo-reset:
+	$(DEMO_COMPOSE) down -v --remove-orphans

@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.3.1
+
+### 升级须知
+
+- `AccountRuntime` 新增 `display_status`（error > disabled > cooldown > five_hour_full / week_full / paused > stale > penalized > normal 的唯一显示状态）、`status_reason_code`（机器可读原因码，可能出现未知值）、`hard_reason`、`oversold`。`status_reason` 改为原始细节（上游错误文本、冷却原因、最近一次 /quota 错误），不再是拼好的中文句子；`status` 的判定顺序改为 error 优先于 disabled。
+- `GET /admin/accounts` 新增 `summary`（与 `/admin/overview` 的 `accounts` 同一结构）。`OverviewAccounts` 新增 `full`、`oversold_count`、`oversold_micro`，账号按显示状态各计入一类（已满的账号从 normal / penalized 里移到 `full`）；`headroom_micro` 仍是 Σ max(0, H_A)，负值不再出现在任何汇总里。
+- 分配、换绑、直接开订阅支持 `?dry_run=true`。`SubscriptionWithWarning` 的 `subscription` 变为可空（dry run 时为 null），新增 `dry_run`、`capacity`、`warnings`（`code` + `message`）；`warning` 保留为各条 message 的拼接，已标记废弃。直接开订阅的 dry run 返回 200（正式调用仍是 201）。
+- `bridge healthcheck` 子命令与镜像内置 `HEALTHCHECK`（请求 `/readyz`）；Dockerfile 新增 `fakecpa` target，默认 target 仍是 bridge。
+
+### Docker 演示环境
+
+- `docker compose -f docker-compose.demo.yml up --build` 一条命令起 postgres、redis、fakecpa、seed（一次性 `bridge seed-demo`，已有数据时跳过）和 bridge（8080，内置前端）；健康检查与依赖顺序保证 seed 在数据库、Redis、fakecpa 就绪后才跑，bridge 在 seed 成功退出后才启动。`make demo` / `demo-down` / `demo-reset` 只是包装。
+- CI 新增 Docker demo job：真实执行这套 compose，等待健康，检查 `/healthz`、管理员登录、`/admin/overview` 账号数大于 0、seed 重复执行无副作用，再对着它跑 Playwright 冒烟测试。
+
+### 前端
+
+- 新 logo：试剂黄方块、2px 墨框、IBM Plex Mono 半粗体的 C₂O₄²⁻（真正的下标与叠排上标，输出为轮廓）和 3px 底线，深浅色下颜色不变；替换侧边栏、手机顶栏与登录页的拱桥图标。新增 SVG favicon、32px PNG 与 180px apple-touch-icon（小尺寸用粗体并收紧字距）。
+- 手机端底部标签栏固定在屏幕底部（含安全区），主内容区留出等高空间；「可用额度」在 640px 以下改为每档一张卡片（Plan 两格，普通 / 强制调用 2×2）。
+- 账号状态按后端的 `display_status` 显示，「5h 已满 / 7d 已满」使用带黄黑斜纹的新标签，不再显示成「降权中」；所有原因码都有中英文文案，未知原因码显示「其他原因」并附原码。
+- 空闲额度为负的账号用危险红显示负数并标「预留超出剩余」；账号页与管理概览的总空闲额度改用后端汇总，并单独显示「超卖账号 N 个，合计超出 $X」。
+- 分配、换绑、开订阅对话框选中账号后调用 dry run 显示容量与警告，删除了前端自己的估算。
+- 用户概览「近 14 天花费」图随所在行的高度伸展（最小 240px），不再在旁边 Plan 卡片较高时留下空白。
+- Playwright：手机视口下标签栏底边贴齐视口、滚到底后最后一个内容块不被遮挡、所有用户侧页面无横向溢出；状态翻译、超卖标注、dry run 预览与 logo 的冒烟测试；截图全部重新生成并新增登录页。
+
+### 后端
+
+- 订阅绑定的容量检查改为 `subs.CheckCapacity`，正式调用与 dry run 在各自事务之后用同一个函数计算，警告完全一致；dry run 在同一事务里执行全部校验后回滚，不写任何数据（含审计日志与余额）。新增警告 `week_total_unknown`、`account_not_normal`。
+- `bridge seed-demo` 写入的演示 cpa-quota 估算取自 fakecpa 的同一份配置（`fakecpa.DemoProfiles`）：先刷新桥自己的快照，再读取 fakecpa 当时的 /quota 写入 tier、总额、安全系数、已用、重置时间与剩余，k 取同一 profile；测试保证账号详情的「运行时状态」与「估算明细」数字一致。
+- fakecpa 新增 `/_fake/healthz` 与 `-healthcheck` 参数（容器健康检查用）。
+
 ## v0.3.0
 
 ### 升级须知

@@ -2,6 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -121,19 +124,86 @@ func TestOverviewTiersOrderAndTotals(t *testing.T) {
 }
 
 func TestCountAccounts(t *testing.T) {
-	mk := func(status AccountRuntimeStatus, penalized bool, headroom, reserved int64) Account {
-		return Account{Runtime: AccountRuntime{Status: status, Penalized: penalized, HeadroomMicro: headroom, ReservedMicro: reserved}}
+	mk := func(d AccountDisplayStatus, headroom, reserved int64) Account {
+		return Account{Runtime: AccountRuntime{DisplayStatus: d, HeadroomMicro: headroom, ReservedMicro: reserved}}
 	}
 	out := CountAccounts([]Account{
-		mk(AccountRuntimeStatusNormal, false, 10, 1),
-		mk(AccountRuntimeStatusNormal, true, 20, 2),
-		mk(AccountRuntimeStatusStale, true, 5, 0),
-		mk(AccountRuntimeStatusCooldown, false, -7, 3),
-		mk(AccountRuntimeStatusError, false, 100, 4),
-		mk(AccountRuntimeStatusDisabled, false, 100, 5),
+		mk(AccountDisplayStatusNormal, 10, 1),
+		mk(AccountDisplayStatusPenalized, 20, 2),
+		mk(AccountDisplayStatusStale, 5, 0),
+		mk(AccountDisplayStatusCooldown, -7, 3),
+		mk(AccountDisplayStatusFiveHourFull, -3, 6),
+		mk(AccountDisplayStatusWeekFull, 0, 0),
+		mk(AccountDisplayStatusError, 100, 4),
+		mk(AccountDisplayStatusDisabled, -100, 5),
 	})
-	want := OverviewAccounts{Total: 6, Normal: 1, Penalized: 1, Stale: 1, Cooldown: 1, Error: 1, Disabled: 1, HeadroomMicro: 35, ReservedMicro: 15}
+	// Negative headroom never offsets the others: 10 + 20 + 5 + 0, and the
+	// two oversold accounts (−7, −3) are reported apart. Disabled / error
+	// accounts count in neither.
+	want := OverviewAccounts{Total: 8, Normal: 1, Penalized: 1, Full: 2, Stale: 1, Cooldown: 1, Error: 1, Disabled: 1,
+		HeadroomMicro: 35, ReservedMicro: 21, OversoldCount: 2, OversoldMicro: 10}
 	if out != want {
 		t.Fatalf("got %+v want %+v", out, want)
+	}
+}
+
+func TestDisplayPriority(t *testing.T) {
+	cd := func(s string) *string { return &s }
+	cases := []struct {
+		name             string
+		enabled, errored bool
+		errReason        string
+		cooldown         *string
+		hard             string
+		stale, penalized bool
+		want             AccountDisplayStatus
+		wantCode         string
+	}{
+		{"error beats disabled", false, true, "upstream 401: bad key", cd("network"), Reason5hExhausted, true, true, AccountDisplayStatusError, ReasonUpstreamAuth},
+		{"unsupported", true, true, `unsupported subscription "codex": only claude`, nil, "", false, false, AccountDisplayStatusError, ReasonUnsupportedSubscription},
+		{"other error", true, true, "boom", nil, "", false, false, AccountDisplayStatusError, ReasonError},
+		{"disabled beats cooldown", false, false, "", cd("upstream 429"), "", true, false, AccountDisplayStatusDisabled, ReasonDisabled},
+		{"cooldown 429", true, false, "", cd("upstream 429"), "cooldown", true, true, AccountDisplayStatusCooldown, ReasonUpstream429},
+		{"cooldown 502", true, false, "", cd("upstream 502"), "cooldown", false, false, AccountDisplayStatusCooldown, ReasonUpstream5xx},
+		{"cooldown network", true, false, "", cd("network"), "cooldown", false, false, AccountDisplayStatusCooldown, ReasonNetwork},
+		{"cooldown error", true, false, "", cd("error: upstream 401"), "cooldown", false, false, AccountDisplayStatusCooldown, ReasonErrorCooldown},
+		{"cooldown other", true, false, "", cd("odd"), "cooldown", false, false, AccountDisplayStatusCooldown, ReasonCooldown},
+		{"5h full beats stale", true, false, "", nil, Reason5hExhausted, true, true, AccountDisplayStatusFiveHourFull, Reason5hExhausted},
+		{"week full", true, false, "", nil, ReasonWeekExhausted, false, true, AccountDisplayStatusWeekFull, ReasonWeekExhausted},
+		{"paused", true, false, "", nil, ReasonPaused, false, false, AccountDisplayStatusPaused, ReasonPaused},
+		{"stale beats penalized", true, false, "", nil, "", true, true, AccountDisplayStatusStale, ReasonQuotaStale},
+		{"penalized", true, false, "", nil, "", false, true, AccountDisplayStatusPenalized, ReasonPenalized},
+		{"normal", true, false, "", nil, "", false, false, AccountDisplayStatusNormal, ""},
+	}
+	for _, c := range cases {
+		d, code, _ := displayOf(c.enabled, c.errored, c.errReason, c.cooldown, c.hard, c.stale, "", c.penalized)
+		if d != c.want || code != c.wantCode {
+			t.Errorf("%s: got %s/%s want %s/%s", c.name, d, code, c.want, c.wantCode)
+		}
+		if code != "" && !slices.Contains(ReasonCodes, code) {
+			t.Errorf("%s: code %s missing from ReasonCodes", c.name, code)
+		}
+	}
+}
+
+// Every reason code the backend produces has a zh-CN and an en translation
+// in the panel (reason.<code>).
+func TestReasonCodesTranslated(t *testing.T) {
+	for _, locale := range []string{"zh-CN", "en"} {
+		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "web", "src", "i18n", "locales", locale+".json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc struct {
+			Reason map[string]string `json:"reason"`
+		}
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatal(err)
+		}
+		for _, code := range ReasonCodes {
+			if strings.TrimSpace(doc.Reason[code]) == "" {
+				t.Errorf("%s: reason.%s has no translation", locale, code)
+			}
+		}
 	}
 }

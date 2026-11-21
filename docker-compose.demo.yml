@@ -1,0 +1,111 @@
+# Self-contained demo: everything builds and runs in Docker (no Go or Node on
+# the host). One command:
+#
+#   docker compose -f docker-compose.demo.yml up --build
+#
+# then open http://localhost:8080 (admin / admin-pass-123, or the demo users
+# alice / bob / carol with demo-pass-123). It talks to fake CPA instances
+# (fakecpa), never to a real upstream. Reset the data with
+#   docker compose -f docker-compose.demo.yml down -v
+#
+# Start order: postgres, redis and fakecpa become healthy -> seed fills the
+# database once (it skips when the demo data exists) and exits -> bridge.
+name: oxalate-bridge-demo
+
+x-bridge-env: &bridge-env
+  BRIDGE_DATABASE_URL: "postgres://bridge:bridge@postgres:5432/bridge?sslmode=disable"
+  BRIDGE_REDIS_URL: "redis://redis:6379/0"
+  # Demo-only key; never reuse it for real data.
+  BRIDGE_SECRET_KEY: "ZGVtby1vbmx5LWtleS1kby1ub3QtdXNlLWluLXByb2Q="
+  BRIDGE_BOOTSTRAP_ADMIN_USERNAME: "admin"
+  BRIDGE_BOOTSTRAP_ADMIN_PASSWORD: "admin-pass-123"
+  BRIDGE_COOKIE_SECURE: "false"
+  BRIDGE_TIMEZONE: "Asia/Shanghai"
+  BRIDGE_LOG_LEVEL: "info"
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: bridge
+      POSTGRES_PASSWORD: bridge
+      POSTGRES_DB: bridge
+    volumes:
+      - demo-pg:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bridge -d bridge"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  redis:
+    image: redis:8
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - demo-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  fakecpa:
+    build:
+      context: .
+      target: fakecpa
+    image: oxalate-bridge-demo/fakecpa:local
+    command: ["-listen", "0.0.0.0:18400", "-n", "4"]
+    healthcheck:
+      test: ["CMD", "/fakecpa", "-healthcheck", "-listen", "127.0.0.1:18400", "-n", "4"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  seed:
+    build:
+      context: .
+      target: bridge
+    image: oxalate-bridge-demo/bridge:local
+    command: ["seed-demo", "-fakecpa", "http://fakecpa:18400"]
+    environment:
+      <<: *bridge-env
+      BRIDGE_LISTEN: "127.0.0.1:8081"
+      BRIDGE_METRICS_LISTEN: "127.0.0.1:9091"
+    # One-shot: the image's server health check does not apply.
+    healthcheck:
+      disable: true
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      fakecpa:
+        condition: service_healthy
+
+  bridge:
+    build:
+      context: .
+      target: bridge
+    image: oxalate-bridge-demo/bridge:local
+    environment:
+      <<: *bridge-env
+      BRIDGE_LISTEN: ":8080"
+    ports:
+      - "${DEMO_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "/bridge", "healthcheck"]
+      interval: 3s
+      timeout: 5s
+      start_period: 10s
+      retries: 40
+    restart: unless-stopped
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      fakecpa:
+        condition: service_healthy
+
+volumes:
+  demo-pg:
+  demo-redis:

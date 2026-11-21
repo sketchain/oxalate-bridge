@@ -174,13 +174,25 @@ export function AppShell({ me, children }: { me: Schemas["Me"]; children: ReactN
         </div>
       </header>
 
-      <main id="main" tabIndex={-1} className="min-w-0 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+      <main
+        id="main"
+        tabIndex={-1}
+        className={cn(
+          "min-w-0 px-4 py-6 sm:px-6 lg:px-10 lg:py-8",
+          // Room for the fixed bottom tab bar (its height + the safe area) so the last line is never covered.
+          !onAdmin && "max-lg:pb-[calc(var(--tabbar-h)+env(safe-area-inset-bottom)+24px)]",
+        )}
+      >
         <div className="mx-auto max-w-[1400px]">{children}</div>
       </main>
 
       {/* Mobile bottom tabs (user side) */}
       {!onAdmin ? (
-        <nav aria-label={t("nav.groupUser")} className="sticky bottom-0 z-40 grid grid-cols-4 border-t-2 border-ink bg-bg pb-[env(safe-area-inset-bottom)] lg:hidden">
+        <nav
+          aria-label={t("nav.groupUser")}
+          data-testid="bottom-tabs"
+          className="fixed right-0 bottom-0 left-0 z-40 grid grid-cols-4 border-t-2 border-ink bg-bg pb-[env(safe-area-inset-bottom)] lg:hidden"
+        >
           {mobileTabs.map((item) => {
             const active = isActive(item, path) || (item.to === "/me" && ["/plans", "/billing", "/settings"].some((p) => path.startsWith(p)));
             return (

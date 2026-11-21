@@ -219,6 +219,81 @@ jobs:
           path: web/playwright-report
           retention-days: 7
 
+  demo:
+    name: Docker demo (compose up, API checks, Playwright smoke)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Build and start the demo (one command, as in the README)
+        run: |
+          # The same command a user runs, detached; --wait returns once
+          # every service is healthy (seed must have exited 0 first).
+          docker compose -f docker-compose.demo.yml up --build --detach --wait --wait-timeout 600
+
+      - name: Services are in the expected state
+        run: |
+          docker compose -f docker-compose.demo.yml ps -a
+          test "$(docker compose -f docker-compose.demo.yml ps -a --format '{{.Service}} {{.State}} {{.ExitCode}}' seed)" = "seed exited 0"
+          for s in postgres redis fakecpa bridge; do
+            health="$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose -f docker-compose.demo.yml ps -q "$s")")"
+            echo "$s: $health"
+            test "$health" = healthy
+          done
+
+      - name: API checks (healthz, admin login, overview has accounts)
+        run: |
+          set -euo pipefail
+          curl -fsS http://localhost:8080/healthz | tee /dev/stderr | grep -q '"status":"ok"'
+          curl -fsS -c /tmp/jar -H 'Content-Type: application/json' -H 'X-Requested-With: ci' \
+            -d '{"username":"admin","password":"admin-pass-123"}' http://localhost:8080/api/v1/auth/login > /dev/null
+          overview="$(curl -fsS -b /tmp/jar http://localhost:8080/api/v1/admin/overview)"
+          echo "$overview"
+          total="$(echo "$overview" | jq '.accounts.total')"
+          echo "accounts.total=$total"
+          test "$total" -gt 0
+          # Running the seed again is a no-op.
+          docker compose -f docker-compose.demo.yml run --rm --no-deps seed 2>&1 | tee /tmp/seed-again.log
+          grep -q "demo data already present" /tmp/seed-again.log
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Playwright smoke against the demo
+        working-directory: web
+        env:
+          E2E_BASE_URL: http://localhost:8080
+          E2E_ADMIN_USER: admin
+          E2E_ADMIN_PASSWORD: admin-pass-123
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+          pnpm exec playwright test --project=smoke
+
+      - name: Logs
+        if: failure()
+        run: docker compose -f docker-compose.demo.yml logs --no-color --tail 200
+
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: playwright-report-demo
+          path: web/playwright-report
+          retention-days: 7
+
+      - name: Stop
+        if: always()
+        run: docker compose -f docker-compose.demo.yml down -v
+
   test:
     name: Test (PostgreSQL + Redis)
     runs-on: ubuntu-24.04
