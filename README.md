@@ -2,7 +2,7 @@
 
 自建的 Claude API 中转站：用户与 API key、token plan、余额、计费和路由全部由本项目管理，上游是多个 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)（CPA）v8 实例。每个 CPA 实例只挂一个 Claude 订阅账号（Pro / Max 5x / Max 20x），额度估算来自 CPA 上的 [cpa-quota](https://github.com/sketchain/cpa-quota) 插件。中转站只服务 Claude Messages 协议，只接受 Claude 订阅的上游账号。
 
-本仓库目前是第二轮：后端完整，前端只有占位页（面板 API 与 OpenAPI 规格已经齐全）。
+本仓库目前是第三轮（v0.3.0）：后端完整，前端面板（`web/`，React + TanStack）已完成，用户侧与管理侧都在同一个应用里。界面截图见 [docs/screenshots](docs/screenshots)。
 
 ## 仓库结构
 
@@ -22,10 +22,18 @@ backend/                 Go 后端（单二进制）
   internal/cpaquota      只读查询 cpa-quota 的表（schema.sql 只是给 sqlc 用的表结构参考，不是迁移）
   internal/sessionid     会话标识提取（移植自 CPA ExtractSessionInfo）
   internal/db            goose 迁移（嵌入）、sqlc 查询与生成代码、分区维护
-  internal/webui         go:embed 前端产物（dist/ 由 web/ 构建写入）
-  internal/fakecpa       测试用假 CPA
+  internal/webui         go:embed 前端产物（dist/ 由 web/ 构建写入，仓库里只有 .gitkeep；未构建时返回 placeholder/index.html）
+  internal/fakecpa       假 CPA（测试用，也被 cmd/fakecpa 用来本地开发）
+  internal/demo          `bridge seed-demo` 演示数据
   internal/e2e           集成与端到端测试
-web/                     前端（本轮为占位页；构建产物写到 backend/internal/webui/dist）
+  cmd/fakecpa            可单独运行的假 CPA（多个实例，会上报额度响应头、返回带 usage 的 SSE）
+web/                     前端面板：React 19 + Vite + TypeScript（strict）+ TanStack Router/Query/Table/Virtual，
+                         shadcn/ui（源码在 src/components/ui，已按「试剂标签」规范改造）+ Tailwind 4，
+                         react-hook-form + zod，Recharts，i18next（zh-CN 默认、en）
+  src/api                openapi-typescript 生成的类型（schema.d.ts）、openapi-fetch 客户端、查询键与 hooks
+  e2e                    Playwright 冒烟测试与截图
+scripts/e2e.sh           构建 → fakecpa → seed-demo → bridge → Playwright
+docs/screenshots         用户侧与管理侧主要页面的浅色 / 深色 / 手机截图
 ```
 
 ## 工作方式
@@ -164,14 +172,35 @@ docker compose up -d   # bridge + postgres:18 + redis:8（appendonly、noevictio
 
 ## 开发
 
-需要 Go 1.27、Node 22（仅前端构建），以及测试用的 PostgreSQL 与 Redis。
+需要 Go 1.27、Node 22 + pnpm 10（`corepack enable`）、Docker（`make dev` 用来起 PostgreSQL 与 Redis）。
+
+### 一键本地开发
 
 ```bash
-make generate   # sqlc + oapi-codegen（版本与 CI 一致）
-make web        # 前端构建 → backend/internal/webui/dist
-make lint
-make build && BRIDGE_DATABASE_URL=... BRIDGE_REDIS_URL=... BRIDGE_SECRET_KEY=... ./backend/bridge
+make dev        # compose 起 PG(55432) 与 Redis(56379)，运行 fakecpa、seed-demo（只在首次）、后端、Vite
 ```
+
+打开 <http://localhost:5173>：管理员 `admin / admin-pass-123`，普通用户 `alice`、`bob`、`carol`（密码 `demo-pass-123`）。
+Vite 把 `/api` 和 `/v1` 代理到 `127.0.0.1:8080` 的后端，前端改动热更新；改了 Go 代码重新 `make dev`。
+`make dev-down` 停容器，`make dev-reset` 清空数据（下次重新生成演示数据）。
+
+演示数据（`bridge seed-demo -fakecpa http://127.0.0.1:18400`）：4 个指向 fakecpa 的账号（正常、降权中、5h 已满、几分钟后变成数据过期）、
+3 个 plan、alice 的一份有效订阅和一份待分配订阅、bob 的管理员开通订阅、若干 key、真实经过中转的请求和 13 天历史用量、一条 safeguard 事件；
+库里没有 cpa-quota schema 时还会建一个演示用的（估算、k 趋势、5h / 7d 曲线、成本对比）。已有数据时不做任何事。
+
+### 其他命令
+
+```bash
+make generate   # sqlc + oapi-codegen + openapi-typescript（版本与 CI 一致）
+make web        # 前端构建 → backend/internal/webui/dist（不提交）
+make lint lint-web test test-web
+make build && BRIDGE_DATABASE_URL=... BRIDGE_REDIS_URL=... BRIDGE_SECRET_KEY=... ./backend/bridge
+# Playwright：需要空的 PG 库与 Redis 库
+BRIDGE_DATABASE_URL=... BRIDGE_REDIS_URL=... make e2e          # 冒烟测试
+BRIDGE_DATABASE_URL=... BRIDGE_REDIS_URL=... make screenshots  # 重新生成 docs/screenshots
+```
+
+不构建前端也能编译 Go：此时面板地址返回占位页。
 
 测试：
 
@@ -184,7 +213,9 @@ go test -race -count=1 ./...
 
 集成与端到端测试读取这两个变量，每个测试使用独立 schema（及对应的 Redis key 前缀）并在结束时清理；未设置时跳过。端到端测试用 Go 写的假 CPA（`internal/fakecpa`，一个 Claude 订阅账号）提供 /quota、/v1/models 以及带 usage 的 Claude Messages（流式与非流式）、count_tokens、refusal、429、5xx。cpa-quota 接口的测试在临时 schema 里按 `internal/cpaquota/schema.sql` 建表。
 
-修改 `api/openapi.yaml` 或 `backend/internal/db/queries` 后必须重新生成并提交，CI 会检查生成结果与提交是否一致。
+修改 `api/openapi.yaml` 或 `backend/internal/db/queries` 后必须重新生成并提交（含 `web/src/api/schema.d.ts`），CI 会检查生成结果与提交是否一致；新增页面后 `pnpm build` 会更新 `web/src/routeTree.gen.ts`，同样要提交。
+
+前端 CI：typecheck、ESLint、Vitest（格式化、可用额度展示、档位链编辑、错误码映射）、zh-CN / en 语言文件 key 一致性检查，以及对着 fakecpa + 演示数据跑的 Playwright 冒烟测试。
 
 ## 发版
 

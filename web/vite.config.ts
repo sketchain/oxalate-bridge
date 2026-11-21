@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
@@ -11,6 +12,14 @@ export default defineConfig({
     tanstackRouter({ target: "react", autoCodeSplitting: true, quoteStyle: "double" }),
     react(),
     tailwindcss(),
+    {
+      // emptyOutDir removes the committed dist/.gitkeep; put it back.
+      name: "keep-dist-gitkeep",
+      apply: "build",
+      closeBundle() {
+        writeFileSync(fileURLToPath(new URL("../backend/internal/webui/dist/.gitkeep", import.meta.url)), "");
+      },
+    },
   ],
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
@@ -29,7 +38,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 900,
   },
   test: {
-    environment: "jsdom",
+    environment: "node",
     include: ["src/**/*.test.{ts,tsx}"],
   },
 });

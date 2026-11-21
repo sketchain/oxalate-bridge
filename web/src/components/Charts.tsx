@@ -83,7 +83,7 @@ export function TierStackedBars({ data, description, height }: { data: TierPoint
           <XAxis dataKey="label" {...axisProps(c)} interval="preserveStartEnd" minTickGap={8} />
           <YAxis {...axisProps(c)} tickFormatter={usdTick} width={52} />
           <Tooltip {...tooltipProps(c)} formatter={(v) => formatUSD(Number(v))} />
-          <Legend wrapperStyle={{ fontSize: 12, color: c.ink }} iconType="square" />
+          <Legend wrapperStyle={{ fontSize: 12, color: c.ink }} formatter={(v) => <span style={{ color: c.ink }}>{v}</span>} iconType="square" />
           <Bar dataKey="plan" name={t("tier.plan")} stackId="t" fill={c.ink} isAnimationActive={false} />
           <Bar dataKey="standard" name={t("tier.standard")} stackId="t" fill={c.chart} isAnimationActive={false} />
           <Bar dataKey="force" name={t("tier.force")} stackId="t" fill={c.yellow} stroke={c.ink} strokeWidth={1} isAnimationActive={false} />
@@ -160,9 +160,9 @@ export function TimeLines<T extends { t: number }>({
           <XAxis dataKey="t" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={timeTick} {...axisProps(c)} minTickGap={24} />
           <YAxis {...axisProps(c)} tickFormatter={(v) => yFormat(Number(v))} width={56} domain={yDomain} />
           <Tooltip {...tooltipProps(c)} labelFormatter={(v) => new Date(Number(v)).toLocaleString()} formatter={(v) => yFormat(Number(v))} />
-          <Legend wrapperStyle={{ fontSize: 12, color: c.ink }} iconType="plainline" />
+          <Legend wrapperStyle={{ fontSize: 12, color: c.ink }} formatter={(v) => <span style={{ color: c.ink }}>{v}</span>} iconType="plainline" />
           {marks.map((m) => (
-            <ReferenceLine key={m.t} x={m.t} stroke={c.ink} strokeDasharray="3 3" label={{ value: m.label, fill: c.ink, fontSize: 10, position: "insideTopRight" }} />
+            <ReferenceLine key={m.t} x={m.t} stroke={c.ink} strokeDasharray="3 3" label={marks.length <= 8 ? { value: m.label, fill: c.ink, fontSize: 10, position: "insideTopRight" } : undefined} />
           ))}
           {series.map((s) => (
             <Line
@@ -195,7 +195,7 @@ export function PairBars({ data, a, b, description }: { data: { label: string; a
           <XAxis dataKey="label" {...axisProps(c)} minTickGap={8} />
           <YAxis {...axisProps(c)} tickFormatter={usdTick} width={52} />
           <Tooltip {...tooltipProps(c)} formatter={(v) => formatUSD(Number(v))} />
-          <Legend wrapperStyle={{ fontSize: 12, color: c.ink }} iconType="square" />
+          <Legend wrapperStyle={{ fontSize: 12, color: c.ink }} formatter={(v) => <span style={{ color: c.ink }}>{v}</span>} iconType="square" />
           <Bar dataKey="a" name={a} fill={c.ink} isAnimationActive={false} />
           <Bar dataKey="b" name={b} fill={c.chart} isAnimationActive={false} />
         </BarChart>

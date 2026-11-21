@@ -1,0 +1,35 @@
+# Local development databases for `make dev` (not for production; see
+# docker-compose.yml). Ports are bound to localhost only.
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: bridge
+      POSTGRES_PASSWORD: bridge
+      POSTGRES_DB: bridge
+    ports:
+      - "127.0.0.1:${DEV_PG_PORT:-55432}:5432"
+    volumes:
+      - devpg:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bridge -d bridge"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:8
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "127.0.0.1:${DEV_REDIS_PORT:-56379}:6379"
+    volumes:
+      - devredis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  devpg:
+  devredis:

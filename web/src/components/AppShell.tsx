@@ -174,13 +174,13 @@ export function AppShell({ me, children }: { me: Schemas["Me"]; children: ReactN
         </div>
       </header>
 
-      <main id="main" tabIndex={-1} className={cn("min-w-0 px-4 py-6 sm:px-6 lg:px-10 lg:py-8", !onAdmin && "pb-24 lg:pb-8")}>
+      <main id="main" tabIndex={-1} className="min-w-0 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
         <div className="mx-auto max-w-[1400px]">{children}</div>
       </main>
 
       {/* Mobile bottom tabs (user side) */}
       {!onAdmin ? (
-        <nav aria-label={t("nav.groupUser")} className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t-2 border-ink bg-bg pb-[env(safe-area-inset-bottom)] lg:hidden">
+        <nav aria-label={t("nav.groupUser")} className="sticky bottom-0 z-40 grid grid-cols-4 border-t-2 border-ink bg-bg pb-[env(safe-area-inset-bottom)] lg:hidden">
           {mobileTabs.map((item) => {
             const active = isActive(item, path) || (item.to === "/me" && ["/plans", "/billing", "/settings"].some((p) => path.startsWith(p)));
             return (

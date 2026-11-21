@@ -43,6 +43,9 @@ type Options struct {
 	UserPassword string
 	// Seed makes the generated history reproducible (0 = fixed default).
 	Seed uint64
+	// URLs, when set, are the fake instances' URLs (tests); FakeCPA and
+	// Accounts are then ignored.
+	URLs []string
 }
 
 // Users are the demo users created by Seed.
@@ -53,6 +56,9 @@ var ErrAlreadySeeded = errors.New("demo data already present")
 
 // Seed fills the database of a started app.
 func Seed(ctx context.Context, app *server.App, log *slog.Logger, o Options) error {
+	if len(o.URLs) > 0 {
+		o.Accounts = len(o.URLs)
+	}
 	if o.Accounts <= 0 {
 		o.Accounts = 4
 	}
@@ -116,6 +122,7 @@ func (s *seeder) run(ctx context.Context) error {
 		{"live requests", s.liveRequests},
 		{"history", s.history},
 		{"settle", s.waitSettled},
+		{"cpa-quota demo schema", s.cpaQuota},
 		{"reconcile", s.reconcile},
 		{"stale account", s.staleAccount},
 	}
@@ -129,6 +136,9 @@ func (s *seeder) run(ctx context.Context) error {
 }
 
 func (s *seeder) fakeURL(i int) string {
+	if len(s.o.URLs) >= i {
+		return s.o.URLs[i-1]
+	}
 	base := strings.TrimRight(s.o.FakeCPA, "/")
 	idx := strings.LastIndex(base, ":")
 	var port int
@@ -186,7 +196,15 @@ func (s *seeder) createUsers(context.Context) error {
 
 var accountNames = []string{"claude-max-tokyo", "claude-max-osaka", "claude-max-seoul", "claude-pro-taipei"}
 
-func (s *seeder) importAccounts(context.Context) error {
+func (s *seeder) importAccounts(ctx context.Context) error {
+	for i := 1; i <= s.o.Accounts; i++ {
+		// A fake left over from an earlier run may still fail /quota.
+		if req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.fakeURL(i)+"/_fake/quota-status?code=0", nil); err == nil {
+			if resp, err := http.DefaultClient.Do(req); err == nil {
+				_ = resp.Body.Close()
+			}
+		}
+	}
 	for i := 1; i <= s.o.Accounts; i++ {
 		name := fmt.Sprintf("claude-demo-%d", i)
 		if i <= len(accountNames) {

@@ -145,13 +145,13 @@ function Overview() {
               <ul className="divide-y divide-rule">
                 {recent.data.items.map((r) => (
                   <li key={r.request_id} className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 px-4 py-2.5 text-[13px] sm:grid-cols-[140px_1fr_auto_auto]">
-                    <span className="num text-muted">{formatDateTime(r.created_at)}</span>
-                    <span className="min-w-0 truncate font-semibold max-sm:order-first max-sm:col-span-2">{r.model}</span>
-                    <span className="flex items-center gap-2">
+                    <span className="num text-muted max-sm:order-3 max-sm:text-[12px]">{formatDateTime(r.created_at)}</span>
+                    <span className="min-w-0 truncate font-semibold max-sm:order-1">{r.model}</span>
+                    <span className="flex items-center justify-end gap-2 max-sm:order-4">
                       <TierTag tier={r.tier} />
                       <span className="num text-muted">{formatTokens(r.input_tokens + r.cache_read_tokens + r.cache_write_tokens + r.output_tokens)} tok</span>
                     </span>
-                    <span className={r.status_code === 200 ? "num text-right font-medium" : "num text-right"}>
+                    <span className={r.status_code === 200 ? "num text-right font-medium max-sm:order-2" : "num text-right max-sm:order-2"}>
                       {r.status_code === 200 ? formatUSD(r.billed_micro) : <span className="bg-red px-1 text-on-red">{r.status_code}</span>}
                     </span>
                   </li>

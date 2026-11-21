@@ -11,3 +11,4 @@ dump.rdb
 /web/playwright-report/
 /web/test-results/
 /web/node_modules/
+/.dev/
