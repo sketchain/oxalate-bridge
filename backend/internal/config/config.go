@@ -10,6 +10,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // Config is the static process configuration.
@@ -26,6 +27,9 @@ type Config struct {
 	BootstrapAdminPassword string
 	// CookieSecure marks the session cookie Secure; on by default.
 	CookieSecure bool
+	// Location is the server time zone (BRIDGE_TIMEZONE, default
+	// Asia/Shanghai) used to cut days, e.g. "today" on the admin overview.
+	Location *time.Location
 }
 
 var identRe = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
@@ -55,6 +59,12 @@ func FromLookup(lookup func(string) (string, bool)) (Config, error) {
 		CookieSecure:           get("BRIDGE_COOKIE_SECURE", "true") != "false",
 	}
 	var errs []error
+	tz := get("BRIDGE_TIMEZONE", "Asia/Shanghai")
+	if loc, err := time.LoadLocation(tz); err != nil {
+		errs = append(errs, fmt.Errorf("BRIDGE_TIMEZONE %q: %w", tz, err))
+	} else {
+		cfg.Location = loc
+	}
 	if cfg.DatabaseURL == "" {
 		errs = append(errs, errors.New("BRIDGE_DATABASE_URL is required"))
 	}

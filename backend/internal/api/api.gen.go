@@ -157,13 +157,31 @@ func (e LedgerType) Valid() bool {
 	}
 }
 
+// Defines values for MyUsageSummaryGranularity.
+const (
+	MyUsageSummaryGranularityDay  MyUsageSummaryGranularity = "day"
+	MyUsageSummaryGranularityHour MyUsageSummaryGranularity = "hour"
+)
+
+// Valid indicates whether the value is a known member of the MyUsageSummaryGranularity enum.
+func (e MyUsageSummaryGranularity) Valid() bool {
+	switch e {
+	case MyUsageSummaryGranularityDay:
+		return true
+	case MyUsageSummaryGranularityHour:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PlanAvailabilityAccountStatus.
 const (
 	PlanAvailabilityAccountStatusCooldown    PlanAvailabilityAccountStatus = "cooldown"
-	PlanAvailabilityAccountStatusError       PlanAvailabilityAccountStatus = "error"
 	PlanAvailabilityAccountStatusLessThannil PlanAvailabilityAccountStatus = "<nil>"
 	PlanAvailabilityAccountStatusNormal      PlanAvailabilityAccountStatus = "normal"
 	PlanAvailabilityAccountStatusStale       PlanAvailabilityAccountStatus = "stale"
+	PlanAvailabilityAccountStatusUnavailable PlanAvailabilityAccountStatus = "unavailable"
 )
 
 // Valid indicates whether the value is a known member of the PlanAvailabilityAccountStatus enum.
@@ -171,13 +189,13 @@ func (e PlanAvailabilityAccountStatus) Valid() bool {
 	switch e {
 	case PlanAvailabilityAccountStatusCooldown:
 		return true
-	case PlanAvailabilityAccountStatusError:
-		return true
 	case PlanAvailabilityAccountStatusLessThannil:
 		return true
 	case PlanAvailabilityAccountStatusNormal:
 		return true
 	case PlanAvailabilityAccountStatusStale:
+		return true
+	case PlanAvailabilityAccountStatusUnavailable:
 		return true
 	default:
 		return false
@@ -447,22 +465,31 @@ func (e GetMyUsageSummaryParamsGranularity) Valid() bool {
 
 // Account defines model for Account.
 type Account struct {
-	AuthIndex                   string                     `json:"auth_index"`
-	BaseUrl                     string                     `json:"base_url"`
-	CreatedAt                   time.Time                  `json:"created_at"`
-	Enabled                     bool                       `json:"enabled"`
-	Id                          openapi_types.UUID         `json:"id"`
-	Instance                    string                     `json:"instance"`
-	MaxConcurrency              nullable.Nullable[int]     `json:"max_concurrency,omitempty"`
-	Name                        string                     `json:"name"`
-	Note                        string                     `json:"note"`
-	Provider                    string                     `json:"provider"`
-	Runtime                     AccountRuntime             `json:"runtime"`
+	AuthIndex      string                 `json:"auth_index"`
+	BaseUrl        string                 `json:"base_url"`
+	CreatedAt      time.Time              `json:"created_at"`
+	Enabled        bool                   `json:"enabled"`
+	Id             openapi_types.UUID     `json:"id"`
+	Instance       string                 `json:"instance"`
+	MaxConcurrency nullable.Nullable[int] `json:"max_concurrency,omitempty"`
+	Name           string                 `json:"name"`
+	Note           string                 `json:"note"`
+	Provider       string                 `json:"provider"`
+	Runtime        AccountRuntime         `json:"runtime"`
+
+	// SoldUpstreamMicro sold_weekly_quota_micro ÷ plan multiplier, comparable with week_total_micro (the overcommit warning uses the same figures).
+	SoldUpstreamMicro int64 `json:"sold_upstream_micro"`
+
+	// SoldWeeklyQuotaMicro Σ weekly quota (user price) of the active and pending_assignment subscriptions bound to the account.
+	SoldWeeklyQuotaMicro        int64                      `json:"sold_weekly_quota_micro"`
 	Subscription                string                     `json:"subscription"`
 	Tier                        string                     `json:"tier"`
 	UpdatedAt                   time.Time                  `json:"updated_at"`
 	Watermark5hPercent          nullable.Nullable[float64] `json:"watermark_5h_percent,omitempty"`
 	Watermark5hPercentEffective float64                    `json:"watermark_5h_percent_effective"`
+
+	// WeekTotalMicro The account's reported week total (week.total_usd, before the safety factor); null when unknown.
+	WeekTotalMicro nullable.Nullable[int64] `json:"week_total_micro,omitempty"`
 }
 
 // AccountCreate defines model for AccountCreate.
@@ -502,8 +529,11 @@ type AccountRuntime struct {
 	LastError     *string                      `json:"last_error,omitempty"`
 	Models        []string                     `json:"models"`
 	ObservedAt    nullable.Nullable[time.Time] `json:"observed_at,omitempty"`
-	ReservedMicro int64                        `json:"reserved_micro"`
-	SafetyFactor  *float64                     `json:"safety_factor,omitempty"`
+
+	// Penalized 5-hour usage is at or above the effective watermark, so routing weight is multiplied by the penalty (shown as "降权中" while the status is normal).
+	Penalized     bool     `json:"penalized"`
+	ReservedMicro int64    `json:"reserved_micro"`
+	SafetyFactor  *float64 `json:"safety_factor,omitempty"`
 
 	// SpendSinceObservedMicro S_A.
 	SpendSinceObservedMicro int64 `json:"spend_since_observed_micro"`
@@ -545,6 +575,30 @@ type AccountUpdate struct {
 	Note               *string                    `json:"note,omitempty"`
 	QuotaToken         *string                    `json:"quota_token,omitempty"`
 	Watermark5hPercent nullable.Nullable[float64] `json:"watermark_5h_percent,omitempty"`
+}
+
+// AccountValidateRequest defines model for AccountValidateRequest.
+type AccountValidateRequest struct {
+	BaseUrl    string `json:"base_url"`
+	CpaKey     string `json:"cpa_key"`
+	QuotaToken string `json:"quota_token"`
+}
+
+// AdminOverview defines model for AdminOverview.
+type AdminOverview struct {
+	Accounts      OverviewAccounts                `json:"accounts"`
+	GeneratedAt   time.Time                       `json:"generated_at"`
+	LastReconcile nullable.Nullable[ReconcileRun] `json:"last_reconcile"`
+
+	// PendingAssignment Subscriptions waiting for an account (also the navigation badge).
+	PendingAssignment int64 `json:"pending_assignment"`
+
+	// StreamBacklog Settlement stream entries not yet acknowledged by the consumer group (lag + pending; the stream length while the group does not exist yet).
+	StreamBacklog int64 `json:"stream_backlog"`
+
+	// Timezone IANA name of the server time zone used to cut days.
+	Timezone string        `json:"timezone"`
+	Today    OverviewToday `json:"today"`
 }
 
 // AdminUser defines model for AdminUser.
@@ -935,6 +989,148 @@ type ModelList struct {
 	Items []string `json:"items"`
 }
 
+// MyPeriodUsage PeriodUsage without the upstream cost.
+type MyPeriodUsage struct {
+	PeriodEnd   time.Time `json:"period_end"`
+	PeriodStart time.Time `json:"period_start"`
+	QuotaMicro  int64     `json:"quota_micro"`
+
+	// RemainingMicro Real-time remaining quota (Redis).
+	RemainingMicro  int64 `json:"remaining_micro"`
+	UsedBilledMicro int64 `json:"used_billed_micro"`
+}
+
+// MyRequestLog A request log as its user sees it (no upstream cost, multipliers, retries or account).
+type MyRequestLog struct {
+	BilledMicro      int64                                 `json:"billed_micro"`
+	CacheReadTokens  int64                                 `json:"cache_read_tokens"`
+	CacheWriteTokens int64                                 `json:"cache_write_tokens"`
+	CreatedAt        time.Time                             `json:"created_at"`
+	Endpoint         string                                `json:"endpoint"`
+	ErrorType        string                                `json:"error_type"`
+	FirstByteMs      int                                   `json:"first_byte_ms"`
+	InputTokens      int64                                 `json:"input_tokens"`
+	KeyId            nullable.Nullable[openapi_types.UUID] `json:"key_id,omitempty"`
+	LatencyMs        int                                   `json:"latency_ms"`
+	Model            string                                `json:"model"`
+	ModelRaw         string                                `json:"model_raw"`
+	OutputTokens     int64                                 `json:"output_tokens"`
+	ReasoningTokens  int64                                 `json:"reasoning_tokens"`
+	RequestId        openapi_types.UUID                    `json:"request_id"`
+	StatusCode       int                                   `json:"status_code"`
+	Stream           bool                                  `json:"stream"`
+	SubscriptionId   nullable.Nullable[openapi_types.UUID] `json:"subscription_id,omitempty"`
+
+	// Tier plan, standard, force, or empty when no tier admitted the request.
+	Tier         string `json:"tier"`
+	Unpriced     bool   `json:"unpriced"`
+	UsageMissing bool   `json:"usage_missing"`
+	UserAgent    string `json:"user_agent"`
+}
+
+// MyRequestLogPage defines model for MyRequestLogPage.
+type MyRequestLogPage struct {
+	Items      []MyRequestLog            `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor,omitempty"`
+}
+
+// MySubscription A subscription as its owner sees it (no account, no upstream cost).
+type MySubscription struct {
+	ActivatedAt   nullable.Nullable[time.Time]     `json:"activated_at,omitempty"`
+	AllowedModels []string                         `json:"allowed_models"`
+	AutoRenew     bool                             `json:"auto_renew"`
+	CancelledAt   nullable.Nullable[time.Time]     `json:"cancelled_at,omitempty"`
+	CreatedAt     time.Time                        `json:"created_at"`
+	CurrentPeriod nullable.Nullable[MyPeriodUsage] `json:"current_period,omitempty"`
+	DurationUnit  DurationUnit                     `json:"duration_unit"`
+	DurationValue int                              `json:"duration_value"`
+	ExpiresAt     nullable.Nullable[time.Time]     `json:"expires_at,omitempty"`
+	Id            openapi_types.UUID               `json:"id"`
+	PlanId        openapi_types.UUID               `json:"plan_id"`
+	PlanName      string                           `json:"plan_name"`
+	PriceMicro    int64                            `json:"price_micro"`
+	Status        SubscriptionStatus               `json:"status"`
+
+	// Subscription Only Claude subscriptions are served (since v0.2.0).
+	Subscription     SubscriptionKind `json:"subscription"`
+	WeeklyQuotaMicro int64            `json:"weekly_quota_micro"`
+}
+
+// MySubscriptionList defines model for MySubscriptionList.
+type MySubscriptionList struct {
+	Items []MySubscription `json:"items"`
+}
+
+// MyUsageBucket UsageBucket without the upstream cost.
+type MyUsageBucket struct {
+	BilledMicro      int64     `json:"billed_micro"`
+	Bucket           time.Time `json:"bucket"`
+	CacheReadTokens  int64     `json:"cache_read_tokens"`
+	CacheWriteTokens int64     `json:"cache_write_tokens"`
+	Errors           int64     `json:"errors"`
+	InputTokens      int64     `json:"input_tokens"`
+	Model            string    `json:"model"`
+	OutputTokens     int64     `json:"output_tokens"`
+	ReasoningTokens  int64     `json:"reasoning_tokens"`
+	Requests         int64     `json:"requests"`
+	Tier             string    `json:"tier"`
+}
+
+// MyUsageSummary defines model for MyUsageSummary.
+type MyUsageSummary struct {
+	Granularity MyUsageSummaryGranularity `json:"granularity"`
+	Items       []MyUsageBucket           `json:"items"`
+}
+
+// MyUsageSummaryGranularity defines model for MyUsageSummary.Granularity.
+type MyUsageSummaryGranularity string
+
+// OverviewAccounts defines model for OverviewAccounts.
+type OverviewAccounts struct {
+	Cooldown int `json:"cooldown"`
+	Disabled int `json:"disabled"`
+	Error    int `json:"error"`
+
+	// HeadroomMicro Σ max(0
+	HeadroomMicro int64 `json:"headroom_micro"`
+
+	// Normal Normal and not penalized.
+	Normal int `json:"normal"`
+
+	// Penalized Normal status with the routing weight reduced (降权中).
+	Penalized int `json:"penalized"`
+
+	// ReservedMicro Σ plan reservations over all accounts.
+	ReservedMicro int64 `json:"reserved_micro"`
+	Stale         int   `json:"stale"`
+	Total         int   `json:"total"`
+}
+
+// OverviewTierTotals defines model for OverviewTierTotals.
+type OverviewTierTotals struct {
+	BilledMicro int64 `json:"billed_micro"`
+	Requests    int64 `json:"requests"`
+
+	// Tier plan, standard, force, or empty (rejected before a tier admitted it).
+	Tier              string `json:"tier"`
+	UpstreamCostMicro int64  `json:"upstream_cost_micro"`
+}
+
+// OverviewToday defines model for OverviewToday.
+type OverviewToday struct {
+	BilledMicro int64 `json:"billed_micro"`
+
+	// ByTier One row per tier that has requests today, in the order plan, standard, force, other.
+	ByTier []OverviewTierTotals `json:"by_tier"`
+
+	// Day The day in the server time zone.
+	Day               openapi_types.Date `json:"day"`
+	From              time.Time          `json:"from"`
+	Requests          int64              `json:"requests"`
+	To                time.Time          `json:"to"`
+	UpstreamCostMicro int64              `json:"upstream_cost_micro"`
+}
+
 // PeriodUsage defines model for PeriodUsage.
 type PeriodUsage struct {
 	PeriodEnd   time.Time `json:"period_end"`
@@ -970,7 +1166,9 @@ type Plan struct {
 
 // PlanAvailability defines model for PlanAvailability.
 type PlanAvailability struct {
-	// AccountStatus State of the bound upstream account only (no account details). Null while pending.
+	// AccountStatus State of the bound upstream account only (no account details). Null while
+	// pending. A disabled account or one in error is `unavailable`, and then both
+	// `five_hour.available_micro` and `period.available_micro` are 0.
 	AccountStatus nullable.Nullable[PlanAvailabilityAccountStatus] `json:"account_status,omitempty"`
 
 	// FiveHour min(remaining, r5 × plan multiplier).
@@ -992,7 +1190,9 @@ type PlanAvailability struct {
 	UsedMicro nullable.Nullable[int64] `json:"used_micro,omitempty"`
 }
 
-// PlanAvailabilityAccountStatus State of the bound upstream account only (no account details). Null while pending.
+// PlanAvailabilityAccountStatus State of the bound upstream account only (no account details). Null while
+// pending. A disabled account or one in error is `unavailable`, and then both
+// `five_hour.available_micro` and `period.available_micro` are 0.
 type PlanAvailabilityAccountStatus string
 
 // PlanAvailabilityStatus defines model for PlanAvailability.Status.
@@ -1091,6 +1291,16 @@ type ReconcileResult struct {
 	} `json:"balance_mismatches"`
 	BilledTotalMicro int64 `json:"billed_total_micro"`
 	Ok               bool  `json:"ok"`
+}
+
+// ReconcileRun defines model for ReconcileRun.
+type ReconcileRun struct {
+	BalanceMismatches int                `json:"balance_mismatches"`
+	ChargeDiffMicro   int64              `json:"charge_diff_micro"`
+	FinishedAt        time.Time          `json:"finished_at"`
+	Id                openapi_types.UUID `json:"id"`
+	Ok                bool               `json:"ok"`
+	StartedAt         time.Time          `json:"started_at"`
 }
 
 // RequestLog defines model for RequestLog.
@@ -1213,35 +1423,36 @@ type SettingsPatch struct {
 
 // Subscription defines model for Subscription.
 type Subscription struct {
-	AccountId     nullable.Nullable[openapi_types.UUID] `json:"account_id,omitempty"`
-	ActivatedAt   nullable.Nullable[time.Time]          `json:"activated_at,omitempty"`
-	AllowedModels []string                              `json:"allowed_models"`
-	AutoRenew     bool                                  `json:"auto_renew"`
-	CancelledAt   nullable.Nullable[time.Time]          `json:"cancelled_at,omitempty"`
-	CreatedAt     time.Time                             `json:"created_at"`
-	CurrentPeriod nullable.Nullable[PeriodUsage]        `json:"current_period,omitempty"`
-	DurationUnit  DurationUnit                          `json:"duration_unit"`
-	DurationValue int                                   `json:"duration_value"`
-	ExpiresAt     nullable.Nullable[time.Time]          `json:"expires_at,omitempty"`
-	Id            openapi_types.UUID                    `json:"id"`
-	PlanId        openapi_types.UUID                    `json:"plan_id"`
-	PlanName      string                                `json:"plan_name"`
-	PriceMicro    int64                                 `json:"price_micro"`
-	Status        SubscriptionStatus                    `json:"status"`
+	AccountId nullable.Nullable[openapi_types.UUID] `json:"account_id,omitempty"`
+
+	// AccountName Name of the bound account
+	AccountName   *string                        `json:"account_name,omitempty"`
+	ActivatedAt   nullable.Nullable[time.Time]   `json:"activated_at,omitempty"`
+	AllowedModels []string                       `json:"allowed_models"`
+	AutoRenew     bool                           `json:"auto_renew"`
+	CancelledAt   nullable.Nullable[time.Time]   `json:"cancelled_at,omitempty"`
+	CreatedAt     time.Time                      `json:"created_at"`
+	CurrentPeriod nullable.Nullable[PeriodUsage] `json:"current_period,omitempty"`
+	DurationUnit  DurationUnit                   `json:"duration_unit"`
+	DurationValue int                            `json:"duration_value"`
+	ExpiresAt     nullable.Nullable[time.Time]   `json:"expires_at,omitempty"`
+	Id            openapi_types.UUID             `json:"id"`
+	PlanId        openapi_types.UUID             `json:"plan_id"`
+	PlanName      string                         `json:"plan_name"`
+	PriceMicro    int64                          `json:"price_micro"`
+	Status        SubscriptionStatus             `json:"status"`
 
 	// Subscription Only Claude subscriptions are served (since v0.2.0).
-	Subscription     SubscriptionKind   `json:"subscription"`
-	UserId           openapi_types.UUID `json:"user_id"`
-	WeeklyQuotaMicro int64              `json:"weekly_quota_micro"`
+	Subscription SubscriptionKind   `json:"subscription"`
+	UserId       openapi_types.UUID `json:"user_id"`
+
+	// Username The owner's username (admin views).
+	Username         *string `json:"username,omitempty"`
+	WeeklyQuotaMicro int64   `json:"weekly_quota_micro"`
 }
 
 // SubscriptionKind Only Claude subscriptions are served (since v0.2.0).
 type SubscriptionKind string
-
-// SubscriptionList defines model for SubscriptionList.
-type SubscriptionList struct {
-	Items []Subscription `json:"items"`
-}
 
 // SubscriptionPage defines model for SubscriptionPage.
 type SubscriptionPage struct {
@@ -1411,6 +1622,9 @@ type AdminListRequestLogsParams struct {
 	Tier  *TierFilter  `form:"tier,omitempty" json:"tier,omitempty"`
 	From  *From        `form:"from,omitempty" json:"from,omitempty"`
 	To    *To          `form:"to,omitempty" json:"to,omitempty"`
+
+	// StatusCode Exact HTTP status code returned to the client.
+	StatusCode *int `form:"status_code,omitempty" json:"status_code,omitempty"`
 }
 
 // AdminListSafeguardEventsParams defines parameters for AdminListSafeguardEvents.
@@ -1483,11 +1697,17 @@ type GetMyUsageSummaryParamsGranularity string
 // AdminCreateAccountJSONRequestBody defines body for AdminCreateAccount for application/json ContentType.
 type AdminCreateAccountJSONRequestBody = AccountCreate
 
+// AdminValidateAccountJSONRequestBody defines body for AdminValidateAccount for application/json ContentType.
+type AdminValidateAccountJSONRequestBody = AccountValidateRequest
+
 // AdminUpdateAccountJSONRequestBody defines body for AdminUpdateAccount for application/json ContentType.
 type AdminUpdateAccountJSONRequestBody = AccountUpdate
 
 // AdminSetAccountEnabledJSONRequestBody defines body for AdminSetAccountEnabled for application/json ContentType.
 type AdminSetAccountEnabledJSONRequestBody = EnabledRequest
+
+// AdminSetKeyEnabledJSONRequestBody defines body for AdminSetKeyEnabled for application/json ContentType.
+type AdminSetKeyEnabledJSONRequestBody = EnabledRequest
 
 // AdminCreatePlanJSONRequestBody defines body for AdminCreatePlan for application/json ContentType.
 type AdminCreatePlanJSONRequestBody = PlanInput
@@ -1545,6 +1765,9 @@ type ServerInterface interface {
 	// AdminCreateAccount Import an account. /quota and /v1/models must both succeed before it is saved.
 	// (POST /admin/accounts)
 	AdminCreateAccount(w http.ResponseWriter, r *http.Request)
+	// AdminValidateAccount Check a connection without saving anything (the import dialog's first step).
+	// (POST /admin/accounts/validate)
+	AdminValidateAccount(w http.ResponseWriter, r *http.Request)
 	// AdminDeleteAccount Delete an account (soft delete).
 	// (DELETE /admin/accounts/{accountId})
 	AdminDeleteAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
@@ -1578,9 +1801,15 @@ type ServerInterface interface {
 	// AdminEvents Server-sent events across replicas.
 	// (GET /admin/events)
 	AdminEvents(w http.ResponseWriter, r *http.Request)
+	// AdminSetKeyEnabled Enable or disable any user's key (takes effect on every replica at once).
+	// (PUT /admin/keys/{keyId}/enabled)
+	AdminSetKeyEnabled(w http.ResponseWriter, r *http.Request, keyId KeyId)
 
 	// (GET /admin/ledger)
 	AdminListLedger(w http.ResponseWriter, r *http.Request, params AdminListLedgerParams)
+	// AdminGetOverview Everything the admin overview page shows, in one call.
+	// (GET /admin/overview)
+	AdminGetOverview(w http.ResponseWriter, r *http.Request)
 
 	// (GET /admin/plans)
 	AdminListPlans(w http.ResponseWriter, r *http.Request)
@@ -1653,6 +1882,9 @@ type ServerInterface interface {
 	// AdminAdjustBalance Top up (admin_topup, amount > 0) or adjust (admin_adjust, signed) a balance.
 	// (POST /admin/users/{userId}/balance)
 	AdminAdjustBalance(w http.ResponseWriter, r *http.Request, userId UserId)
+	// AdminListUserKeys The user's API keys (secrets are never returned here).
+	// (GET /admin/users/{userId}/keys)
+	AdminListUserKeys(w http.ResponseWriter, r *http.Request, userId UserId)
 	// Login Log in with username and password (rate limited).
 	// (POST /auth/login)
 	Login(w http.ResponseWriter, r *http.Request)
@@ -1733,6 +1965,12 @@ func (_ Unimplemented) AdminCreateAccount(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// AdminValidateAccount Check a connection without saving anything (the import dialog's first step).
+// (POST /admin/accounts/validate)
+func (_ Unimplemented) AdminValidateAccount(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // AdminDeleteAccount Delete an account (soft delete).
 // (DELETE /admin/accounts/{accountId})
 func (_ Unimplemented) AdminDeleteAccount(w http.ResponseWriter, r *http.Request, accountId AccountId) {
@@ -1797,8 +2035,20 @@ func (_ Unimplemented) AdminEvents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// AdminSetKeyEnabled Enable or disable any user's key (takes effect on every replica at once).
+// (PUT /admin/keys/{keyId}/enabled)
+func (_ Unimplemented) AdminSetKeyEnabled(w http.ResponseWriter, r *http.Request, keyId KeyId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (GET /admin/ledger)
 func (_ Unimplemented) AdminListLedger(w http.ResponseWriter, r *http.Request, params AdminListLedgerParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminGetOverview Everything the admin overview page shows, in one call.
+// (GET /admin/overview)
+func (_ Unimplemented) AdminGetOverview(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1925,6 +2175,12 @@ func (_ Unimplemented) AdminUpdateUser(w http.ResponseWriter, r *http.Request, u
 // AdminAdjustBalance Top up (admin_topup, amount > 0) or adjust (admin_adjust, signed) a balance.
 // (POST /admin/users/{userId}/balance)
 func (_ Unimplemented) AdminAdjustBalance(w http.ResponseWriter, r *http.Request, userId UserId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminListUserKeys The user's API keys (secrets are never returned here).
+// (GET /admin/users/{userId}/keys)
+func (_ Unimplemented) AdminListUserKeys(w http.ResponseWriter, r *http.Request, userId UserId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2066,6 +2322,20 @@ func (siw *ServerInterfaceWrapper) AdminCreateAccount(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminCreateAccount(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminValidateAccount operation middleware
+func (siw *ServerInterfaceWrapper) AdminValidateAccount(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminValidateAccount(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2495,6 +2765,32 @@ func (siw *ServerInterfaceWrapper) AdminEvents(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// AdminSetKeyEnabled operation middleware
+func (siw *ServerInterfaceWrapper) AdminSetKeyEnabled(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "keyId" -------------
+	var keyId KeyId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "keyId", chi.URLParam(r, "keyId"), &keyId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "keyId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminSetKeyEnabled(w, r, keyId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // AdminListLedger operation middleware
 func (siw *ServerInterfaceWrapper) AdminListLedger(w http.ResponseWriter, r *http.Request) {
 
@@ -2558,6 +2854,20 @@ func (siw *ServerInterfaceWrapper) AdminListLedger(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminListLedger(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminGetOverview operation middleware
+func (siw *ServerInterfaceWrapper) AdminGetOverview(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminGetOverview(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2837,6 +3147,19 @@ func (siw *ServerInterfaceWrapper) AdminListRequestLogs(w http.ResponseWriter, r
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status_code" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status_code", r.URL.Query(), &params.StatusCode, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status_code"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status_code", Err: err})
 		}
 		return
 	}
@@ -3382,6 +3705,32 @@ func (siw *ServerInterfaceWrapper) AdminAdjustBalance(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminAdjustBalance(w, r, userId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminListUserKeys operation middleware
+func (siw *ServerInterfaceWrapper) AdminListUserKeys(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "userId" -------------
+	var userId UserId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", chi.URLParam(r, "userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminListUserKeys(w, r, userId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4164,6 +4513,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/admin/users/{userId}/balance", wrapper.AdminAdjustBalance)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/users/{userId}/keys", wrapper.AdminListUserKeys)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/admin/keys/{keyId}/enabled", wrapper.AdminSetKeyEnabled)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/overview", wrapper.AdminGetOverview)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/accounts/validate", wrapper.AdminValidateAccount)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/admin/accounts", wrapper.AdminListAccounts)
 	})
 	r.Group(func(r chi.Router) {
@@ -4331,6 +4692,45 @@ type AdminCreateAccountdefaultJSONResponse struct {
 }
 
 func (response AdminCreateAccountdefaultJSONResponse) VisitAdminCreateAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminValidateAccountRequestObject struct {
+	Body *AdminValidateAccountJSONRequestBody
+}
+
+type AdminValidateAccountResponseObject interface {
+	VisitAdminValidateAccountResponse(w http.ResponseWriter) error
+}
+
+type AdminValidateAccount200JSONResponse AccountTestResult
+
+func (response AdminValidateAccount200JSONResponse) VisitAdminValidateAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminValidateAccountdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminValidateAccountdefaultJSONResponse) VisitAdminValidateAccountResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -4798,6 +5198,46 @@ func (response AdminEventsdefaultJSONResponse) VisitAdminEventsResponse(w http.R
 	return err
 }
 
+type AdminSetKeyEnabledRequestObject struct {
+	KeyId KeyId `json:"keyId"`
+	Body  *AdminSetKeyEnabledJSONRequestBody
+}
+
+type AdminSetKeyEnabledResponseObject interface {
+	VisitAdminSetKeyEnabledResponse(w http.ResponseWriter) error
+}
+
+type AdminSetKeyEnabled200JSONResponse ApiKey
+
+func (response AdminSetKeyEnabled200JSONResponse) VisitAdminSetKeyEnabledResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminSetKeyEnableddefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminSetKeyEnableddefaultJSONResponse) VisitAdminSetKeyEnabledResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AdminListLedgerRequestObject struct {
 	Params AdminListLedgerParams
 }
@@ -4826,6 +5266,44 @@ type AdminListLedgerdefaultJSONResponse struct {
 }
 
 func (response AdminListLedgerdefaultJSONResponse) VisitAdminListLedgerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetOverviewRequestObject struct {
+}
+
+type AdminGetOverviewResponseObject interface {
+	VisitAdminGetOverviewResponse(w http.ResponseWriter) error
+}
+
+type AdminGetOverview200JSONResponse AdminOverview
+
+func (response AdminGetOverview200JSONResponse) VisitAdminGetOverviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetOverviewdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminGetOverviewdefaultJSONResponse) VisitAdminGetOverviewResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -5762,6 +6240,45 @@ func (response AdminAdjustBalancedefaultJSONResponse) VisitAdminAdjustBalanceRes
 	return err
 }
 
+type AdminListUserKeysRequestObject struct {
+	UserId UserId `json:"userId"`
+}
+
+type AdminListUserKeysResponseObject interface {
+	VisitAdminListUserKeysResponse(w http.ResponseWriter) error
+}
+
+type AdminListUserKeys200JSONResponse ApiKeyList
+
+func (response AdminListUserKeys200JSONResponse) VisitAdminListUserKeysResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminListUserKeysdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminListUserKeysdefaultJSONResponse) VisitAdminListUserKeysResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type LoginRequestObject struct {
 	Body *LoginJSONRequestBody
 }
@@ -6350,7 +6867,7 @@ type PurchasePlanResponseObject interface {
 	VisitPurchasePlanResponse(w http.ResponseWriter) error
 }
 
-type PurchasePlan201JSONResponse Subscription
+type PurchasePlan201JSONResponse MySubscription
 
 func (response PurchasePlan201JSONResponse) VisitPurchasePlanResponse(w http.ResponseWriter) error {
 
@@ -6388,7 +6905,7 @@ type ListMySubscriptionsResponseObject interface {
 	VisitListMySubscriptionsResponse(w http.ResponseWriter) error
 }
 
-type ListMySubscriptions200JSONResponse SubscriptionList
+type ListMySubscriptions200JSONResponse MySubscriptionList
 
 func (response ListMySubscriptions200JSONResponse) VisitListMySubscriptionsResponse(w http.ResponseWriter) error {
 
@@ -6428,7 +6945,7 @@ type SetAutoRenewResponseObject interface {
 	VisitSetAutoRenewResponse(w http.ResponseWriter) error
 }
 
-type SetAutoRenew200JSONResponse Subscription
+type SetAutoRenew200JSONResponse MySubscription
 
 func (response SetAutoRenew200JSONResponse) VisitSetAutoRenewResponse(w http.ResponseWriter) error {
 
@@ -6467,7 +6984,7 @@ type RenewSubscriptionResponseObject interface {
 	VisitRenewSubscriptionResponse(w http.ResponseWriter) error
 }
 
-type RenewSubscription200JSONResponse Subscription
+type RenewSubscription200JSONResponse MySubscription
 
 func (response RenewSubscription200JSONResponse) VisitRenewSubscriptionResponse(w http.ResponseWriter) error {
 
@@ -6506,7 +7023,7 @@ type ListMyUsageLogsResponseObject interface {
 	VisitListMyUsageLogsResponse(w http.ResponseWriter) error
 }
 
-type ListMyUsageLogs200JSONResponse RequestLogPage
+type ListMyUsageLogs200JSONResponse MyRequestLogPage
 
 func (response ListMyUsageLogs200JSONResponse) VisitListMyUsageLogsResponse(w http.ResponseWriter) error {
 
@@ -6545,7 +7062,7 @@ type GetMyUsageSummaryResponseObject interface {
 	VisitGetMyUsageSummaryResponse(w http.ResponseWriter) error
 }
 
-type GetMyUsageSummary200JSONResponse UsageSummary
+type GetMyUsageSummary200JSONResponse MyUsageSummary
 
 func (response GetMyUsageSummary200JSONResponse) VisitGetMyUsageSummaryResponse(w http.ResponseWriter) error {
 
@@ -6584,6 +7101,9 @@ type StrictServerInterface interface {
 	// AdminCreateAccount Import an account. /quota and /v1/models must both succeed before it is saved.
 	// (POST /admin/accounts)
 	AdminCreateAccount(ctx context.Context, request AdminCreateAccountRequestObject) (AdminCreateAccountResponseObject, error)
+	// AdminValidateAccount Check a connection without saving anything (the import dialog's first step).
+	// (POST /admin/accounts/validate)
+	AdminValidateAccount(ctx context.Context, request AdminValidateAccountRequestObject) (AdminValidateAccountResponseObject, error)
 	// AdminDeleteAccount Delete an account (soft delete).
 	// (DELETE /admin/accounts/{accountId})
 	AdminDeleteAccount(ctx context.Context, request AdminDeleteAccountRequestObject) (AdminDeleteAccountResponseObject, error)
@@ -6617,9 +7137,15 @@ type StrictServerInterface interface {
 	// AdminEvents Server-sent events across replicas.
 	// (GET /admin/events)
 	AdminEvents(ctx context.Context, request AdminEventsRequestObject) (AdminEventsResponseObject, error)
+	// AdminSetKeyEnabled Enable or disable any user's key (takes effect on every replica at once).
+	// (PUT /admin/keys/{keyId}/enabled)
+	AdminSetKeyEnabled(ctx context.Context, request AdminSetKeyEnabledRequestObject) (AdminSetKeyEnabledResponseObject, error)
 
 	// (GET /admin/ledger)
 	AdminListLedger(ctx context.Context, request AdminListLedgerRequestObject) (AdminListLedgerResponseObject, error)
+	// AdminGetOverview Everything the admin overview page shows, in one call.
+	// (GET /admin/overview)
+	AdminGetOverview(ctx context.Context, request AdminGetOverviewRequestObject) (AdminGetOverviewResponseObject, error)
 
 	// (GET /admin/plans)
 	AdminListPlans(ctx context.Context, request AdminListPlansRequestObject) (AdminListPlansResponseObject, error)
@@ -6692,6 +7218,9 @@ type StrictServerInterface interface {
 	// AdminAdjustBalance Top up (admin_topup, amount > 0) or adjust (admin_adjust, signed) a balance.
 	// (POST /admin/users/{userId}/balance)
 	AdminAdjustBalance(ctx context.Context, request AdminAdjustBalanceRequestObject) (AdminAdjustBalanceResponseObject, error)
+	// AdminListUserKeys The user's API keys (secrets are never returned here).
+	// (GET /admin/users/{userId}/keys)
+	AdminListUserKeys(ctx context.Context, request AdminListUserKeysRequestObject) (AdminListUserKeysResponseObject, error)
 	// Login Log in with username and password (rate limited).
 	// (POST /auth/login)
 	Login(ctx context.Context, request LoginRequestObject) (LoginResponseObject, error)
@@ -6844,6 +7373,37 @@ func (sh *strictHandler) AdminCreateAccount(w http.ResponseWriter, r *http.Reque
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AdminCreateAccountResponseObject); ok {
 		if err := validResponse.VisitAdminCreateAccountResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminValidateAccount operation middleware
+func (sh *strictHandler) AdminValidateAccount(w http.ResponseWriter, r *http.Request) {
+	var request AdminValidateAccountRequestObject
+
+	var body AdminValidateAccountJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminValidateAccount(ctx, request.(AdminValidateAccountRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminValidateAccount")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminValidateAccountResponseObject); ok {
+		if err := validResponse.VisitAdminValidateAccountResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -7152,6 +7712,39 @@ func (sh *strictHandler) AdminEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// AdminSetKeyEnabled operation middleware
+func (sh *strictHandler) AdminSetKeyEnabled(w http.ResponseWriter, r *http.Request, keyId KeyId) {
+	var request AdminSetKeyEnabledRequestObject
+
+	request.KeyId = keyId
+
+	var body AdminSetKeyEnabledJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminSetKeyEnabled(ctx, request.(AdminSetKeyEnabledRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminSetKeyEnabled")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminSetKeyEnabledResponseObject); ok {
+		if err := validResponse.VisitAdminSetKeyEnabledResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // AdminListLedger operation middleware
 func (sh *strictHandler) AdminListLedger(w http.ResponseWriter, r *http.Request, params AdminListLedgerParams) {
 	var request AdminListLedgerRequestObject
@@ -7171,6 +7764,30 @@ func (sh *strictHandler) AdminListLedger(w http.ResponseWriter, r *http.Request,
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AdminListLedgerResponseObject); ok {
 		if err := validResponse.VisitAdminListLedgerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminGetOverview operation middleware
+func (sh *strictHandler) AdminGetOverview(w http.ResponseWriter, r *http.Request) {
+	var request AdminGetOverviewRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminGetOverview(ctx, request.(AdminGetOverviewRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminGetOverview")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminGetOverviewResponseObject); ok {
+		if err := validResponse.VisitAdminGetOverviewResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -7847,6 +8464,32 @@ func (sh *strictHandler) AdminAdjustBalance(w http.ResponseWriter, r *http.Reque
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AdminAdjustBalanceResponseObject); ok {
 		if err := validResponse.VisitAdminAdjustBalanceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminListUserKeys operation middleware
+func (sh *strictHandler) AdminListUserKeys(w http.ResponseWriter, r *http.Request, userId UserId) {
+	var request AdminListUserKeysRequestObject
+
+	request.UserId = userId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminListUserKeys(ctx, request.(AdminListUserKeysRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminListUserKeys")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminListUserKeysResponseObject); ok {
+		if err := validResponse.VisitAdminListUserKeysResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

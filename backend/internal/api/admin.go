@@ -304,6 +304,9 @@ func (s *Server) runtimeOf(ctx context.Context, row sqlc.Account, st *router.Acc
 				}
 				rt.FiveHour = quotaWindowOf(acc.FiveHour, acc.SafetyFactor, observed, now)
 				rt.Week = quotaWindowOf(acc.Week, acc.SafetyFactor, observed, now)
+				if five, err := rt.FiveHour.Get(); err == nil {
+					rt.Penalized = five.UsedPercent >= s.effectiveWatermark(row)
+				}
 			}
 		}
 	}
@@ -325,16 +328,23 @@ func (s *Server) runtimeOf(ctx context.Context, row sqlc.Account, st *router.Acc
 	return rt
 }
 
-func (s *Server) accountOf(ctx context.Context, row sqlc.Account, st *router.AccountState, now time.Time) Account {
-	wm := s.Settings.Get().Watermark5hPercent
+// effectiveWatermark is the account's 5-hour watermark (own or global).
+func (s *Server) effectiveWatermark(row sqlc.Account) float64 {
 	if row.Watermark5hPercent != nil {
-		wm = *row.Watermark5hPercent
+		return *row.Watermark5hPercent
 	}
-	return Account{Id: row.ID, Name: row.Name, BaseUrl: row.BaseUrl, Enabled: row.Enabled,
+	return s.Settings.Get().Watermark5hPercent
+}
+
+func (s *Server) accountOf(ctx context.Context, row sqlc.Account, st *router.AccountState, now time.Time) Account {
+	wm := s.effectiveWatermark(row)
+	out := Account{Id: row.ID, Name: row.Name, BaseUrl: row.BaseUrl, Enabled: row.Enabled,
 		Watermark5hPercent: nullFloat(row.Watermark5hPercent), Watermark5hPercentEffective: wm,
 		MaxConcurrency: nullInt32(row.MaxConcurrency), Note: row.Note, Instance: row.Instance, Subscription: row.Subscription,
 		Tier: row.Tier, AuthIndex: row.AuthIndex, Provider: row.Provider, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-		Runtime: s.runtimeOf(ctx, row, st, now)}
+		Runtime: s.runtimeOf(ctx, row, st, now), WeekTotalMicro: nullable.NewNullNullable[int64]()}
+	s.fillSold(ctx, &out, st)
+	return out
 }
 
 func (s *Server) accountStates(ctx context.Context, ids ...uuid.UUID) map[uuid.UUID]*router.AccountState {
@@ -828,10 +838,7 @@ func (s *Server) AdminListSubscriptions(ctx context.Context, req AdminListSubscr
 	if err != nil {
 		return nil, err
 	}
-	items := make([]Subscription, len(rows))
-	for i, sub := range rows {
-		items[i] = s.subscriptionOf(ctx, sub)
-	}
+	items := s.adminSubscriptions(ctx, rows)
 	page := SubscriptionPage{Items: items, NextCursor: nullable.NewNullNullable[string]()}
 	if len(rows) > 0 {
 		last := rows[len(rows)-1]
@@ -841,7 +848,8 @@ func (s *Server) AdminListSubscriptions(ctx context.Context, req AdminListSubscr
 }
 
 func (s *Server) withWarning(ctx context.Context, sub sqlc.PlanSubscription, warning string) SubscriptionWithWarning {
-	out := SubscriptionWithWarning{Subscription: s.subscriptionOf(ctx, sub), Warning: nullable.NewNullNullable[string]()}
+	out := SubscriptionWithWarning{Subscription: s.adminSubscriptions(ctx, []sqlc.PlanSubscription{sub})[0],
+		Warning: nullable.NewNullNullable[string]()}
 	if warning != "" {
 		out.Warning = nullable.NewNullableWithValue(warning)
 	}
@@ -912,7 +920,7 @@ func (s *Server) AdminCancelSubscription(ctx context.Context, req AdminCancelSub
 		return nil, mapDomainErr(err)
 	}
 	s.reloadCatalog(ctx)
-	out := s.subscriptionOf(ctx, sub)
+	out := s.adminSubscriptions(ctx, []sqlc.PlanSubscription{sub})[0]
 	s.audit(ctx, "subscription.cancel", "subscription", sub.ID.String(), nil,
 		map[string]any{"refund_micro": req.Body.RefundMicro, "refund": fmtMicro(req.Body.RefundMicro)})
 	return AdminCancelSubscription200JSONResponse(out), nil
@@ -997,7 +1005,7 @@ func (s *Server) AdminUpdateSettings(ctx context.Context, req AdminUpdateSetting
 func (s *Server) AdminListRequestLogs(ctx context.Context, req AdminListRequestLogsRequestObject) (AdminListRequestLogsResponseObject, error) {
 	p := req.Params
 	page, err := s.listLogs(ctx, logFilter{user: p.UserId, key: p.KeyId, account: p.AccountId, model: p.Model, tier: p.Tier,
-		from: p.From, to: p.To, cursor: p.Cursor, limit: p.Limit}, true)
+		status: p.StatusCode, from: p.From, to: p.To, cursor: p.Cursor, limit: p.Limit})
 	if err != nil {
 		return nil, err
 	}

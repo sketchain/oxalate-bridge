@@ -11,7 +11,8 @@
 //	     (S = local upstream spend since the window's snapshot or local reset;
 //	     r = 0 while hard exhausted: paused or in cooldown for both windows,
 //	     used ≥ 100 % for that window)
-//	n(T) = 0 if next_reset ≥ now+T, else 1 + ⌊(now+T − next_reset) / period⌋
+//	n(T) = 0 if next_reset ≥ now+T, else ⌈(now+T − next_reset) / period⌉
+//	       (only resets strictly before now+T count, for 5h and 7d alike)
 //	C5(T) = r5 + n5(T)·T5 (∞ without a 5-hour window), C7(T) = r7 + n7(T)·T7
 //	forced: F(T) = min(C5, C7)
 //	normal: S(T) = max(0, min(C5, C7 − P·(1 + n7(T))))  (P = plan reservations)
@@ -76,8 +77,9 @@ type Window struct {
 }
 
 // Resets is n(T): how many times a window with the given next reset and
-// period resets within (now, now+horizon). A reset exactly at now+horizon
-// does not count.
+// period resets strictly before now+horizon. With next ≥ now+T it is 0;
+// otherwise ⌈(now+T − next) / period⌉, so a reset that lands exactly on
+// now+T (the first one or any later one) does not count.
 func Resets(next time.Time, period time.Duration, now time.Time, horizon time.Duration) int64 {
 	if next.IsZero() || period <= 0 {
 		return 0
@@ -86,7 +88,12 @@ func Resets(next time.Time, period time.Duration, now time.Time, horizon time.Du
 	if !next.Before(end) {
 		return 0
 	}
-	return 1 + int64(end.Sub(next)/period)
+	d := end.Sub(next)
+	n := int64(d / period)
+	if d%period != 0 {
+		n++
+	}
+	return n
 }
 
 // capacity is r + n(T)·T, with T = 0 (unknown total) meaning no capacity.

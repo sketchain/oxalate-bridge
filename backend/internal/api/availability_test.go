@@ -110,13 +110,13 @@ func TestPlanFiguresShortPeriodAndMultipleSubscriptions(t *testing.T) {
 		t.Fatalf("expiry-capped period %+v", perC)
 	}
 
-	// An unknown (e.g. deleted) account shows as error with nothing usable.
+	// An unknown (e.g. deleted) account shows as unavailable with nothing usable.
 	gone := uuid.New()
 	subG := sqlc.PlanSubscription{ID: uuid.New(), PlanName: "Gone", AccountID: &gone, Status: "active"}
 	g := PlanFigures(snap, set, subG, pB, tnow)
 	fiveG, _ := g.FiveHour.Get()
 	perG, _ := g.Period.Get()
-	if st, _ := g.AccountStatus.Get(); st != "error" || fiveG.AvailableMicro != 0 || perG.AvailableMicro != 0 {
+	if st, _ := g.AccountStatus.Get(); st != "unavailable" || fiveG.AvailableMicro != 0 || perG.AvailableMicro != 0 {
 		t.Fatalf("unknown account %+v", g)
 	}
 

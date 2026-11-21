@@ -4,14 +4,17 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // BRIDGE_TIMEZONE works in images without a zoneinfo database
 
 	"github.com/sketchain/oxalate-bridge/backend/internal/config"
+	"github.com/sketchain/oxalate-bridge/backend/internal/demo"
 	"github.com/sketchain/oxalate-bridge/backend/internal/server"
 	"github.com/sketchain/oxalate-bridge/backend/internal/version"
 )
@@ -30,6 +33,15 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if len(os.Args) > 1 && os.Args[1] == "seed-demo" {
+		if err := seedDemo(ctx, cfg, log, os.Args[2:]); err != nil {
+			log.Error("seed-demo failed", "err", err)
+			stop()
+			os.Exit(1) //nolint:gocritic // stop already called
+		}
+		return
+	}
 
 	app, err := server.New(ctx, cfg, log, server.Options{})
 	if err != nil {
@@ -60,6 +72,37 @@ func main() {
 	_ = srv.Shutdown(shutdownCtx)
 	_ = metricsSrv.Shutdown(shutdownCtx)
 	app.Close()
+}
+
+// seedDemo fills the database with demonstration data (see internal/demo).
+// It needs the bootstrap administrator and a running cmd/fakecpa.
+func seedDemo(ctx context.Context, cfg config.Config, log *slog.Logger, args []string) error {
+	fs := flag.NewFlagSet("seed-demo", flag.ContinueOnError)
+	fake := fs.String("fakecpa", "http://127.0.0.1:18400", "URL of the first cmd/fakecpa instance")
+	n := fs.Int("accounts", 4, "number of fake instances to import")
+	password := fs.String("password", "demo-pass-123", "password of the demo users")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if cfg.BootstrapAdminUsername == "" {
+		return errors.New("BRIDGE_BOOTSTRAP_ADMIN_USERNAME and BRIDGE_BOOTSTRAP_ADMIN_PASSWORD are required")
+	}
+	app, err := server.New(ctx, cfg, log, server.Options{InstanceID: "seed-demo"})
+	if err != nil {
+		return err
+	}
+	defer app.Close()
+	app.Start(ctx)
+	err = demo.Seed(ctx, app, log, demo.Options{FakeCPA: *fake, Accounts: *n, AdminUsername: cfg.BootstrapAdminUsername,
+		AdminPassword: cfg.BootstrapAdminPassword, UserPassword: *password})
+	if errors.Is(err, demo.ErrAlreadySeeded) {
+		log.Info("demo data already present; nothing to do")
+		return nil
+	}
+	if err == nil {
+		log.Info("demo data ready", "users", demo.Users, "password", *password, "admin", cfg.BootstrapAdminUsername)
+	}
+	return err
 }
 
 func logLevel() slog.Level {

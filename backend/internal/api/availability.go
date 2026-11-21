@@ -78,14 +78,15 @@ func pendingPlan(sub sqlc.PlanSubscription) PlanAvailability {
 		Period: nullable.NewNullNullable[PlanWindowAvailability]()}
 }
 
-// planAccountStatus maps an account status to what a plan holder sees (a
-// disabled or unknown account shows as error).
+// planAccountStatus maps an account status to what a plan holder sees:
+// normal, stale or cooldown as they are; disabled, error or an account the
+// snapshot does not know is unavailable.
 func planAccountStatus(status string) PlanAvailabilityAccountStatus {
 	switch status {
 	case avail.StatusNormal, avail.StatusStale, avail.StatusCooldown:
 		return PlanAvailabilityAccountStatus(status)
 	}
-	return PlanAvailabilityAccountStatusError
+	return PlanAvailabilityAccountStatusUnavailable
 }
 
 // PlanFigures computes one active subscription's figures:
@@ -110,12 +111,15 @@ func PlanFigures(snap *avail.Snapshot, set settings.Values, sub sqlc.PlanSubscri
 	if found {
 		status = acc.Status
 	}
-	out.AccountStatus = nullable.NewNullableWithValue(planAccountStatus(status))
+	accStatus := planAccountStatus(status)
+	out.AccountStatus = nullable.NewNullableWithValue(accStatus)
+	// An unavailable account serves nothing: both figures are 0.
+	usable := found && accStatus != PlanAvailabilityAccountStatusUnavailable
 	mult := set.TierMultipliers.Plan
 
 	five := PlanWindowAvailability{ResetAt: nullable.NewNullNullable[time.Time](), EndsAt: nullable.NewNullNullable[time.Time]()}
 	switch {
-	case !found:
+	case !usable:
 		five.AvailableMicro = 0
 	case !acc.Five.Known:
 		five.AvailableMicro = remaining // no 5-hour limit
@@ -133,7 +137,7 @@ func PlanFigures(snap *avail.Snapshot, set settings.Values, sub sqlc.PlanSubscri
 	}
 	horizon := max(0, end.Sub(now))
 	per := PlanWindowAvailability{ResetAt: nullable.NewNullNullable[time.Time](), EndsAt: nullable.NewNullableWithValue(period.PeriodEnd.UTC())}
-	if found {
+	if usable {
 		per.AvailableMicro = min(remaining, avail.UserAmount(acc.Forced(now, horizon), mult))
 	}
 	out.Period = nullable.NewNullableWithValue(per)

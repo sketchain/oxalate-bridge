@@ -1,14 +1,18 @@
 // Package fakecpa is a fake CLIProxyAPI instance (with the cpa-quota plugin)
-// serving one Claude subscription account for tests: /quota, /v1/models and
-// the Claude Messages endpoints with usage.
+// serving one Claude subscription account: /quota, /v1/models and the Claude
+// Messages endpoints with usage (JSON or SSE) and the unified rate-limit
+// response headers. Tests start it with New; cmd/fakecpa runs several of them
+// standalone for local development (Drift mode).
 package fakecpa
 
 import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -57,25 +61,53 @@ type CPA struct {
 	State                string
 	DatabaseStatus       string
 	QuotaStatus          int
+
+	// BaseURL is the address of a fake served without httptest (standalone).
+	BaseURL string
+	// Drift makes every successful /v1/messages call add its cost to the
+	// reported usage, varies the usage a little, and rolls the windows over
+	// at their reset (standalone demo mode).
+	Drift bool
+	// Delay is waited before the first byte of a relay response.
+	Delay time.Duration
 }
 
-// New starts a fake CPA.
+// New starts a fake CPA on an httptest server.
 func New(instance string) *CPA {
+	c := NewUnstarted(instance)
+	c.Server = httptest.NewServer(c)
+	return c
+}
+
+// NewUnstarted builds a fake CPA without a server; serve it as an
+// http.Handler and set BaseURL.
+func NewUnstarted(instance string) *CPA {
 	now := time.Now().UTC()
 	c := &CPA{Key: "cpa-key-" + instance, QuotaToken: "quota-" + instance, Instance: instance, Sub: "claude", Tier: "max5x",
 		AuthIndex: "acct-" + instance, Models: []string{"claude-opus-4-8", "claude-sonnet-4.6"},
 		Usage:    Usage{Input: 100, Output: 50, CacheRead: 1000, CacheWrite: 200},
 		FiveUsed: 10, WeekUsed: 20, FiveTotal: 10, WeekTotal: 100, State: "estimated", DatabaseStatus: "ok",
 		FiveReset: now.Add(3 * time.Hour).Truncate(time.Second), WeekReset: now.Add(4 * 24 * time.Hour).Truncate(time.Hour)}
-	c.Server = httptest.NewServer(http.HandlerFunc(c.serve))
 	return c
 }
 
+// ServeHTTP serves the fake.
+func (c *CPA) ServeHTTP(w http.ResponseWriter, r *http.Request) { c.serve(w, r) }
+
 // URL is the base URL.
-func (c *CPA) URL() string { return c.Server.URL }
+func (c *CPA) URL() string {
+	if c.Server != nil {
+		return c.Server.URL
+	}
+	return c.BaseURL
+}
 
 // Close stops the server.
-func (c *CPA) Close() { c.Server.Close() }
+func (c *CPA) Close() {
+	if c.Server != nil {
+		c.Server.Close()
+	}
+}
 
 // Push queues forced replies for the next relay requests.
 func (c *CPA) Push(r ...Reply) {
@@ -104,12 +136,31 @@ func (c *CPA) auth(r *http.Request, token string) bool {
 
 func (c *CPA) serve(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
+	case "/_fake/ratio_config":
+		// Development only: a ratio table for the bridge's price_url.
+		if !c.Drift {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, RatioTable)
+	case "/_fake/quota-status":
+		// Development control (standalone only): make /quota answer with the
+		// given status, e.g. 503 to turn the account stale.
+		if !c.Drift || r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		code, _ := strconv.Atoi(r.URL.Query().Get("code"))
+		c.Set(func(c *CPA) { c.QuotaStatus = code })
+		w.WriteHeader(http.StatusNoContent)
 	case "/v0/resource/plugins/cpa-quota/quota":
 		if !c.auth(r, c.QuotaToken) {
 			writeJSON(w, 401, map[string]any{"error": map[string]any{"code": "unauthorized", "message": "bad token"}})
 			return
 		}
 		c.mu.Lock()
+		c.rollover(time.Now().UTC())
 		status := c.QuotaStatus
 		body := c.quotaBody()
 		c.mu.Unlock()
@@ -152,6 +203,56 @@ func (c *CPA) quotaBody() map[string]any {
 	}
 }
 
+// rollover resets a window whose reset has passed (Drift mode only). The
+// caller holds the lock.
+func (c *CPA) rollover(now time.Time) {
+	if !c.Drift {
+		return
+	}
+	for !c.FiveReset.After(now) {
+		c.FiveReset = c.FiveReset.Add(5 * time.Hour)
+		c.FiveUsed = 0
+	}
+	for !c.WeekReset.After(now) {
+		c.WeekReset = c.WeekReset.Add(7 * 24 * time.Hour)
+		c.WeekUsed = 0
+	}
+}
+
+// cost is a rough upstream price of a usage (Opus list prices), in USD.
+func (u Usage) cost() float64 {
+	return (float64(u.Input)*15 + float64(u.Output)*75 + float64(u.CacheRead)*1.5 + float64(u.CacheWrite)*18.75) / 1e6
+}
+
+// rateLimitHeaders are the unified rate-limit headers Claude subscriptions
+// report on every response. The caller holds the lock.
+func (c *CPA) rateLimitHeaders(h http.Header) {
+	status := "allowed"
+	if c.FiveUsed >= 100 || c.WeekUsed >= 100 {
+		status = "rejected"
+	}
+	h.Set("anthropic-ratelimit-unified-status", status)
+	h.Set("anthropic-ratelimit-unified-5h-utilization", strconv.FormatFloat(min(c.FiveUsed, 100)/100, 'f', 4, 64))
+	h.Set("anthropic-ratelimit-unified-5h-reset", strconv.FormatInt(c.FiveReset.Unix(), 10))
+	h.Set("anthropic-ratelimit-unified-7d-utilization", strconv.FormatFloat(min(c.WeekUsed, 100)/100, 'f', 4, 64))
+	h.Set("anthropic-ratelimit-unified-7d-reset", strconv.FormatInt(c.WeekReset.Unix(), 10))
+}
+
+// account records a successful call's usage (Drift mode). The caller holds
+// the lock.
+func (c *CPA) account(u Usage) {
+	if !c.Drift {
+		return
+	}
+	cost := u.cost()
+	if c.FiveTotal > 0 {
+		c.FiveUsed = min(100, c.FiveUsed+cost/c.FiveTotal*100)
+	}
+	if c.WeekTotal > 0 {
+		c.WeekUsed = min(100, c.WeekUsed+cost/c.WeekTotal*100)
+	}
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -168,7 +269,22 @@ func (c *CPA) relay(w http.ResponseWriter, r *http.Request) {
 		c.replies = c.replies[1:]
 	}
 	u := c.Usage
+	if c.Drift {
+		// Vary the usage between 0.5× and 2× so the demo data is not flat.
+		f := 0.5 + rand.Float64()*1.5 //nolint:gosec // demo data
+		u = Usage{Input: int64(float64(u.Input) * f), Output: int64(float64(u.Output) * f),
+			CacheRead: int64(float64(u.CacheRead) * f), CacheWrite: int64(float64(u.CacheWrite) * f)}
+	}
+	c.rollover(time.Now().UTC())
+	if forced == nil && r.URL.Path == "/v1/messages" {
+		c.account(u)
+	}
+	c.rateLimitHeaders(w.Header())
+	delay := c.Delay
 	c.mu.Unlock()
+	if delay > 0 {
+		time.Sleep(delay)
+	}
 	if !c.auth(r, c.Key) {
 		writeJSON(w, 401, map[string]any{"error": map[string]any{"message": "invalid key"}})
 		return
@@ -227,6 +343,14 @@ func sse(w http.ResponseWriter, events []string) {
 		}
 	}
 }
+
+// RatioTable is the ratio table served at /_fake/ratio_config in Drift mode
+// (the same shape as the price_url source; it covers the fake's models).
+const RatioTable = `{"success":true,"data":{
+	"model_ratio":{"claude-opus-4-8":2.5,"claude-sonnet-4.6":1.5},
+	"completion_ratio":{"claude-opus-4-8":5,"claude-sonnet-4.6":5},
+	"cache_ratio":{"claude-opus-4-8":0.1,"claude-sonnet-4.6":0.1},
+	"create_cache_ratio":{"claude-opus-4-8":1.25,"claude-sonnet-4.6":1.25}}}`
 
 // RefusalBody is the CPA safeguard error body.
 func RefusalBody(category, reason string) string {

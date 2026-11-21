@@ -463,6 +463,21 @@ func (s *Server) subscriptionOf(ctx context.Context, sub sqlc.PlanSubscription) 
 	return out
 }
 
+// mySubscriptionOf is the owner's view of a subscription: no account and no
+// upstream cost.
+func mySubscriptionOf(sub Subscription) MySubscription {
+	out := MySubscription{Id: sub.Id, PlanId: sub.PlanId, PlanName: sub.PlanName, Subscription: sub.Subscription,
+		WeeklyQuotaMicro: sub.WeeklyQuotaMicro, AllowedModels: sub.AllowedModels, DurationValue: sub.DurationValue,
+		DurationUnit: sub.DurationUnit, PriceMicro: sub.PriceMicro, Status: sub.Status, ActivatedAt: sub.ActivatedAt,
+		ExpiresAt: sub.ExpiresAt, AutoRenew: sub.AutoRenew, CancelledAt: sub.CancelledAt, CreatedAt: sub.CreatedAt,
+		CurrentPeriod: nullable.NewNullNullable[MyPeriodUsage]()}
+	if p, err := sub.CurrentPeriod.Get(); err == nil {
+		out.CurrentPeriod = nullable.NewNullableWithValue(MyPeriodUsage{PeriodStart: p.PeriodStart, PeriodEnd: p.PeriodEnd,
+			QuotaMicro: p.QuotaMicro, UsedBilledMicro: p.UsedBilledMicro, RemainingMicro: p.RemainingMicro})
+	}
+	return out
+}
+
 // ListPlansOnSale implements GET /plans.
 func (s *Server) ListPlansOnSale(ctx context.Context, _ ListPlansOnSaleRequestObject) (ListPlansOnSaleResponseObject, error) {
 	rows, err := s.Store.Q.ListPlansOnSale(ctx)
@@ -486,7 +501,7 @@ func (s *Server) PurchasePlan(ctx context.Context, req PurchasePlanRequestObject
 	if err != nil {
 		return nil, mapDomainErr(err)
 	}
-	return PurchasePlan201JSONResponse(s.subscriptionOf(ctx, sub)), nil
+	return PurchasePlan201JSONResponse(mySubscriptionOf(s.subscriptionOf(ctx, sub))), nil
 }
 
 // ListMySubscriptions implements GET /subscriptions.
@@ -495,9 +510,9 @@ func (s *Server) ListMySubscriptions(ctx context.Context, _ ListMySubscriptionsR
 	if err != nil {
 		return nil, err
 	}
-	items := make([]Subscription, len(rows))
+	items := make([]MySubscription, len(rows))
 	for i, sub := range rows {
-		items[i] = s.subscriptionOf(ctx, sub)
+		items[i] = mySubscriptionOf(s.subscriptionOf(ctx, sub))
 	}
 	return ListMySubscriptions200JSONResponse{Items: items}, nil
 }
@@ -509,7 +524,7 @@ func (s *Server) RenewSubscription(ctx context.Context, req RenewSubscriptionReq
 	if err != nil {
 		return nil, mapDomainErr(err)
 	}
-	return RenewSubscription200JSONResponse(s.subscriptionOf(ctx, sub)), nil
+	return RenewSubscription200JSONResponse(mySubscriptionOf(s.subscriptionOf(ctx, sub))), nil
 }
 
 // SetAutoRenew implements PUT /subscriptions/{id}/auto-renew.
@@ -521,12 +536,23 @@ func (s *Server) SetAutoRenew(ctx context.Context, req SetAutoRenewRequestObject
 	if err != nil {
 		return nil, mapDomainErr(err)
 	}
-	return SetAutoRenew200JSONResponse(s.subscriptionOf(ctx, sub)), nil
+	return SetAutoRenew200JSONResponse(mySubscriptionOf(s.subscriptionOf(ctx, sub))), nil
 }
 
 // ---- usage ----------------------------------------------------------------------------
 
-func logOf(r sqlc.RequestLog, admin bool) RequestLog {
+// myLogOf is the user's view of a request log: no upstream cost,
+// multipliers, retries, account, session hash or client IP.
+func myLogOf(r sqlc.RequestLog) MyRequestLog {
+	return MyRequestLog{RequestId: r.RequestID, CreatedAt: r.CreatedAt, KeyId: nullUUID(r.KeyID), Tier: r.Tier,
+		SubscriptionId: nullUUID(r.SubscriptionID), Endpoint: r.Endpoint, ModelRaw: r.ModelRaw, Model: r.Model, Stream: r.Stream,
+		StatusCode: int(r.StatusCode), ErrorType: r.ErrorType, InputTokens: r.InputTokens, CacheReadTokens: r.CacheReadTokens,
+		CacheWriteTokens: r.CacheWriteTokens, OutputTokens: r.OutputTokens, ReasoningTokens: r.ReasoningTokens,
+		BilledMicro: r.BilledMicro, Unpriced: r.Unpriced, UsageMissing: r.UsageMissing, LatencyMs: int(r.LatencyMs),
+		FirstByteMs: int(r.FirstByteMs), UserAgent: r.UserAgent}
+}
+
+func logOf(r sqlc.RequestLog) RequestLog {
 	out := RequestLog{RequestId: r.RequestID, CreatedAt: r.CreatedAt, UserId: nullUUID(r.UserID), KeyId: nullUUID(r.KeyID),
 		AccountId: nullUUID(r.AccountID), Tier: r.Tier, SubscriptionId: nullUUID(r.SubscriptionID), Endpoint: r.Endpoint,
 		ModelRaw: r.ModelRaw, Model: r.Model, Stream: r.Stream, StatusCode: int(r.StatusCode), ErrorType: r.ErrorType,
@@ -534,15 +560,8 @@ func logOf(r sqlc.RequestLog, admin bool) RequestLog {
 		OutputTokens: r.OutputTokens, ReasoningTokens: r.ReasoningTokens, UpstreamCostMicro: r.UpstreamCostMicro,
 		BilledMicro: r.BilledMicro, TierMultiplier: r.TierMultiplier, ModelMultiplier: r.ModelMultiplier, Unpriced: r.Unpriced,
 		UsageMissing: r.UsageMissing, LatencyMs: int(r.LatencyMs), FirstByteMs: int(r.FirstByteMs), Retries: int(r.Retries)}
-	ua := r.UserAgent
-	out.UserAgent = &ua
-	if admin {
-		sh, ip := r.SessionHash, r.ClientIp
-		out.SessionHash, out.ClientIp = &sh, &ip
-	} else {
-		// Users do not see which upstream account served them.
-		out.AccountId = nullable.NewNullNullable[uuid.UUID]()
-	}
+	ua, sh, ip := r.UserAgent, r.SessionHash, r.ClientIp
+	out.UserAgent, out.SessionHash, out.ClientIp = &ua, &sh, &ip
 	return out
 }
 
@@ -550,15 +569,18 @@ type logFilter struct {
 	user, key, account *uuid.UUID
 	model              *string
 	tier               *Tier
+	status             *int
 	from, to           *time.Time
 	cursor             *string
 	limit              *int
 }
 
-func (s *Server) listLogs(ctx context.Context, f logFilter, admin bool) (RequestLogPage, error) {
+// listLogRows fetches one page of request logs and its next cursor.
+func (s *Server) listLogRows(ctx context.Context, f logFilter) ([]sqlc.RequestLog, nullable.Nullable[string], error) {
+	none := nullable.NewNullNullable[string]()
 	at, id, err := decodeCursor(f.cursor)
 	if err != nil {
-		return RequestLogPage{}, err
+		return nil, none, err
 	}
 	lim := limitOf(f.limit)
 	var tier *string
@@ -571,33 +593,50 @@ func (s *Server) listLogs(ctx context.Context, f logFilter, admin bool) (Request
 		v := billing.NormalizeModel(*f.model)
 		model = &v
 	}
+	var status *int32
+	if f.status != nil {
+		v := int32(*f.status)
+		status = &v
+	}
 	rows, err := s.Store.Q.ListRequestLogs(ctx, sqlc.ListRequestLogsParams{Limit: lim, UserID: f.user, KeyID: f.key,
-		AccountID: f.account, Model: model, Tier: tier, FromAt: f.from, ToAt: f.to, CursorAt: at, CursorID: id})
+		AccountID: f.account, Model: model, Tier: tier, FromAt: f.from, ToAt: f.to, StatusCode: status, CursorAt: at, CursorID: id})
+	if err != nil {
+		return nil, none, err
+	}
+	if len(rows) == 0 {
+		return rows, none, nil
+	}
+	last := rows[len(rows)-1]
+	return rows, nextCursor(len(rows), lim, last.CreatedAt, last.RequestID), nil
+}
+
+// listLogs is the admin page of request logs.
+func (s *Server) listLogs(ctx context.Context, f logFilter) (RequestLogPage, error) {
+	rows, next, err := s.listLogRows(ctx, f)
 	if err != nil {
 		return RequestLogPage{}, err
 	}
 	items := make([]RequestLog, len(rows))
 	for i, r := range rows {
-		items[i] = logOf(r, admin)
+		items[i] = logOf(r)
 	}
-	page := RequestLogPage{Items: items, NextCursor: nullable.NewNullNullable[string]()}
-	if len(rows) > 0 {
-		last := rows[len(rows)-1]
-		page.NextCursor = nextCursor(len(rows), lim, last.CreatedAt, last.RequestID)
-	}
-	return page, nil
+	return RequestLogPage{Items: items, NextCursor: next}, nil
 }
 
 // ListMyUsageLogs implements GET /usage/logs.
 func (s *Server) ListMyUsageLogs(ctx context.Context, req ListMyUsageLogsRequestObject) (ListMyUsageLogsResponseObject, error) {
 	user := currentUser(ctx).ID
 	p := req.Params
-	page, err := s.listLogs(ctx, logFilter{user: &user, key: p.KeyId, model: p.Model, tier: p.Tier, from: p.From, to: p.To,
-		cursor: p.Cursor, limit: p.Limit}, false)
+	rows, next, err := s.listLogRows(ctx, logFilter{user: &user, key: p.KeyId, model: p.Model, tier: p.Tier, from: p.From, to: p.To,
+		cursor: p.Cursor, limit: p.Limit})
 	if err != nil {
 		return nil, err
 	}
-	return ListMyUsageLogs200JSONResponse(page), nil
+	items := make([]MyRequestLog, len(rows))
+	for i, r := range rows {
+		items[i] = myLogOf(r)
+	}
+	return ListMyUsageLogs200JSONResponse{Items: items, NextCursor: next}, nil
 }
 
 func (s *Server) usageSummary(ctx context.Context, gran string, from, to time.Time, user, key, account *uuid.UUID) (UsageSummary, error) {
@@ -629,7 +668,13 @@ func (s *Server) GetMyUsageSummary(ctx context.Context, req GetMyUsageSummaryReq
 	if err != nil {
 		return nil, err
 	}
-	return GetMyUsageSummary200JSONResponse(out), nil
+	items := make([]MyUsageBucket, len(out.Items))
+	for i, b := range out.Items {
+		items[i] = MyUsageBucket{Bucket: b.Bucket, Model: b.Model, Tier: b.Tier, Requests: b.Requests, Errors: b.Errors,
+			InputTokens: b.InputTokens, CacheReadTokens: b.CacheReadTokens, CacheWriteTokens: b.CacheWriteTokens,
+			OutputTokens: b.OutputTokens, ReasoningTokens: b.ReasoningTokens, BilledMicro: b.BilledMicro}
+	}
+	return GetMyUsageSummary200JSONResponse{Granularity: MyUsageSummaryGranularity(out.Granularity), Items: items}, nil
 }
 
 // ListModels implements GET /models.

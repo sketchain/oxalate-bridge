@@ -1,9 +1,0 @@
-{
-  "name": "oxalate-bridge-web",
-  "private": true,
-  "version": "0.1.0",
-  "description": "Panel frontend. Placeholder until the next round; the build output goes to backend/internal/webui/dist and is embedded into the Go binary.",
-  "scripts": {
-    "build": "node build.mjs"
-  }
-}

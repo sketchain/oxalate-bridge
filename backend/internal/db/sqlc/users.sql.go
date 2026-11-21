@@ -192,6 +192,36 @@ func (q *Queries) ListUserBalanceChecks(ctx context.Context) ([]ListUserBalanceC
 	return items, nil
 }
 
+const listUsernames = `-- name: ListUsernames :many
+SELECT id, username FROM users WHERE id = ANY($1::uuid[])
+`
+
+type ListUsernamesRow struct {
+	ID       uuid.UUID
+	Username string
+}
+
+// Usernames for display (deleted users included).
+func (q *Queries) ListUsernames(ctx context.Context, ids []uuid.UUID) ([]ListUsernamesRow, error) {
+	rows, err := q.db.Query(ctx, listUsernames, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUsernamesRow{}
+	for rows.Next() {
+		var i ListUsernamesRow
+		if err := rows.Scan(&i.ID, &i.Username); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUsers = `-- name: ListUsers :many
 SELECT id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at FROM users
 WHERE deleted_at IS NULL

@@ -50,3 +50,13 @@ SELECT s.id, s.user_id, u.username, s.status, s.plan_name
 FROM plan_subscriptions s JOIN users u ON u.id = s.user_id
 WHERE s.account_id = $1 AND s.status IN ('active', 'pending_assignment')
 ORDER BY s.created_at, s.id;
+
+-- name: SoldQuotaByAccount :many
+-- Σ weekly quota of the active and pending subscriptions bound to each account.
+SELECT account_id::uuid AS account_id, COALESCE(sum(weekly_quota_micro), 0)::bigint AS sold
+FROM plan_subscriptions
+WHERE account_id IS NOT NULL AND status IN ('active', 'pending_assignment')
+GROUP BY account_id;
+
+-- name: CountSubscriptionsByStatus :one
+SELECT count(*)::bigint FROM plan_subscriptions WHERE status = $1;

@@ -102,22 +102,24 @@ WHERE ($2::uuid IS NULL OR user_id = $2::uuid)
   AND ($6::text IS NULL OR tier = $6::text)
   AND ($7::timestamptz IS NULL OR created_at >= $7::timestamptz)
   AND ($8::timestamptz IS NULL OR created_at < $8::timestamptz)
-  AND ($9::timestamptz IS NULL OR (created_at, request_id) < ($9::timestamptz, $10::uuid))
+  AND ($9::int IS NULL OR status_code = $9::int)
+  AND ($10::timestamptz IS NULL OR (created_at, request_id) < ($10::timestamptz, $11::uuid))
 ORDER BY created_at DESC, request_id DESC
 LIMIT $1
 `
 
 type ListRequestLogsParams struct {
-	Limit     int32
-	UserID    *uuid.UUID
-	KeyID     *uuid.UUID
-	AccountID *uuid.UUID
-	Model     *string
-	Tier      *string
-	FromAt    *time.Time
-	ToAt      *time.Time
-	CursorAt  *time.Time
-	CursorID  *uuid.UUID
+	Limit      int32
+	UserID     *uuid.UUID
+	KeyID      *uuid.UUID
+	AccountID  *uuid.UUID
+	Model      *string
+	Tier       *string
+	FromAt     *time.Time
+	ToAt       *time.Time
+	StatusCode *int32
+	CursorAt   *time.Time
+	CursorID   *uuid.UUID
 }
 
 func (q *Queries) ListRequestLogs(ctx context.Context, arg ListRequestLogsParams) ([]RequestLog, error) {
@@ -130,6 +132,7 @@ func (q *Queries) ListRequestLogs(ctx context.Context, arg ListRequestLogsParams
 		arg.Tier,
 		arg.FromAt,
 		arg.ToAt,
+		arg.StatusCode,
 		arg.CursorAt,
 		arg.CursorID,
 	)
@@ -171,6 +174,52 @@ func (q *Queries) ListRequestLogs(ctx context.Context, arg ListRequestLogsParams
 			&i.SessionHash,
 			&i.ClientIp,
 			&i.UserAgent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const requestTotalsByTier = `-- name: RequestTotalsByTier :many
+SELECT tier, count(*)::bigint AS requests, COALESCE(sum(billed_micro), 0)::bigint AS billed_micro,
+       COALESCE(sum(upstream_cost_micro), 0)::bigint AS upstream_cost_micro
+FROM request_logs
+WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz
+GROUP BY tier
+`
+
+type RequestTotalsByTierParams struct {
+	FromAt time.Time
+	ToAt   time.Time
+}
+
+type RequestTotalsByTierRow struct {
+	Tier              string
+	Requests          int64
+	BilledMicro       int64
+	UpstreamCostMicro int64
+}
+
+// Request count and amounts per tier in [from_at, to_at) (admin overview).
+func (q *Queries) RequestTotalsByTier(ctx context.Context, arg RequestTotalsByTierParams) ([]RequestTotalsByTierRow, error) {
+	rows, err := q.db.Query(ctx, requestTotalsByTier, arg.FromAt, arg.ToAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RequestTotalsByTierRow{}
+	for rows.Next() {
+		var i RequestTotalsByTierRow
+		if err := rows.Scan(
+			&i.Tier,
+			&i.Requests,
+			&i.BilledMicro,
+			&i.UpstreamCostMicro,
 		); err != nil {
 			return nil, err
 		}
