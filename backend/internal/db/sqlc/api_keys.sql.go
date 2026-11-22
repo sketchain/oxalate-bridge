@@ -12,25 +12,61 @@ import (
 	"github.com/google/uuid"
 )
 
+const addAPIKeyUsage = `-- name: AddAPIKeyUsage :one
+UPDATE api_keys SET used_all_micro = used_all_micro + $2, used_balance_micro = used_balance_micro + $3, usage_version = usage_version + 1
+WHERE id = $1
+RETURNING used_all_micro, used_balance_micro, usage_version
+`
+
+type AddAPIKeyUsageParams struct {
+	ID               uuid.UUID
+	UsedAllMicro     int64
+	UsedBalanceMicro int64
+}
+
+type AddAPIKeyUsageRow struct {
+	UsedAllMicro     int64
+	UsedBalanceMicro int64
+	UsageVersion     int64
+}
+
+func (q *Queries) AddAPIKeyUsage(ctx context.Context, arg AddAPIKeyUsageParams) (AddAPIKeyUsageRow, error) {
+	row := q.db.QueryRow(ctx, addAPIKeyUsage, arg.ID, arg.UsedAllMicro, arg.UsedBalanceMicro)
+	var i AddAPIKeyUsageRow
+	err := row.Scan(&i.UsedAllMicro, &i.UsedBalanceMicro, &i.UsageVersion)
+	return i, err
+}
+
 const createAPIKey = `-- name: CreateAPIKey :one
-INSERT INTO api_keys (id, user_id, name, key_hash, key_enc, key_prefix, tiers, subscription_id, max_concurrency, rpm, enabled, note)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-RETURNING id, user_id, name, key_hash, key_enc, key_prefix, tiers, subscription_id, max_concurrency, rpm, enabled, note, last_used_at, created_at, updated_at, deleted_at
+INSERT INTO api_keys (id, user_id, name, key_hash, key_enc, key_prefix, tiers, subscription_id, max_concurrency, rpm, enabled, note,
+                      quota_limit_micro, quota_scope, limit_5h_micro, limit_1d_micro, limit_7d_micro, expires_at, model_allowlist,
+                      ip_allowlist, allow_owner_query)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+RETURNING id, user_id, name, key_hash, key_enc, key_prefix, tiers, subscription_id, max_concurrency, rpm, enabled, note, last_used_at, created_at, updated_at, deleted_at, quota_limit_micro, quota_scope, limit_5h_micro, limit_1d_micro, limit_7d_micro, expires_at, model_allowlist, ip_allowlist, allow_owner_query, used_all_micro, used_balance_micro, usage_version, usage_reset_at
 `
 
 type CreateAPIKeyParams struct {
-	ID             uuid.UUID
-	UserID         uuid.UUID
-	Name           string
-	KeyHash        []byte
-	KeyEnc         []byte
-	KeyPrefix      string
-	Tiers          []string
-	SubscriptionID *uuid.UUID
-	MaxConcurrency *int32
-	Rpm            *int32
-	Enabled        bool
-	Note           string
+	ID              uuid.UUID
+	UserID          uuid.UUID
+	Name            string
+	KeyHash         []byte
+	KeyEnc          []byte
+	KeyPrefix       string
+	Tiers           []string
+	SubscriptionID  *uuid.UUID
+	MaxConcurrency  *int32
+	Rpm             *int32
+	Enabled         bool
+	Note            string
+	QuotaLimitMicro *int64
+	QuotaScope      string
+	Limit5hMicro    *int64
+	Limit1dMicro    *int64
+	Limit7dMicro    *int64
+	ExpiresAt       *time.Time
+	ModelAllowlist  []string
+	IpAllowlist     []string
+	AllowOwnerQuery bool
 }
 
 func (q *Queries) CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error) {
@@ -47,6 +83,15 @@ func (q *Queries) CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (Api
 		arg.Rpm,
 		arg.Enabled,
 		arg.Note,
+		arg.QuotaLimitMicro,
+		arg.QuotaScope,
+		arg.Limit5hMicro,
+		arg.Limit1dMicro,
+		arg.Limit7dMicro,
+		arg.ExpiresAt,
+		arg.ModelAllowlist,
+		arg.IpAllowlist,
+		arg.AllowOwnerQuery,
 	)
 	var i ApiKey
 	err := row.Scan(
@@ -66,12 +111,25 @@ func (q *Queries) CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (Api
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.QuotaLimitMicro,
+		&i.QuotaScope,
+		&i.Limit5hMicro,
+		&i.Limit1dMicro,
+		&i.Limit7dMicro,
+		&i.ExpiresAt,
+		&i.ModelAllowlist,
+		&i.IpAllowlist,
+		&i.AllowOwnerQuery,
+		&i.UsedAllMicro,
+		&i.UsedBalanceMicro,
+		&i.UsageVersion,
+		&i.UsageResetAt,
 	)
 	return i, err
 }
 
 const getAPIKey = `-- name: GetAPIKey :one
-SELECT id, user_id, name, key_hash, key_enc, key_prefix, tiers, subscription_id, max_concurrency, rpm, enabled, note, last_used_at, created_at, updated_at, deleted_at FROM api_keys WHERE id = $1 AND deleted_at IS NULL
+SELECT id, user_id, name, key_hash, key_enc, key_prefix, tiers, subscription_id, max_concurrency, rpm, enabled, note, last_used_at, created_at, updated_at, deleted_at, quota_limit_micro, quota_scope, limit_5h_micro, limit_1d_micro, limit_7d_micro, expires_at, model_allowlist, ip_allowlist, allow_owner_query, used_all_micro, used_balance_micro, usage_version, usage_reset_at FROM api_keys WHERE id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetAPIKey(ctx context.Context, id uuid.UUID) (ApiKey, error) {
@@ -94,6 +152,42 @@ func (q *Queries) GetAPIKey(ctx context.Context, id uuid.UUID) (ApiKey, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.QuotaLimitMicro,
+		&i.QuotaScope,
+		&i.Limit5hMicro,
+		&i.Limit1dMicro,
+		&i.Limit7dMicro,
+		&i.ExpiresAt,
+		&i.ModelAllowlist,
+		&i.IpAllowlist,
+		&i.AllowOwnerQuery,
+		&i.UsedAllMicro,
+		&i.UsedBalanceMicro,
+		&i.UsageVersion,
+		&i.UsageResetAt,
+	)
+	return i, err
+}
+
+const getAPIKeyUsageBase = `-- name: GetAPIKeyUsageBase :one
+SELECT used_all_micro, used_balance_micro, usage_version, usage_reset_at FROM api_keys WHERE id = $1
+`
+
+type GetAPIKeyUsageBaseRow struct {
+	UsedAllMicro     int64
+	UsedBalanceMicro int64
+	UsageVersion     int64
+	UsageResetAt     time.Time
+}
+
+func (q *Queries) GetAPIKeyUsageBase(ctx context.Context, id uuid.UUID) (GetAPIKeyUsageBaseRow, error) {
+	row := q.db.QueryRow(ctx, getAPIKeyUsageBase, id)
+	var i GetAPIKeyUsageBaseRow
+	err := row.Scan(
+		&i.UsedAllMicro,
+		&i.UsedBalanceMicro,
+		&i.UsageVersion,
+		&i.UsageResetAt,
 	)
 	return i, err
 }
@@ -101,6 +195,8 @@ func (q *Queries) GetAPIKey(ctx context.Context, id uuid.UUID) (ApiKey, error) {
 const getAuthByKeyHash = `-- name: GetAuthByKeyHash :one
 SELECT k.id AS key_id, k.user_id, k.tiers, k.subscription_id, k.max_concurrency AS key_max_concurrency, k.rpm AS key_rpm,
        k.enabled AS key_enabled, (k.deleted_at IS NOT NULL)::boolean AS key_deleted,
+       k.quota_limit_micro, k.quota_scope, k.limit_5h_micro, k.limit_1d_micro, k.limit_7d_micro, k.expires_at,
+       k.model_allowlist, k.ip_allowlist, k.allow_owner_query,
        u.role, u.status AS user_status, u.max_concurrency AS user_max_concurrency, u.rpm AS user_rpm
 FROM api_keys k JOIN users u ON u.id = k.user_id
 WHERE k.key_hash = $1
@@ -115,6 +211,15 @@ type GetAuthByKeyHashRow struct {
 	KeyRpm             *int32
 	KeyEnabled         bool
 	KeyDeleted         bool
+	QuotaLimitMicro    *int64
+	QuotaScope         string
+	Limit5hMicro       *int64
+	Limit1dMicro       *int64
+	Limit7dMicro       *int64
+	ExpiresAt          *time.Time
+	ModelAllowlist     []string
+	IpAllowlist        []string
+	AllowOwnerQuery    bool
 	Role               string
 	UserStatus         string
 	UserMaxConcurrency int32
@@ -133,12 +238,62 @@ func (q *Queries) GetAuthByKeyHash(ctx context.Context, keyHash []byte) (GetAuth
 		&i.KeyRpm,
 		&i.KeyEnabled,
 		&i.KeyDeleted,
+		&i.QuotaLimitMicro,
+		&i.QuotaScope,
+		&i.Limit5hMicro,
+		&i.Limit1dMicro,
+		&i.Limit7dMicro,
+		&i.ExpiresAt,
+		&i.ModelAllowlist,
+		&i.IpAllowlist,
+		&i.AllowOwnerQuery,
 		&i.Role,
 		&i.UserStatus,
 		&i.UserMaxConcurrency,
 		&i.UserRpm,
 	)
 	return i, err
+}
+
+const keyBilledByMinute = `-- name: KeyBilledByMinute :many
+SELECT (floor(extract(epoch FROM created_at) / 60))::bigint AS minute,
+       sum(billed_micro)::bigint AS all_micro,
+       COALESCE(sum(billed_micro) FILTER (WHERE tier IN ('standard', 'force')), 0)::bigint AS balance_micro
+FROM request_logs
+WHERE key_id = $1 AND created_at >= $2 AND billed_micro <> 0
+GROUP BY 1
+`
+
+type KeyBilledByMinuteParams struct {
+	KeyID     *uuid.UUID
+	CreatedAt time.Time
+}
+
+type KeyBilledByMinuteRow struct {
+	Minute       int64
+	AllMicro     int64
+	BalanceMicro int64
+}
+
+// Window rebuild: billed per minute over the last 7 days (all / balance tiers).
+func (q *Queries) KeyBilledByMinute(ctx context.Context, arg KeyBilledByMinuteParams) ([]KeyBilledByMinuteRow, error) {
+	rows, err := q.db.Query(ctx, keyBilledByMinute, arg.KeyID, arg.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []KeyBilledByMinuteRow{}
+	for rows.Next() {
+		var i KeyBilledByMinuteRow
+		if err := rows.Scan(&i.Minute, &i.AllMicro, &i.BalanceMicro); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAPIKeyHashesBySubscription = `-- name: ListAPIKeyHashesBySubscription :many
@@ -190,7 +345,7 @@ func (q *Queries) ListAPIKeyHashesByUser(ctx context.Context, userID uuid.UUID) 
 }
 
 const listAPIKeysByUser = `-- name: ListAPIKeysByUser :many
-SELECT id, user_id, name, key_hash, key_enc, key_prefix, tiers, subscription_id, max_concurrency, rpm, enabled, note, last_used_at, created_at, updated_at, deleted_at FROM api_keys WHERE user_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC, id DESC
+SELECT id, user_id, name, key_hash, key_enc, key_prefix, tiers, subscription_id, max_concurrency, rpm, enabled, note, last_used_at, created_at, updated_at, deleted_at, quota_limit_micro, quota_scope, limit_5h_micro, limit_1d_micro, limit_7d_micro, expires_at, model_allowlist, ip_allowlist, allow_owner_query, used_all_micro, used_balance_micro, usage_version, usage_reset_at FROM api_keys WHERE user_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC, id DESC
 `
 
 func (q *Queries) ListAPIKeysByUser(ctx context.Context, userID uuid.UUID) ([]ApiKey, error) {
@@ -219,6 +374,19 @@ func (q *Queries) ListAPIKeysByUser(ctx context.Context, userID uuid.UUID) ([]Ap
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.QuotaLimitMicro,
+			&i.QuotaScope,
+			&i.Limit5hMicro,
+			&i.Limit1dMicro,
+			&i.Limit7dMicro,
+			&i.ExpiresAt,
+			&i.ModelAllowlist,
+			&i.IpAllowlist,
+			&i.AllowOwnerQuery,
+			&i.UsedAllMicro,
+			&i.UsedBalanceMicro,
+			&i.UsageVersion,
+			&i.UsageResetAt,
 		); err != nil {
 			return nil, err
 		}
@@ -228,6 +396,125 @@ func (q *Queries) ListAPIKeysByUser(ctx context.Context, userID uuid.UUID) ([]Ap
 		return nil, err
 	}
 	return items, nil
+}
+
+const listRecentKeyLogs = `-- name: ListRecentKeyLogs :many
+SELECT request_id, created_at, user_id, key_id, account_id, tier, subscription_id, endpoint, model_raw, model, stream, status_code, error_type, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, reasoning_tokens, upstream_cost_micro, billed_micro, tier_multiplier, model_multiplier, unpriced, usage_missing, latency_ms, first_byte_ms, retries, session_hash, client_ip, user_agent FROM request_logs WHERE key_id = $1 AND created_at >= $2
+ORDER BY created_at DESC, request_id DESC LIMIT $3
+`
+
+type ListRecentKeyLogsParams struct {
+	KeyID     *uuid.UUID
+	CreatedAt time.Time
+	Limit     int32
+}
+
+func (q *Queries) ListRecentKeyLogs(ctx context.Context, arg ListRecentKeyLogsParams) ([]RequestLog, error) {
+	rows, err := q.db.Query(ctx, listRecentKeyLogs, arg.KeyID, arg.CreatedAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RequestLog{}
+	for rows.Next() {
+		var i RequestLog
+		if err := rows.Scan(
+			&i.RequestID,
+			&i.CreatedAt,
+			&i.UserID,
+			&i.KeyID,
+			&i.AccountID,
+			&i.Tier,
+			&i.SubscriptionID,
+			&i.Endpoint,
+			&i.ModelRaw,
+			&i.Model,
+			&i.Stream,
+			&i.StatusCode,
+			&i.ErrorType,
+			&i.InputTokens,
+			&i.CacheReadTokens,
+			&i.CacheWriteTokens,
+			&i.OutputTokens,
+			&i.ReasoningTokens,
+			&i.UpstreamCostMicro,
+			&i.BilledMicro,
+			&i.TierMultiplier,
+			&i.ModelMultiplier,
+			&i.Unpriced,
+			&i.UsageMissing,
+			&i.LatencyMs,
+			&i.FirstByteMs,
+			&i.Retries,
+			&i.SessionHash,
+			&i.ClientIp,
+			&i.UserAgent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockAPIKeyUsage = `-- name: LockAPIKeyUsage :one
+SELECT usage_reset_at FROM api_keys WHERE id = $1 FOR UPDATE
+`
+
+// Locks the key row so a concurrent reset either commits first (and its
+// reset time filters this batch) or waits for the batch.
+func (q *Queries) LockAPIKeyUsage(ctx context.Context, id uuid.UUID) (time.Time, error) {
+	row := q.db.QueryRow(ctx, lockAPIKeyUsage, id)
+	var usage_reset_at time.Time
+	err := row.Scan(&usage_reset_at)
+	return usage_reset_at, err
+}
+
+const resetAPIKeyUsage = `-- name: ResetAPIKeyUsage :one
+UPDATE api_keys SET used_all_micro = 0, used_balance_micro = 0, usage_version = usage_version + 1,
+    usage_reset_at = now(), updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id, user_id, name, key_hash, key_enc, key_prefix, tiers, subscription_id, max_concurrency, rpm, enabled, note, last_used_at, created_at, updated_at, deleted_at, quota_limit_micro, quota_scope, limit_5h_micro, limit_1d_micro, limit_7d_micro, expires_at, model_allowlist, ip_allowlist, allow_owner_query, used_all_micro, used_balance_micro, usage_version, usage_reset_at
+`
+
+func (q *Queries) ResetAPIKeyUsage(ctx context.Context, id uuid.UUID) (ApiKey, error) {
+	row := q.db.QueryRow(ctx, resetAPIKeyUsage, id)
+	var i ApiKey
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.KeyHash,
+		&i.KeyEnc,
+		&i.KeyPrefix,
+		&i.Tiers,
+		&i.SubscriptionID,
+		&i.MaxConcurrency,
+		&i.Rpm,
+		&i.Enabled,
+		&i.Note,
+		&i.LastUsedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.QuotaLimitMicro,
+		&i.QuotaScope,
+		&i.Limit5hMicro,
+		&i.Limit1dMicro,
+		&i.Limit7dMicro,
+		&i.ExpiresAt,
+		&i.ModelAllowlist,
+		&i.IpAllowlist,
+		&i.AllowOwnerQuery,
+		&i.UsedAllMicro,
+		&i.UsedBalanceMicro,
+		&i.UsageVersion,
+		&i.UsageResetAt,
+	)
+	return i, err
 }
 
 const softDeleteAPIKey = `-- name: SoftDeleteAPIKey :exec
@@ -255,20 +542,31 @@ func (q *Queries) TouchAPIKeys(ctx context.Context, arg TouchAPIKeysParams) erro
 }
 
 const updateAPIKey = `-- name: UpdateAPIKey :one
-UPDATE api_keys SET name = $2, tiers = $3, subscription_id = $4, max_concurrency = $5, rpm = $6, enabled = $7, note = $8, updated_at = now()
+UPDATE api_keys SET name = $2, tiers = $3, subscription_id = $4, max_concurrency = $5, rpm = $6, enabled = $7, note = $8,
+    quota_limit_micro = $9, quota_scope = $10, limit_5h_micro = $11, limit_1d_micro = $12, limit_7d_micro = $13, expires_at = $14,
+    model_allowlist = $15, ip_allowlist = $16, allow_owner_query = $17, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, user_id, name, key_hash, key_enc, key_prefix, tiers, subscription_id, max_concurrency, rpm, enabled, note, last_used_at, created_at, updated_at, deleted_at
+RETURNING id, user_id, name, key_hash, key_enc, key_prefix, tiers, subscription_id, max_concurrency, rpm, enabled, note, last_used_at, created_at, updated_at, deleted_at, quota_limit_micro, quota_scope, limit_5h_micro, limit_1d_micro, limit_7d_micro, expires_at, model_allowlist, ip_allowlist, allow_owner_query, used_all_micro, used_balance_micro, usage_version, usage_reset_at
 `
 
 type UpdateAPIKeyParams struct {
-	ID             uuid.UUID
-	Name           string
-	Tiers          []string
-	SubscriptionID *uuid.UUID
-	MaxConcurrency *int32
-	Rpm            *int32
-	Enabled        bool
-	Note           string
+	ID              uuid.UUID
+	Name            string
+	Tiers           []string
+	SubscriptionID  *uuid.UUID
+	MaxConcurrency  *int32
+	Rpm             *int32
+	Enabled         bool
+	Note            string
+	QuotaLimitMicro *int64
+	QuotaScope      string
+	Limit5hMicro    *int64
+	Limit1dMicro    *int64
+	Limit7dMicro    *int64
+	ExpiresAt       *time.Time
+	ModelAllowlist  []string
+	IpAllowlist     []string
+	AllowOwnerQuery bool
 }
 
 func (q *Queries) UpdateAPIKey(ctx context.Context, arg UpdateAPIKeyParams) (ApiKey, error) {
@@ -281,6 +579,15 @@ func (q *Queries) UpdateAPIKey(ctx context.Context, arg UpdateAPIKeyParams) (Api
 		arg.Rpm,
 		arg.Enabled,
 		arg.Note,
+		arg.QuotaLimitMicro,
+		arg.QuotaScope,
+		arg.Limit5hMicro,
+		arg.Limit1dMicro,
+		arg.Limit7dMicro,
+		arg.ExpiresAt,
+		arg.ModelAllowlist,
+		arg.IpAllowlist,
+		arg.AllowOwnerQuery,
 	)
 	var i ApiKey
 	err := row.Scan(
@@ -300,6 +607,19 @@ func (q *Queries) UpdateAPIKey(ctx context.Context, arg UpdateAPIKeyParams) (Api
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.QuotaLimitMicro,
+		&i.QuotaScope,
+		&i.Limit5hMicro,
+		&i.Limit1dMicro,
+		&i.Limit7dMicro,
+		&i.ExpiresAt,
+		&i.ModelAllowlist,
+		&i.IpAllowlist,
+		&i.AllowOwnerQuery,
+		&i.UsedAllMicro,
+		&i.UsedBalanceMicro,
+		&i.UsageVersion,
+		&i.UsageResetAt,
 	)
 	return i, err
 }

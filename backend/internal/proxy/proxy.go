@@ -23,6 +23,7 @@ import (
 
 	"github.com/sketchain/oxalate-bridge/backend/internal/authcache"
 	"github.com/sketchain/oxalate-bridge/backend/internal/billing"
+	"github.com/sketchain/oxalate-bridge/backend/internal/keymeter"
 	"github.com/sketchain/oxalate-bridge/backend/internal/metrics"
 	"github.com/sketchain/oxalate-bridge/backend/internal/router"
 	"github.com/sketchain/oxalate-bridge/backend/internal/rstate"
@@ -57,6 +58,10 @@ type Proxy struct {
 	// OnAccountError reloads routing after an account is marked error.
 	OnAccountError func()
 	Now            func() time.Time
+	// Meter enforces key quotas and windows.
+	Meter *keymeter.Meter
+	// Status renders GET /v1/bridge/status (implemented by the panel API).
+	Status func(context.Context, authcache.Info) (any, error)
 }
 
 // NewTransport is the pooled transport used for CPA. There is no overall
@@ -101,11 +106,14 @@ func (p *Proxy) Routes(handle func(method, pattern string, h http.HandlerFunc)) 
 		handle(http.MethodPost, path, p.ServeRelay)
 	}
 	handle(http.MethodGet, "/v1/models", p.ServeModels)
+	if p.Status != nil {
+		handle(http.MethodGet, "/v1/bridge/status", p.ServeStatus)
+	}
 }
 
 // ServeUnknown answers paths under /v1 that the relay does not serve.
 func (p *Proxy) ServeUnknown(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotFound, "not_found_error", "only the Claude Messages API is served (/v1/messages, /v1/messages/count_tokens, /v1/models)")
+	writeError(w, http.StatusNotFound, "not_found_error", "only the Claude Messages API is served (/v1/messages, /v1/messages/count_tokens, /v1/models, /v1/bridge/status)")
 }
 
 // apiKey extracts the client's API key.
@@ -147,7 +155,8 @@ func (p *Proxy) authenticate(w http.ResponseWriter, r *http.Request) (authcache.
 // ServeModels lists the union of the models served by enabled accounts, in
 // the Anthropic list shape.
 func (p *Proxy) ServeModels(w http.ResponseWriter, r *http.Request) {
-	if _, ok := p.authenticate(w, r); !ok {
+	auth, ok := p.authenticate(w, r)
+	if !ok {
 		return
 	}
 	type model struct {
@@ -161,6 +170,9 @@ func (p *Proxy) ServeModels(w http.ResponseWriter, r *http.Request) {
 	ids := p.Router.ServedModels()
 	data := make([]model, 0, len(ids))
 	for _, id := range ids {
+		if !keymeter.ModelAllowed(auth.ModelAllowlist, billing.NormalizeModel(id)) {
+			continue
+		}
 		data = append(data, model{ID: id, Object: "model", Type: "model", DisplayName: id, OwnedBy: "oxalate-bridge"})
 	}
 	out := map[string]any{"object": "list", "data": data, "has_more": false}
@@ -214,6 +226,9 @@ type call struct {
 	leaseKeys  []string
 	holdWallet rstate.Wallet
 	held       bool
+	keyHeld    bool
+	// keyRej is a key-level refusal met while holding: no further tier is tried.
+	keyRej *keymeter.Rejection
 }
 
 // admission is an admitted tier with its account candidates.
@@ -254,6 +269,22 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Relay-Request-Id", requestID.String())
 
 	ctx := r.Context()
+	if rej := keymeter.CheckStatic(auth, p.ClientIP(r), c.ri.normModel, start); rej != nil {
+		c.rejectKey(w, rej)
+		return
+	}
+	if p.Meter != nil {
+		rej, err := p.Meter.CheckLimits(ctx, auth, start)
+		if err != nil {
+			p.Log.Error("key limits", "err", err)
+			writeError(w, http.StatusServiceUnavailable, "api_error", "key limit state unavailable")
+			return
+		}
+		if rej != nil {
+			c.rejectKey(w, rej)
+			return
+		}
+	}
 	if ok := c.admitLimits(ctx, w); !ok {
 		return
 	}
@@ -266,7 +297,16 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 	if acc, ok := p.St.GetAffinity(ctx, c.session); ok {
 		c.sticky = acc
 	}
-	adm, tier, rejections := RunTiers(ctx, auth.Tiers, c.admitTier)
+	adm, tier, rejections := RunTiers(ctx, auth.Tiers, func(ctx context.Context, tier string) (*admission, *router.Rejection) {
+		if c.keyRej != nil {
+			return nil, &router.Rejection{Tier: tier, Code: c.keyRej.Code, Message: c.keyRej.Message}
+		}
+		return c.admitTier(ctx, tier)
+	})
+	if c.keyRej != nil {
+		c.rejectKey(w, c.keyRej)
+		return
+	}
 	if tier == "" {
 		for _, rej := range rejections {
 			metrics.Rejections.WithLabelValues(rej.Tier, rej.Code).Inc()
@@ -278,6 +318,13 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("X-Relay-Tier", tier)
 	c.serve(w, adm)
+}
+
+// rejectKey answers a key-level refusal (never falls through to a tier).
+func (c *call) rejectKey(w http.ResponseWriter, rej *keymeter.Rejection) {
+	metrics.Rejections.WithLabelValues("", rej.Code).Inc()
+	writeErrorWith(w, rej.Status, rej.Type, rej.Message, rej.Extra())
+	c.settleRejected(rej.Status, rej.Code)
 }
 
 func (c *call) admitLimits(ctx context.Context, w http.ResponseWriter) bool {
@@ -340,12 +387,15 @@ func (c *call) keepAlive(ctx context.Context) func() {
 				now := c.p.now()
 				c.mu.Lock()
 				keys := append([]string(nil), c.leaseKeys...)
-				w, held := c.holdWallet, c.held
+				w, held, keyHeld := c.holdWallet, c.held, c.keyHeld
 				c.mu.Unlock()
 				bg := context.WithoutCancel(ctx)
 				c.p.St.ExtendLeases(bg, c.requestID.String(), keys, leaseTTL, now)
 				if held {
 					_ = c.p.St.ExtendHold(bg, w, c.requestID.String(), holdTTL, now)
+				}
+				if keyHeld {
+					_ = c.p.St.ExtendKeyHold(bg, c.auth.KeyID, c.requestID.String(), holdTTL, now)
 				}
 			}
 		}
@@ -375,14 +425,17 @@ func (c *call) releaseAll() {
 	c.mu.Lock()
 	keys := c.leaseKeys
 	c.leaseKeys = nil
-	w, held := c.holdWallet, c.held
-	c.held = false
+	w, held, keyHeld := c.holdWallet, c.held, c.keyHeld
+	c.held, c.keyHeld = false, false
 	c.mu.Unlock()
 	bg := context.Background()
 	c.p.St.ReleaseLeases(bg, c.requestID.String(), keys)
 	if held {
 		// Normally released by settlement; this covers early exits.
 		_ = c.p.St.ReleaseHold(bg, w, c.requestID.String())
+	}
+	if keyHeld {
+		_ = c.p.St.ReleaseKeyHold(bg, c.auth.KeyID, c.requestID.String())
 	}
 }
 
@@ -452,8 +505,10 @@ func (c *call) periodBase(t *router.PlanTarget) baseFunc {
 	}
 }
 
-// hold reserves the request's estimated charge on a wallet.
-func (c *call) hold(ctx context.Context, w rstate.Wallet, tierMult, modelMult float64, base baseFunc) (bool, error) {
+// hold reserves the request's estimated charge on a wallet and, when the
+// tier counts toward the key's limits, on the key's quota and windows. A
+// refusal by the key sets c.keyRej (no further tier is tried).
+func (c *call) hold(ctx context.Context, tier string, w rstate.Wallet, tierMult, modelMult float64, base baseFunc) (bool, error) {
 	maxTok := c.set.HoldDefaultMaxTokens
 	if c.ri.hasMax && c.ri.maxTokens > 0 && c.ri.maxTokens < maxTok {
 		maxTok = c.ri.maxTokens
@@ -462,10 +517,21 @@ func (c *call) hold(ctx context.Context, w rstate.Wallet, tierMult, modelMult fl
 	if est > c.set.HoldCapMicro {
 		est = c.set.HoldCapMicro
 	}
-	for attempt := 0; attempt < 3; attempt++ {
-		res, err := c.p.St.Hold(ctx, w, c.requestID.String(), est, holdTTL, c.p.now())
+	var kh *rstate.KeyHold
+	if lim := c.auth.Limits(); c.p.Meter != nil && lim.Any() && c.auth.Counts(tier) {
+		kh = &rstate.KeyHold{Key: c.auth.KeyID, Limits: lim}
+	}
+	now := c.p.now()
+	for attempt := 0; attempt < 4; attempt++ {
+		res, err := c.p.St.HoldWithKey(ctx, w, kh, c.requestID.String(), est, holdTTL, now)
 		if errors.Is(err, rstate.ErrWalletMissing) {
 			if err := c.rebuild(ctx, w, base); err != nil {
+				return false, err
+			}
+			continue
+		}
+		if errors.Is(err, rstate.ErrKeyBaseMissing) {
+			if err := c.p.Meter.EnsureBase(ctx, c.auth.KeyID, now); err != nil {
 				return false, err
 			}
 			continue
@@ -475,8 +541,10 @@ func (c *call) hold(ctx context.Context, w rstate.Wallet, tierMult, modelMult fl
 		}
 		if res.OK {
 			c.mu.Lock()
-			c.holdWallet, c.held = w, true
+			c.holdWallet, c.held, c.keyHeld = w, true, kh != nil
 			c.mu.Unlock()
+		} else if res.Reason != rstate.HoldWallet && kh != nil {
+			c.keyRej = c.p.Meter.HoldRejection(ctx, c.auth, res.Reason, now)
 		}
 		return res.OK, nil
 	}
@@ -498,7 +566,7 @@ func (c *call) admitTier(ctx context.Context, tier string) (*admission, *router.
 			return nil, &router.Rejection{Tier: tier, Code: router.CodeAccountBusy, Message: "plan 绑定账号并发已满"}
 		}
 		if !c.ep.count {
-			ok, err := c.hold(ctx, t.Wallet, tierMult, modelMult, c.periodBase(t))
+			ok, err := c.hold(ctx, tier, t.Wallet, tierMult, modelMult, c.periodBase(t))
 			if err != nil {
 				c.dropLease(c.p.St.ConcKey("a", t.Account.ID))
 				c.p.Log.Error("plan hold", "err", err)
@@ -535,7 +603,7 @@ func (c *call) admitTier(ctx context.Context, tier string) (*admission, *router.
 			return nil, &router.Rejection{Tier: tier, Code: router.CodeNoAccount, Message: "无可用账号"}
 		}
 		if !c.ep.count {
-			ok, err := c.hold(ctx, wallet, tierMult, modelMult, c.userBase)
+			ok, err := c.hold(ctx, tier, wallet, tierMult, modelMult, c.userBase)
 			if err != nil || !ok {
 				c.dropLease(c.p.St.ConcKey("a", acc.ID))
 				if err != nil {
@@ -997,7 +1065,11 @@ func (c *call) settle(adm *admission, account *router.Account, status int, errTy
 	}
 	raw, _ := json.Marshal(rec)
 	op := rstate.SettleOp{RequestID: c.requestID.String(), Charge: rec.Billed, Account: account.ID,
-		AccountCost: rec.UpstreamCost, At: now, SessionHash: c.session, AffinityTTL: c.p.Router.AffinityTTL(c.ri.oneHour), Record: raw}
+		AccountCost: rec.UpstreamCost, At: now, SessionHash: c.session, AffinityTTL: c.p.Router.AffinityTTL(c.ri.oneHour), Record: raw,
+		Key: c.auth.KeyID, KeyBalance: settle.BalanceTier(adm.tier)}
+	c.mu.Lock()
+	c.keyHeld = false
+	c.mu.Unlock()
 	if rec.Wallet != "" {
 		op.Wallet, op.HasHold = adm.wallet, hasHold
 	} else if hasHold {
@@ -1021,7 +1093,7 @@ func (c *call) settleRejected(status int, errType string) {
 	now := c.p.now()
 	rec := c.baseRecord(now, status, errType)
 	raw, _ := json.Marshal(rec)
-	if _, err := c.p.St.Settle(context.Background(), rstate.SettleOp{RequestID: c.requestID.String(), At: now, Record: raw}); err != nil {
+	if _, err := c.p.St.Settle(context.Background(), rstate.SettleOp{RequestID: c.requestID.String(), At: now, Record: raw, Key: c.auth.KeyID}); err != nil {
 		c.p.Log.Error("settle rejected request", "err", err)
 	}
 	metrics.Requests.WithLabelValues("", c.ep.path, statusClass(status)).Inc()

@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -76,6 +76,10 @@ function LoginPage() {
           </form>
         </div>
         <p className="mt-3 text-[12px] text-muted">{t("auth.hint")}</p>
+        <Link to="/query" className="mt-4 flex items-center justify-between border-2 border-ink px-4 py-3 text-[14px] font-semibold hover:bg-rule" data-testid="query-link">
+          <span>{t("auth.queryLink")}</span>
+          <span aria-hidden>→</span>
+        </Link>
       </div>
       <Toaster />
     </div>

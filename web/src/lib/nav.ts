@@ -2,6 +2,9 @@ import type { LucideIcon } from "lucide-react";
 import {
   BookText,
   CreditCard,
+  Gift,
+  Megaphone,
+  Tags,
   FileClock,
   Gauge,
   KeyRound,
@@ -34,6 +37,7 @@ export const userNav: NavItem[] = [
   { n: "03", to: "/usage", label: "nav.usage", icon: Gauge },
   { n: "04", to: "/plans", label: "nav.plans", icon: Ticket },
   { n: "05", to: "/billing", label: "nav.billing", icon: CreditCard },
+  { n: "17", to: "/pricing", label: "nav.pricing", icon: Tags },
   { n: "06", to: "/settings", label: "nav.settings", icon: Settings },
 ];
 
@@ -47,6 +51,9 @@ export const adminNav: NavItem[] = [
   { n: "13", to: "/admin/ledger", label: "nav.ledger", icon: ReceiptText },
   { n: "14", to: "/admin/audit", label: "nav.audit", icon: FileClock },
   { n: "15", to: "/admin/safeguard", label: "nav.safeguard", icon: ShieldAlert },
+  { n: "18", to: "/admin/redeem", label: "nav.redeem", icon: Gift },
+  { n: "19", to: "/admin/announcements", label: "nav.announcements", icon: Megaphone },
+  { n: "20", to: "/admin/pricing", label: "nav.adminPricing", icon: Tags },
   { n: "16", to: "/admin/settings", label: "nav.adminSettings", icon: SlidersHorizontal },
 ];
 

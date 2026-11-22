@@ -3,12 +3,15 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/tidwall/gjson"
 
+	"github.com/sketchain/oxalate-bridge/backend/internal/cpa"
 	"github.com/sketchain/oxalate-bridge/backend/internal/fakecpa"
 	"github.com/sketchain/oxalate-bridge/backend/internal/testutil"
 )
@@ -224,12 +227,34 @@ func TestAccountValidateSoldAndKeyAdmin(t *testing.T) {
 // The account views carry k from the cpa-quota estimates when available.
 func TestAccountK(t *testing.T) {
 	e := setup(t, envOpts{balanceMicro: 1_000_000, noPlan: true})
+	ctx := context.Background()
+	// The account's k is exactly /quota's accounts[0].k (week total ÷ 5h total).
+	req, _ := http.NewRequest("GET", e.cpaA.URL()+cpa.QuotaPath, nil)
+	req.Header.Set("Authorization", "Bearer "+e.cpaA.QuotaToken)
+	resp, err := http.DefaultClient.Do(req)
+	testutil.Must(t, err)
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	quotaK := gjson.GetBytes(raw, "accounts.0.k")
+	if !quotaK.Exists() || quotaK.Float() < 5 || quotaK.Float() > 10 {
+		t.Fatalf("/quota k %s (want week ÷ 5h total, 5–10)", quotaK.Raw)
+	}
+	if k := gjson.Get(rawGet(t, e.admin, "/admin/accounts"), "items.0.k").Float(); k != quotaK.Float() {
+		t.Fatalf("list k %v, /quota k %v", k, quotaK.Float())
+	}
+	if k := gjson.Get(rawGet(t, e.admin, "/admin/accounts/"+e.accA), "k").Float(); k != quotaK.Float() {
+		t.Fatalf("detail k %v, /quota k %v", k, quotaK.Float())
+	}
+
+	// Without k in /quota: the estimate's k, else null.
+	e.cpaA.Set(func(c *fakecpa.CPA) { c.OmitK = true })
+	testutil.Must(t, e.rep.App.Jobs.PollQuotas(ctx))
 	cq := cpaQuotaSchema(t, e, false)
 	if k := gjson.Get(rawGet(t, e.admin, "/admin/accounts"), "items.0.k"); k.Type != gjson.Null {
-		t.Fatalf("k without cpa-quota: %s", k.Raw)
+		t.Fatalf("k without /quota k and cpa-quota: %s", k.Raw)
 	}
 	cpaQuotaSchema(t, e, true)
-	_, err := e.rep.App.Pool.Exec(context.Background(), `INSERT INTO `+cq+`.estimates (instance, auth_index, provider, subscription, tier, state,
+	_, err = e.rep.App.Pool.Exec(ctx, `INSERT INTO `+cq+`.estimates (instance, auth_index, provider, subscription, tier, state,
 		segment_window, basis, k, k_source, totals_from, safety_factor, used_5h, used_7d, five_hour_total_usd, weekly_total_usd,
 		remaining_five_hour_usd, remaining_week_usd, clean_blocks, total_blocks, segments, excluded_segments, ratio, estimated_at, detail)
 		VALUES ('a', 'acct-a', 'claude', 'claude', 'max5x', 'estimated', '5h', 'raw', 6.5, 'fit', 'tier', 0.9, 10, 20, 10, 100, 9, 72,

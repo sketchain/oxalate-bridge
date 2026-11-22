@@ -29,6 +29,8 @@ sql:
               pointer: true
           - db_type: jsonb
             go_type: encoding/json.RawMessage
+          - db_type: date
+            go_type: time.Time
   # Read-only queries against cpa-quota's schema. schema.sql is a reference
   # copy of its tables for type checking, not a migration of this project.
   - engine: postgresql

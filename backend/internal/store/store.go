@@ -64,7 +64,17 @@ const (
 	OutboxWalletSync     = "wallet_sync"
 	OutboxSettings       = "settings"
 	OutboxRouting        = "routing"
+	OutboxKeySync        = "key_sync"
 )
+
+// KeySync is the payload of a key_sync outbox row: a key meter's committed
+// usage and its version (after a reset).
+type KeySync struct {
+	Key     uuid.UUID `json:"key"`
+	All     int64     `json:"all"`
+	Balance int64     `json:"balance"`
+	Version int64     `json:"version"`
+}
 
 // WalletSync is the payload of a wallet_sync outbox row: a committed
 // absolute value and its version.

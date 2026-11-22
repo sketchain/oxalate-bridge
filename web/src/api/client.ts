@@ -20,6 +20,11 @@ export const ERROR_CODES = [
   "unsupported_subscription",
   "account_has_subscriptions",
   "cpa_quota_unavailable",
+  "redeem_code_invalid",
+  "redeem_code_used",
+  "redeem_code_void",
+  "redeem_code_expired",
+  "redeem_locked",
   "internal",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];

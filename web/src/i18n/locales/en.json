@@ -46,7 +46,11 @@
     "settings": "Settings",
     "subscriptions": "Subscriptions",
     "usage": "Usage",
-    "users": "Users"
+    "users": "Users",
+    "pricing": "Models & prices",
+    "redeem": "Redeem codes",
+    "announcements": "Announcements",
+    "adminPricing": "Models & prices"
   },
   "role": {
     "admin": "Admin",
@@ -83,7 +87,8 @@
     "plan_purchase": "Plan purchase",
     "plan_renewal": "Plan renewal",
     "api_charge": "API charge",
-    "refund": "Refund"
+    "refund": "Refund",
+    "redeem": "Redeem code"
   },
   "duration": {
     "day": "{{count}} day(s)",
@@ -110,7 +115,12 @@
     "cpa_quota_unavailable": "cpa-quota data is unavailable.",
     "internal": "Internal server error. Try again later.",
     "network": "Network error. Check your connection and try again.",
-    "unknown": "Something went wrong."
+    "unknown": "Something went wrong.",
+    "redeem_code_invalid": "Invalid code, please check it and try again",
+    "redeem_code_used": "This code has already been used",
+    "redeem_code_void": "This code has been voided",
+    "redeem_code_expired": "This code has expired",
+    "redeem_locked": "Too many failed attempts; redemption is locked, try again in 15 minutes"
   },
   "errorsPage": {
     "forbiddenTitle": "No access",
@@ -135,7 +145,12 @@
     "range": "Enter a number from 0 to {{max}}",
     "required": "Required",
     "url": "Enter a full URL, e.g. https://…",
-    "username": "Letters, digits and _ . @ - only"
+    "username": "Letters, digits and _ . @ - only",
+    "date": "Enter a valid time",
+    "tooMany": "At most 100 entries",
+    "ip": "Enter a valid IP or CIDR, e.g. 203.0.113.0/24",
+    "futureDate": "Must be in the future",
+    "positiveAmount": "Amount must be greater than 0"
   },
   "auth": {
     "title": "Sign in",
@@ -144,7 +159,8 @@
     "signIn": "Sign in",
     "signingIn": "Signing in…",
     "logout": "Sign out",
-    "hint": "Accounts are created by an administrator. Ask one to reset a forgotten password."
+    "hint": "Accounts are created by an administrator. Ask one to reset a forgotten password.",
+    "queryLink": "Check usage with an API key (no login)"
   },
   "palette": {
     "open": "Search or jump to",
@@ -257,7 +273,10 @@
       "plan": "uses the plan quota",
       "standard": "balance, when there is headroom",
       "force": "balance, ignores reservations"
-    }
+    },
+    "openDetail": "Open details of {{name}}",
+    "status": "Status",
+    "quotaCol": "Quota"
   },
   "usage": {
     "title": "Usage",
@@ -302,6 +321,16 @@
       "7d": "7 days",
       "30d": "30 days",
       "custom": "Custom"
+    },
+    "view": "View",
+    "summaryView": "Overview",
+    "compare": {
+      "view": "Compare keys",
+      "chart": "Daily charges (top 10 keys)",
+      "table": "Totals per key",
+      "share": "Share",
+      "deleted": "deleted",
+      "chartDesc": "Daily charges per key: {{list}}"
     }
   },
   "plans": {
@@ -774,5 +803,206 @@
     "paused": "Paused by cpa-quota",
     "penalized": "5h usage above the watermark; routing weight reduced",
     "other": "Other reason"
+  },
+  "relayError": {
+    "key_expired": "Key expired (403)",
+    "ip_not_allowed": "Client IP not in the key's allowlist (403)",
+    "model_not_allowed": "Model not in the key's allowlist (403)",
+    "key_quota_exhausted": "Key quota exhausted (429)",
+    "key_window_exhausted": "Key window limit reached (429)"
+  },
+  "keyStatus": {
+    "active": "Active",
+    "disabled": "Disabled",
+    "expired": "Expired"
+  },
+  "keyLimits": {
+    "groupBasic": "Basics",
+    "groupTiers": "Tiers & subscription",
+    "groupRate": "Concurrency & rate",
+    "groupQuota": "Spending limits",
+    "groupQuotaHint": "Amounts are billed USD; leave empty for no limit.",
+    "groupAccess": "Access control",
+    "scopeLabel": "What counts",
+    "scope": {
+      "all": "Everything",
+      "balance": "Balance only"
+    },
+    "scopeHint": {
+      "all": "Plan quota used by the plan tier and balance charged by normal / forced calls both count toward the quota and windows.",
+      "balance": "Only balance charged by normal / forced calls counts; plan-tier usage does not."
+    },
+    "quota": "Total quota",
+    "usdUnlimited": "USD, empty = no limit",
+    "window5h": "5-hour limit",
+    "window1d": "24-hour limit",
+    "window7d": "7-day limit",
+    "window": {
+      "5h": "5-hour window",
+      "1d": "24-hour window",
+      "7d": "7-day window"
+    },
+    "windowHint": "Windows slide: they sum the counted charges of the last 5 hours / 24 hours / 7 days.",
+    "expires": "Expires",
+    "expiresHint": "Empty = never expires",
+    "models": "Model allowlist",
+    "modelsHint": "One model per line; empty = any. /v1/models is filtered too.",
+    "ips": "IP allowlist",
+    "ipsHint": "One IP or CIDR per line; empty = any. Uses the real client IP.",
+    "ownerQuery": "Allow account queries with this key",
+    "ownerQueryHint": "The query page and the status-line endpoint then also return the account balance and plan figures.",
+    "fixErrors": "Fix the highlighted limit or access fields first",
+    "unlimited": "Unlimited",
+    "never": "Never",
+    "any": "Any",
+    "held": "{{amount}} held",
+    "recoversAt": "Expected to recover at {{time}}",
+    "resetAt": "Last reset: {{time}}",
+    "usedAll": "Used (everything)",
+    "usedBalance": "Used (balance only)",
+    "usageTitle": "Limits & usage",
+    "reset": "Reset used quota",
+    "resetTitle": "Reset the used quota?",
+    "resetBody": "The quota's used amount starts again from 0. Windows slide on their own and are not affected.",
+    "resetDone": "Used quota reset",
+    "resetFor": "Reset the used quota of {{name}}",
+    "editFor": "Edit the limits of {{name}}",
+    "daily": "Daily usage",
+    "dailyRange": "Days",
+    "days": "{{n}} d",
+    "editLimits": "Edit limits",
+    "adminTitle": "Limits and access of {{name}}"
+  },
+  "redeem": {
+    "title": "Redeem code",
+    "label": "Enter a code",
+    "submit": "Redeem",
+    "redeeming": "Redeeming…",
+    "hint": "Case, spaces and dashes do not matter. Repeated failures lock redemption for a while.",
+    "done": "Redeemed: {{amount}} added to your balance"
+  },
+  "redeemStatus": {
+    "unused": "Unused",
+    "used": "Used",
+    "void": "Voided",
+    "expired": "Expired"
+  },
+  "redeemAdmin": {
+    "title": "Redeem codes",
+    "newBatch": "New batch",
+    "newBatchHint": "Up to 1000 codes per batch; export a batch as CSV (with the full codes).",
+    "batches": "Batches",
+    "codes": "Codes",
+    "batch": "Batch",
+    "status": "Status",
+    "created": "Created",
+    "prefix": "Prefix",
+    "amount": "Value",
+    "amountUsd": "Value (USD)",
+    "count": "Count",
+    "countHint": "1 – 1000",
+    "counts": "Used / unused / voided",
+    "expires": "Expires",
+    "note": "Note",
+    "code": "Code",
+    "usedBy": "Used by",
+    "viewCodes": "View codes",
+    "exportBatch": "Export batch {{prefix}} as CSV",
+    "exported": "CSV downloaded",
+    "void": "Void",
+    "voidCode": "Void {{code}}",
+    "voided": "Code voided",
+    "voidTitle": "Void this code?",
+    "voidBody": "{{code}} can no longer be redeemed. This cannot be undone.",
+    "noBatches": "No batches yet",
+    "noBatchesHint": "Use “New batch” to generate codes.",
+    "noCodes": "No matching codes",
+    "noCodesHint": "Try another batch or status.",
+    "prefixHint": "Optional, 1–8 letters or digits, e.g. OXA",
+    "prefixRule": "The prefix must be 1–8 letters or digits",
+    "generate": "Generate",
+    "batchCreated": "Batch generated"
+  },
+  "announcement": {
+    "level": {
+      "info": "Notice",
+      "warning": "Warning"
+    },
+    "dismiss": "Dismiss announcement: {{title}}"
+  },
+  "announcementAdmin": {
+    "title": "Announcements",
+    "new": "New announcement",
+    "editTitle": "Edit announcement",
+    "list": "Announcements",
+    "titleField": "Title",
+    "body": "Text",
+    "bodyHint": "Plain text with line breaks; http(s) links become clickable. No HTML.",
+    "preview": "Preview",
+    "level": "Level",
+    "window": "In effect",
+    "state": "State",
+    "starts": "Starts",
+    "startsHint": "Empty = immediately",
+    "ends": "Ends",
+    "endsHint": "Empty = no end",
+    "endsAfterStarts": "The end must be after the start",
+    "enabled": "Enabled",
+    "now": "now",
+    "forever": "no end",
+    "states": {
+      "active": "In effect",
+      "scheduled": "Outside its window",
+      "off": "Disabled"
+    },
+    "edit": "Edit announcement: {{title}}",
+    "delete": "Delete announcement: {{title}}",
+    "deleteTitle": "Delete this announcement?",
+    "deleteBody": "Users will no longer see “{{title}}”.",
+    "deleted": "Announcement deleted",
+    "saved": "Announcement saved",
+    "empty": "No announcements yet",
+    "emptyHint": "Create one; it shows at the top of the user panel."
+  },
+  "pricing": {
+    "title": "Models & prices",
+    "search": "Search models",
+    "tier": "Tier",
+    "list": "Price list",
+    "unit": "USD per 1M tokens",
+    "model": "Model",
+    "input": "Input",
+    "output": "Output",
+    "cacheRead": "Cache read",
+    "cacheWrite": "Cache write",
+    "modelMult": "Model ×",
+    "unpriced": "Unpriced",
+    "empty": "No matching models",
+    "emptyHint": "Try another search, or wait for the account model lists to refresh.",
+    "formula": "Price = upstream price from the toll ratios × tier multiplier × model multiplier. Unpriced models are not billed by tokens."
+  },
+  "query": {
+    "title": "Check key usage",
+    "intro": "Enter an API key to see its quota, windows and recent calls. No login needed.",
+    "keyLabel": "API key",
+    "show": "Show key",
+    "hide": "Hide key",
+    "submit": "Check",
+    "querying": "Checking…",
+    "privacy": "The key is sent in a request header only and kept in this page's memory: never stored in the browser, never in the URL.",
+    "invalidKey": "Invalid or deleted key",
+    "rateLimited": "Too many queries; try again in a minute",
+    "login": "Sign in",
+    "keyInfo": "Key",
+    "name": "Name",
+    "prefix": "Prefix",
+    "account": "Account",
+    "balance": "Available balance",
+    "normal5h": "Normal calls (5 h)",
+    "force5h": "Forced calls (5 h)",
+    "plan5h": "5 h available",
+    "planPeriod": "Period available",
+    "recent": "Latest 50 calls",
+    "noRecent": "No calls yet"
   }
 }

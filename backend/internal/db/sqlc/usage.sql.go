@@ -115,6 +115,106 @@ func (q *Queries) AddUsageHourly(ctx context.Context, arg AddUsageHourlyParams) 
 	return err
 }
 
+const keyDailyUsage = `-- name: KeyDailyUsage :many
+SELECT (date_trunc('day', hour AT TIME ZONE $1::text))::date AS day, tier,
+       sum(requests)::bigint AS requests, sum(errors)::bigint AS errors,
+       sum(input_tokens)::bigint AS input_tokens, sum(cache_read_tokens)::bigint AS cache_read_tokens,
+       sum(cache_write_tokens)::bigint AS cache_write_tokens, sum(output_tokens)::bigint AS output_tokens,
+       sum(reasoning_tokens)::bigint AS reasoning_tokens, sum(billed_micro)::bigint AS billed_micro
+FROM usage_hourly
+WHERE key_id = $2 AND hour >= $3::timestamptz
+GROUP BY 1, 2
+ORDER BY 1, 2
+`
+
+type KeyDailyUsageParams struct {
+	Tz     string
+	KeyID  uuid.UUID
+	FromAt time.Time
+}
+
+type KeyDailyUsageRow struct {
+	Day              time.Time
+	Tier             string
+	Requests         int64
+	Errors           int64
+	InputTokens      int64
+	CacheReadTokens  int64
+	CacheWriteTokens int64
+	OutputTokens     int64
+	ReasoningTokens  int64
+	BilledMicro      int64
+}
+
+// One key per day (in the given time zone) and tier, from the hourly rollup.
+func (q *Queries) KeyDailyUsage(ctx context.Context, arg KeyDailyUsageParams) ([]KeyDailyUsageRow, error) {
+	rows, err := q.db.Query(ctx, keyDailyUsage, arg.Tz, arg.KeyID, arg.FromAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []KeyDailyUsageRow{}
+	for rows.Next() {
+		var i KeyDailyUsageRow
+		if err := rows.Scan(
+			&i.Day,
+			&i.Tier,
+			&i.Requests,
+			&i.Errors,
+			&i.InputTokens,
+			&i.CacheReadTokens,
+			&i.CacheWriteTokens,
+			&i.OutputTokens,
+			&i.ReasoningTokens,
+			&i.BilledMicro,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllAPIKeysByUser = `-- name: ListAllAPIKeysByUser :many
+SELECT id, name, key_prefix, deleted_at FROM api_keys WHERE user_id = $1
+`
+
+type ListAllAPIKeysByUserRow struct {
+	ID        uuid.UUID
+	Name      string
+	KeyPrefix string
+	DeletedAt *time.Time
+}
+
+// Including deleted keys (usage comparison names them).
+func (q *Queries) ListAllAPIKeysByUser(ctx context.Context, userID uuid.UUID) ([]ListAllAPIKeysByUserRow, error) {
+	rows, err := q.db.Query(ctx, listAllAPIKeysByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAllAPIKeysByUserRow{}
+	for rows.Next() {
+		var i ListAllAPIKeysByUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.KeyPrefix,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const usageSummary = `-- name: UsageSummary :many
 SELECT date_trunc($1::text, hour, 'UTC')::timestamptz AS bucket, model, tier,
        sum(requests)::bigint AS requests, sum(errors)::bigint AS errors,
@@ -183,6 +283,121 @@ func (q *Queries) UsageSummary(ctx context.Context, arg UsageSummaryParams) ([]U
 			&i.OutputTokens,
 			&i.ReasoningTokens,
 			&i.UpstreamCostMicro,
+			&i.BilledMicro,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const userKeyDaily = `-- name: UserKeyDaily :many
+SELECT key_id, (date_trunc('day', hour AT TIME ZONE $1::text))::date AS day,
+       sum(requests)::bigint AS requests, sum(billed_micro)::bigint AS billed_micro
+FROM usage_hourly
+WHERE user_id = $2 AND key_id = ANY($3::uuid[])
+  AND hour >= $4::timestamptz AND hour < $5::timestamptz
+GROUP BY 1, 2
+ORDER BY 2, 1
+`
+
+type UserKeyDailyParams struct {
+	Tz     string
+	UserID uuid.UUID
+	KeyIds []uuid.UUID
+	FromAt time.Time
+	ToAt   time.Time
+}
+
+type UserKeyDailyRow struct {
+	KeyID       uuid.UUID
+	Day         time.Time
+	Requests    int64
+	BilledMicro int64
+}
+
+func (q *Queries) UserKeyDaily(ctx context.Context, arg UserKeyDailyParams) ([]UserKeyDailyRow, error) {
+	rows, err := q.db.Query(ctx, userKeyDaily,
+		arg.Tz,
+		arg.UserID,
+		arg.KeyIds,
+		arg.FromAt,
+		arg.ToAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UserKeyDailyRow{}
+	for rows.Next() {
+		var i UserKeyDailyRow
+		if err := rows.Scan(
+			&i.KeyID,
+			&i.Day,
+			&i.Requests,
+			&i.BilledMicro,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const userKeyTotals = `-- name: UserKeyTotals :many
+SELECT key_id, sum(requests)::bigint AS requests, sum(errors)::bigint AS errors,
+       sum(input_tokens)::bigint AS input_tokens, sum(cache_read_tokens)::bigint AS cache_read_tokens,
+       sum(cache_write_tokens)::bigint AS cache_write_tokens, sum(output_tokens)::bigint AS output_tokens,
+       sum(reasoning_tokens)::bigint AS reasoning_tokens, sum(billed_micro)::bigint AS billed_micro
+FROM usage_hourly
+WHERE user_id = $1 AND hour >= $2::timestamptz AND hour < $3::timestamptz
+GROUP BY key_id
+ORDER BY billed_micro DESC, requests DESC
+`
+
+type UserKeyTotalsParams struct {
+	UserID uuid.UUID
+	FromAt time.Time
+	ToAt   time.Time
+}
+
+type UserKeyTotalsRow struct {
+	KeyID            uuid.UUID
+	Requests         int64
+	Errors           int64
+	InputTokens      int64
+	CacheReadTokens  int64
+	CacheWriteTokens int64
+	OutputTokens     int64
+	ReasoningTokens  int64
+	BilledMicro      int64
+}
+
+func (q *Queries) UserKeyTotals(ctx context.Context, arg UserKeyTotalsParams) ([]UserKeyTotalsRow, error) {
+	rows, err := q.db.Query(ctx, userKeyTotals, arg.UserID, arg.FromAt, arg.ToAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UserKeyTotalsRow{}
+	for rows.Next() {
+		var i UserKeyTotalsRow
+		if err := rows.Scan(
+			&i.KeyID,
+			&i.Requests,
+			&i.Errors,
+			&i.InputTokens,
+			&i.CacheReadTokens,
+			&i.CacheWriteTokens,
+			&i.OutputTokens,
+			&i.ReasoningTokens,
 			&i.BilledMicro,
 		); err != nil {
 			return nil, err

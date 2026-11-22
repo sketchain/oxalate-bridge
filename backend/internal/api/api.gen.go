@@ -85,6 +85,24 @@ func (e AccountRuntimeStatus) Valid() bool {
 	}
 }
 
+// Defines values for AnnouncementLevel.
+const (
+	Info    AnnouncementLevel = "info"
+	Warning AnnouncementLevel = "warning"
+)
+
+// Valid indicates whether the value is a known member of the AnnouncementLevel enum.
+func (e AnnouncementLevel) Valid() bool {
+	switch e {
+	case Info:
+		return true
+	case Warning:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AvailabilityHorizonHorizon.
 const (
 	AvailabilityHorizonHorizonN1h  AvailabilityHorizonHorizon = "1h"
@@ -166,6 +184,48 @@ func (e DurationUnit) Valid() bool {
 	}
 }
 
+// Defines values for KeyStatusValue.
+const (
+	KeyStatusValueActive   KeyStatusValue = "active"
+	KeyStatusValueDisabled KeyStatusValue = "disabled"
+	KeyStatusValueExpired  KeyStatusValue = "expired"
+)
+
+// Valid indicates whether the value is a known member of the KeyStatusValue enum.
+func (e KeyStatusValue) Valid() bool {
+	switch e {
+	case KeyStatusValueActive:
+		return true
+	case KeyStatusValueDisabled:
+		return true
+	case KeyStatusValueExpired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for KeyWindowStatusWindow.
+const (
+	KeyWindowStatusWindowN1d KeyWindowStatusWindow = "1d"
+	KeyWindowStatusWindowN5h KeyWindowStatusWindow = "5h"
+	KeyWindowStatusWindowN7d KeyWindowStatusWindow = "7d"
+)
+
+// Valid indicates whether the value is a known member of the KeyWindowStatusWindow enum.
+func (e KeyWindowStatusWindow) Valid() bool {
+	switch e {
+	case KeyWindowStatusWindowN1d:
+		return true
+	case KeyWindowStatusWindowN5h:
+		return true
+	case KeyWindowStatusWindowN7d:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LedgerType.
 const (
 	AdminAdjust  LedgerType = "admin_adjust"
@@ -173,6 +233,7 @@ const (
 	ApiCharge    LedgerType = "api_charge"
 	PlanPurchase LedgerType = "plan_purchase"
 	PlanRenewal  LedgerType = "plan_renewal"
+	Redeem       LedgerType = "redeem"
 	Refund       LedgerType = "refund"
 )
 
@@ -188,6 +249,8 @@ func (e LedgerType) Valid() bool {
 	case PlanPurchase:
 		return true
 	case PlanRenewal:
+		return true
+	case Redeem:
 		return true
 	case Refund:
 		return true
@@ -208,6 +271,24 @@ func (e MyUsageSummaryGranularity) Valid() bool {
 	case MyUsageSummaryGranularityDay:
 		return true
 	case MyUsageSummaryGranularityHour:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OwnerPlanSummaryStatus.
+const (
+	OwnerPlanSummaryStatusActive            OwnerPlanSummaryStatus = "active"
+	OwnerPlanSummaryStatusPendingAssignment OwnerPlanSummaryStatus = "pending_assignment"
+)
+
+// Valid indicates whether the value is a known member of the OwnerPlanSummaryStatus enum.
+func (e OwnerPlanSummaryStatus) Valid() bool {
+	switch e {
+	case OwnerPlanSummaryStatusActive:
+		return true
+	case OwnerPlanSummaryStatusPendingAssignment:
 		return true
 	default:
 		return false
@@ -280,6 +361,24 @@ func (e PriceStatusOrigin) Valid() bool {
 	}
 }
 
+// Defines values for QuotaScope.
+const (
+	QuotaScopeAll     QuotaScope = "all"
+	QuotaScopeBalance QuotaScope = "balance"
+)
+
+// Valid indicates whether the value is a known member of the QuotaScope enum.
+func (e QuotaScope) Valid() bool {
+	switch e {
+	case QuotaScopeAll:
+		return true
+	case QuotaScopeBalance:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for QuotaSeriesWindow.
 const (
 	QuotaSeriesWindowN5h QuotaSeriesWindow = "5h"
@@ -292,6 +391,27 @@ func (e QuotaSeriesWindow) Valid() bool {
 	case QuotaSeriesWindowN5h:
 		return true
 	case QuotaSeriesWindowN7d:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RedeemCodeStatus.
+const (
+	Unused RedeemCodeStatus = "unused"
+	Used   RedeemCodeStatus = "used"
+	Void   RedeemCodeStatus = "void"
+)
+
+// Valid indicates whether the value is a known member of the RedeemCodeStatus enum.
+func (e RedeemCodeStatus) Valid() bool {
+	switch e {
+	case Unused:
+		return true
+	case Used:
+		return true
+	case Void:
 		return true
 	default:
 		return false
@@ -511,7 +631,8 @@ type Account struct {
 	Id        openapi_types.UUID `json:"id"`
 	Instance  string             `json:"instance"`
 
-	// K The k of the account's cpa-quota estimate; null when cpa-quota has none or is unavailable.
+	// K k = week total ÷ 5-hour total. Taken from the account's /quota response (accounts[0].k);
+	// when the response has none, from the cpa-quota estimate's k. Null when neither is known.
 	K              nullable.Nullable[float64] `json:"k,omitempty"`
 	MaxConcurrency nullable.Nullable[int]     `json:"max_concurrency,omitempty"`
 	Name           string                     `json:"name"`
@@ -565,6 +686,11 @@ type AccountRef struct {
 
 // AccountRuntime defines model for AccountRuntime.
 type AccountRuntime struct {
+	// Assignable Decided by the backend: the account can take a new session of a normal call right now —
+	// enabled, not stale / cooldown / error / 5h or week full / paused, and H_A above the
+	// normal-call threshold (standard_min_headroom_micro). A penalized account with enough
+	// headroom is assignable.
+	Assignable         bool                         `json:"assignable"`
 	CooldownUntil      nullable.Nullable[time.Time] `json:"cooldown_until,omitempty"`
 	CurrentConcurrency int64                        `json:"current_concurrency"`
 	DatabaseStatus     *string                      `json:"database_status,omitempty"`
@@ -712,30 +838,124 @@ type AdminUserUpdate struct {
 	Status         *UserStatus            `json:"status,omitempty"`
 }
 
+// Announcement defines model for Announcement.
+type Announcement struct {
+	// Active Enabled and inside its time window now.
+	Active    bool                         `json:"active"`
+	Body      string                       `json:"body"`
+	CreatedAt time.Time                    `json:"created_at"`
+	Enabled   bool                         `json:"enabled"`
+	EndsAt    nullable.Nullable[time.Time] `json:"ends_at,omitempty"`
+	Id        openapi_types.UUID           `json:"id"`
+	Level     AnnouncementLevel            `json:"level"`
+	StartsAt  nullable.Nullable[time.Time] `json:"starts_at,omitempty"`
+	Title     string                       `json:"title"`
+	UpdatedAt time.Time                    `json:"updated_at"`
+}
+
+// AnnouncementInput defines model for AnnouncementInput.
+type AnnouncementInput struct {
+	// Body Plain text; line breaks and http(s) links are rendered
+	Body     string                       `json:"body"`
+	Enabled  bool                         `json:"enabled"`
+	EndsAt   nullable.Nullable[time.Time] `json:"ends_at,omitempty"`
+	Level    AnnouncementLevel            `json:"level"`
+	StartsAt nullable.Nullable[time.Time] `json:"starts_at,omitempty"`
+	Title    string                       `json:"title"`
+}
+
+// AnnouncementLevel defines model for AnnouncementLevel.
+type AnnouncementLevel string
+
+// AnnouncementList defines model for AnnouncementList.
+type AnnouncementList struct {
+	Items []Announcement `json:"items"`
+}
+
 // ApiKey defines model for ApiKey.
 type ApiKey struct {
-	CreatedAt      time.Time                    `json:"created_at"`
-	Enabled        bool                         `json:"enabled"`
-	Id             openapi_types.UUID           `json:"id"`
-	LastUsedAt     nullable.Nullable[time.Time] `json:"last_used_at,omitempty"`
-	MaxConcurrency nullable.Nullable[int]       `json:"max_concurrency,omitempty"`
-	Name           string                       `json:"name"`
-	Note           string                       `json:"note"`
+	// AllowOwnerQuery Lets the key read its owner's balance and plan figures (public key query and status line).
+	AllowOwnerQuery bool                         `json:"allow_owner_query"`
+	CreatedAt       time.Time                    `json:"created_at"`
+	Enabled         bool                         `json:"enabled"`
+	ExpiresAt       nullable.Nullable[time.Time] `json:"expires_at,omitempty"`
+	Id              openapi_types.UUID           `json:"id"`
+
+	// IpAllowlist Allowed client IPs or CIDR prefixes (the real client IP per the trusted proxies); null = any.
+	IpAllowlist nullable.Nullable[[]string]  `json:"ip_allowlist,omitempty"`
+	LastUsedAt  nullable.Nullable[time.Time] `json:"last_used_at,omitempty"`
+
+	// Limit1dMicro Sliding 24-hour limit; null = unlimited.
+	Limit1dMicro nullable.Nullable[int64] `json:"limit_1d_micro,omitempty"`
+
+	// Limit5hMicro Sliding 5-hour limit; null = unlimited.
+	Limit5hMicro nullable.Nullable[int64] `json:"limit_5h_micro,omitempty"`
+
+	// Limit7dMicro Sliding 7-day limit; null = unlimited.
+	Limit7dMicro   nullable.Nullable[int64] `json:"limit_7d_micro,omitempty"`
+	MaxConcurrency nullable.Nullable[int]   `json:"max_concurrency,omitempty"`
+
+	// ModelAllowlist Allowed models (normalized names); null = every model. /v1/models is filtered too.
+	ModelAllowlist nullable.Nullable[[]string] `json:"model_allowlist,omitempty"`
+	Name           string                      `json:"name"`
+	Note           string                      `json:"note"`
 
 	// Prefix Display form such as sk-AbCd…wxyz.
-	Prefix         string                                `json:"prefix"`
-	Rpm            nullable.Nullable[int]                `json:"rpm,omitempty"`
+	Prefix string `json:"prefix"`
+
+	// QuotaLimitMicro Total quota since the last reset; null = unlimited.
+	QuotaLimitMicro nullable.Nullable[int64] `json:"quota_limit_micro,omitempty"`
+
+	// QuotaScope What counts toward the key quota and windows: all = every billed charge (plan quota and balance), balance = only charges of the standard / force tiers.
+	QuotaScope QuotaScope             `json:"quota_scope"`
+	Rpm        nullable.Nullable[int] `json:"rpm,omitempty"`
+
+	// Status active, disabled (key or its user disabled) or expired.
+	Status         KeyStatusValue                        `json:"status"`
 	SubscriptionId nullable.Nullable[openapi_types.UUID] `json:"subscription_id,omitempty"`
 	Tiers          []Tier                                `json:"tiers"`
+
+	// UsageResetAt Last reset (null = never).
+	UsageResetAt nullable.Nullable[time.Time] `json:"usage_reset_at,omitempty"`
+
+	// UsedAllMicro Persisted usage since the last reset
+	UsedAllMicro int64 `json:"used_all_micro"`
+
+	// UsedBalanceMicro Persisted usage since the last reset
+	UsedBalanceMicro int64 `json:"used_balance_micro"`
 }
 
 // ApiKeyCreate defines model for ApiKeyCreate.
 type ApiKeyCreate struct {
-	Enabled        *bool                  `json:"enabled,omitempty"`
-	MaxConcurrency nullable.Nullable[int] `json:"max_concurrency,omitempty"`
-	Name           *string                `json:"name,omitempty"`
-	Note           *string                `json:"note,omitempty"`
-	Rpm            nullable.Nullable[int] `json:"rpm,omitempty"`
+	// AllowOwnerQuery Lets the key read its owner's balance and plan figures (public key query and status line).
+	AllowOwnerQuery *bool                        `json:"allow_owner_query,omitempty"`
+	Enabled         *bool                        `json:"enabled,omitempty"`
+	ExpiresAt       nullable.Nullable[time.Time] `json:"expires_at,omitempty"`
+
+	// IpAllowlist Allowed client IPs or CIDR prefixes (the real client IP per the trusted proxies); null = any.
+	IpAllowlist nullable.Nullable[[]string] `json:"ip_allowlist,omitempty"`
+
+	// Limit1dMicro Sliding 24-hour limit; null = unlimited.
+	Limit1dMicro nullable.Nullable[int64] `json:"limit_1d_micro,omitempty"`
+
+	// Limit5hMicro Sliding 5-hour limit; null = unlimited.
+	Limit5hMicro nullable.Nullable[int64] `json:"limit_5h_micro,omitempty"`
+
+	// Limit7dMicro Sliding 7-day limit; null = unlimited.
+	Limit7dMicro   nullable.Nullable[int64] `json:"limit_7d_micro,omitempty"`
+	MaxConcurrency nullable.Nullable[int]   `json:"max_concurrency,omitempty"`
+
+	// ModelAllowlist Allowed models (normalized names); null = every model. /v1/models is filtered too.
+	ModelAllowlist nullable.Nullable[[]string] `json:"model_allowlist,omitempty"`
+	Name           *string                     `json:"name,omitempty"`
+	Note           *string                     `json:"note,omitempty"`
+
+	// QuotaLimitMicro Total quota since the last reset; null = unlimited.
+	QuotaLimitMicro nullable.Nullable[int64] `json:"quota_limit_micro,omitempty"`
+
+	// QuotaScope What counts toward the key quota and windows: all = every billed charge (plan quota and balance), balance = only charges of the standard / force tiers.
+	QuotaScope *QuotaScope            `json:"quota_scope,omitempty"`
+	Rpm        nullable.Nullable[int] `json:"rpm,omitempty"`
 
 	// SubscriptionId Required when tiers contain plan.
 	SubscriptionId nullable.Nullable[openapi_types.UUID] `json:"subscription_id,omitempty"`
@@ -756,10 +976,34 @@ type ApiKeySecret struct {
 
 // ApiKeyUpdate Fields left out keep their value; send null to clear a nullable field.
 type ApiKeyUpdate struct {
-	Enabled        *bool                                 `json:"enabled,omitempty"`
-	MaxConcurrency nullable.Nullable[int]                `json:"max_concurrency,omitempty"`
-	Name           *string                               `json:"name,omitempty"`
-	Note           *string                               `json:"note,omitempty"`
+	// AllowOwnerQuery Lets the key read its owner's balance and plan figures (public key query and status line).
+	AllowOwnerQuery *bool                        `json:"allow_owner_query,omitempty"`
+	Enabled         *bool                        `json:"enabled,omitempty"`
+	ExpiresAt       nullable.Nullable[time.Time] `json:"expires_at,omitempty"`
+
+	// IpAllowlist Allowed client IPs or CIDR prefixes (the real client IP per the trusted proxies); null = any.
+	IpAllowlist nullable.Nullable[[]string] `json:"ip_allowlist,omitempty"`
+
+	// Limit1dMicro Sliding 24-hour limit; null = unlimited.
+	Limit1dMicro nullable.Nullable[int64] `json:"limit_1d_micro,omitempty"`
+
+	// Limit5hMicro Sliding 5-hour limit; null = unlimited.
+	Limit5hMicro nullable.Nullable[int64] `json:"limit_5h_micro,omitempty"`
+
+	// Limit7dMicro Sliding 7-day limit; null = unlimited.
+	Limit7dMicro   nullable.Nullable[int64] `json:"limit_7d_micro,omitempty"`
+	MaxConcurrency nullable.Nullable[int]   `json:"max_concurrency,omitempty"`
+
+	// ModelAllowlist Allowed models (normalized names); null = every model. /v1/models is filtered too.
+	ModelAllowlist nullable.Nullable[[]string] `json:"model_allowlist,omitempty"`
+	Name           *string                     `json:"name,omitempty"`
+	Note           *string                     `json:"note,omitempty"`
+
+	// QuotaLimitMicro Total quota since the last reset; null = unlimited.
+	QuotaLimitMicro nullable.Nullable[int64] `json:"quota_limit_micro,omitempty"`
+
+	// QuotaScope What counts toward the key quota and windows: all = every billed charge (plan quota and balance), balance = only charges of the standard / force tiers.
+	QuotaScope     *QuotaScope                           `json:"quota_scope,omitempty"`
 	Rpm            nullable.Nullable[int]                `json:"rpm,omitempty"`
 	SubscriptionId nullable.Nullable[openapi_types.UUID] `json:"subscription_id,omitempty"`
 	Tiers          *[]Tier                               `json:"tiers,omitempty"`
@@ -767,20 +1011,56 @@ type ApiKeyUpdate struct {
 
 // ApiKeyWithSecret defines model for ApiKeyWithSecret.
 type ApiKeyWithSecret struct {
-	CreatedAt      time.Time                    `json:"created_at"`
-	Enabled        bool                         `json:"enabled"`
-	Id             openapi_types.UUID           `json:"id"`
-	Key            string                       `json:"key"`
-	LastUsedAt     nullable.Nullable[time.Time] `json:"last_used_at,omitempty"`
-	MaxConcurrency nullable.Nullable[int]       `json:"max_concurrency,omitempty"`
-	Name           string                       `json:"name"`
-	Note           string                       `json:"note"`
+	// AllowOwnerQuery Lets the key read its owner's balance and plan figures (public key query and status line).
+	AllowOwnerQuery bool                         `json:"allow_owner_query"`
+	CreatedAt       time.Time                    `json:"created_at"`
+	Enabled         bool                         `json:"enabled"`
+	ExpiresAt       nullable.Nullable[time.Time] `json:"expires_at,omitempty"`
+	Id              openapi_types.UUID           `json:"id"`
+
+	// IpAllowlist Allowed client IPs or CIDR prefixes (the real client IP per the trusted proxies); null = any.
+	IpAllowlist nullable.Nullable[[]string]  `json:"ip_allowlist,omitempty"`
+	Key         string                       `json:"key"`
+	LastUsedAt  nullable.Nullable[time.Time] `json:"last_used_at,omitempty"`
+
+	// Limit1dMicro Sliding 24-hour limit; null = unlimited.
+	Limit1dMicro nullable.Nullable[int64] `json:"limit_1d_micro,omitempty"`
+
+	// Limit5hMicro Sliding 5-hour limit; null = unlimited.
+	Limit5hMicro nullable.Nullable[int64] `json:"limit_5h_micro,omitempty"`
+
+	// Limit7dMicro Sliding 7-day limit; null = unlimited.
+	Limit7dMicro   nullable.Nullable[int64] `json:"limit_7d_micro,omitempty"`
+	MaxConcurrency nullable.Nullable[int]   `json:"max_concurrency,omitempty"`
+
+	// ModelAllowlist Allowed models (normalized names); null = every model. /v1/models is filtered too.
+	ModelAllowlist nullable.Nullable[[]string] `json:"model_allowlist,omitempty"`
+	Name           string                      `json:"name"`
+	Note           string                      `json:"note"`
 
 	// Prefix Display form such as sk-AbCd…wxyz.
-	Prefix         string                                `json:"prefix"`
-	Rpm            nullable.Nullable[int]                `json:"rpm,omitempty"`
+	Prefix string `json:"prefix"`
+
+	// QuotaLimitMicro Total quota since the last reset; null = unlimited.
+	QuotaLimitMicro nullable.Nullable[int64] `json:"quota_limit_micro,omitempty"`
+
+	// QuotaScope What counts toward the key quota and windows: all = every billed charge (plan quota and balance), balance = only charges of the standard / force tiers.
+	QuotaScope QuotaScope             `json:"quota_scope"`
+	Rpm        nullable.Nullable[int] `json:"rpm,omitempty"`
+
+	// Status active, disabled (key or its user disabled) or expired.
+	Status         KeyStatusValue                        `json:"status"`
 	SubscriptionId nullable.Nullable[openapi_types.UUID] `json:"subscription_id,omitempty"`
 	Tiers          []Tier                                `json:"tiers"`
+
+	// UsageResetAt Last reset (null = never).
+	UsageResetAt nullable.Nullable[time.Time] `json:"usage_reset_at,omitempty"`
+
+	// UsedAllMicro Persisted usage since the last reset
+	UsedAllMicro int64 `json:"used_all_micro"`
+
+	// UsedBalanceMicro Persisted usage since the last reset
+	UsedBalanceMicro int64 `json:"used_balance_micro"`
 }
 
 // AuditLog defines model for AuditLog.
@@ -1004,7 +1284,9 @@ type Error struct {
 		// forbidden, csrf_header_missing, not_found, conflict,
 		// rate_limited, insufficient_balance, invalid_state,
 		// upstream_validation_failed, unsupported_subscription,
-		// account_has_subscriptions, cpa_quota_unavailable, internal.
+		// account_has_subscriptions, cpa_quota_unavailable, redeem_code_invalid,
+		// redeem_code_used, redeem_code_void, redeem_code_expired, redeem_locked,
+		// internal.
 		Code    string `json:"code"`
 		Message string `json:"message"`
 
@@ -1041,6 +1323,132 @@ type KTrendDay struct {
 	Segments         int                        `json:"segments"`
 	UpdatedAt        time.Time                  `json:"updated_at"`
 }
+
+// KeyDailyPoint defines model for KeyDailyPoint.
+type KeyDailyPoint struct {
+	BilledMicro int64              `json:"billed_micro"`
+	Day         openapi_types.Date `json:"day"`
+	Requests    int64              `json:"requests"`
+}
+
+// KeyDailyRow defines model for KeyDailyRow.
+type KeyDailyRow struct {
+	BilledMicro      int64              `json:"billed_micro"`
+	CacheReadTokens  int64              `json:"cache_read_tokens"`
+	CacheWriteTokens int64              `json:"cache_write_tokens"`
+	Day              openapi_types.Date `json:"day"`
+	Errors           int64              `json:"errors"`
+	InputTokens      int64              `json:"input_tokens"`
+	OutputTokens     int64              `json:"output_tokens"`
+	ReasoningTokens  int64              `json:"reasoning_tokens"`
+	Requests         int64              `json:"requests"`
+	Tier             string             `json:"tier"`
+}
+
+// KeyDailyUsage defines model for KeyDailyUsage.
+type KeyDailyUsage struct {
+	Days     int                `json:"days"`
+	Items    []KeyDailyRow      `json:"items"`
+	KeyId    openapi_types.UUID `json:"key_id"`
+	Timezone string             `json:"timezone"`
+}
+
+// KeyLimitStatus defines model for KeyLimitStatus.
+type KeyLimitStatus struct {
+	QuotaHeldMicro      int64                    `json:"quota_held_micro"`
+	QuotaLimitMicro     nullable.Nullable[int64] `json:"quota_limit_micro,omitempty"`
+	QuotaRemainingMicro nullable.Nullable[int64] `json:"quota_remaining_micro,omitempty"`
+
+	// QuotaScope What counts toward the key quota and windows: all = every billed charge (plan quota and balance), balance = only charges of the standard / force tiers.
+	QuotaScope QuotaScope `json:"quota_scope"`
+
+	// QuotaUsedMicro Used since the last reset under the key's scope (real time).
+	QuotaUsedMicro   int64                        `json:"quota_used_micro"`
+	UsageResetAt     nullable.Nullable[time.Time] `json:"usage_reset_at,omitempty"`
+	UsedAllMicro     int64                        `json:"used_all_micro"`
+	UsedBalanceMicro int64                        `json:"used_balance_micro"`
+	Windows          []KeyWindowStatus            `json:"windows"`
+}
+
+// KeySeries defines model for KeySeries.
+type KeySeries struct {
+	KeyId  openapi_types.UUID `json:"key_id"`
+	Points []KeyDailyPoint    `json:"points"`
+}
+
+// KeyStatus Compact key status (also the body of GET /v1/bridge/status on the relay domain).
+type KeyStatus struct {
+	// Account Only present when the key allows owner queries (same figures as /me/availability).
+	Account     *OwnerSummary  `json:"account,omitempty"`
+	GeneratedAt time.Time      `json:"generated_at"`
+	Key         KeyStatusKey   `json:"key"`
+	Limits      KeyLimitStatus `json:"limits"`
+}
+
+// KeyStatusKey defines model for KeyStatusKey.
+type KeyStatusKey struct {
+	ExpiresAt      nullable.Nullable[time.Time] `json:"expires_at,omitempty"`
+	ModelAllowlist nullable.Nullable[[]string]  `json:"model_allowlist,omitempty"`
+	Name           string                       `json:"name"`
+	Prefix         string                       `json:"prefix"`
+
+	// QuotaScope What counts toward the key quota and windows: all = every billed charge (plan quota and balance), balance = only charges of the standard / force tiers.
+	QuotaScope QuotaScope `json:"quota_scope"`
+
+	// Status active, disabled (key or its user disabled) or expired.
+	Status KeyStatusValue `json:"status"`
+}
+
+// KeyStatusValue active, disabled (key or its user disabled) or expired.
+type KeyStatusValue string
+
+// KeyUsageComparison defines model for KeyUsageComparison.
+type KeyUsageComparison struct {
+	From time.Time `json:"from"`
+
+	// Items Every key with usage in the range, by billed amount (descending).
+	Items    []KeyUsageTotal `json:"items"`
+	Timezone string          `json:"timezone"`
+	To       time.Time       `json:"to"`
+
+	// Top Daily series of the top 10 keys by billed amount.
+	Top []KeySeries `json:"top"`
+}
+
+// KeyUsageTotal defines model for KeyUsageTotal.
+type KeyUsageTotal struct {
+	BilledMicro      int64              `json:"billed_micro"`
+	CacheReadTokens  int64              `json:"cache_read_tokens"`
+	CacheWriteTokens int64              `json:"cache_write_tokens"`
+	Deleted          bool               `json:"deleted"`
+	Errors           int64              `json:"errors"`
+	InputTokens      int64              `json:"input_tokens"`
+	KeyId            openapi_types.UUID `json:"key_id"`
+	Name             string             `json:"name"`
+	OutputTokens     int64              `json:"output_tokens"`
+	Prefix           string             `json:"prefix"`
+	ReasoningTokens  int64              `json:"reasoning_tokens"`
+	Requests         int64              `json:"requests"`
+}
+
+// KeyWindowStatus defines model for KeyWindowStatus.
+type KeyWindowStatus struct {
+	HeldMicro  *int64                   `json:"held_micro,omitempty"`
+	LimitMicro nullable.Nullable[int64] `json:"limit_micro,omitempty"`
+
+	// RecoversAt When an exhausted window is expected to allow requests again.
+	RecoversAt nullable.Nullable[time.Time] `json:"recovers_at,omitempty"`
+
+	// RemainingMicro limit − used − held (may be negative); null without a limit.
+	RemainingMicro nullable.Nullable[int64] `json:"remaining_micro,omitempty"`
+
+	// UsedMicro Billed in the sliding window under the key's scope (settled; in-flight holds are in held_micro).
+	UsedMicro int64                 `json:"used_micro"`
+	Window    KeyWindowStatusWindow `json:"window"`
+}
+
+// KeyWindowStatusWindow defines model for KeyWindowStatus.Window.
+type KeyWindowStatusWindow string
 
 // LedgerEntry defines model for LedgerEntry.
 type LedgerEntry struct {
@@ -1086,6 +1494,23 @@ type Me struct {
 // ModelList defines model for ModelList.
 type ModelList struct {
 	Items []string `json:"items"`
+}
+
+// ModelPricing defines model for ModelPricing.
+type ModelPricing struct {
+	// Force Micro-USD per 1,000,000 tokens.
+	Force           *TokenPrices `json:"force,omitempty"`
+	Model           string       `json:"model"`
+	ModelMultiplier float64      `json:"model_multiplier"`
+
+	// Plan Micro-USD per 1,000,000 tokens.
+	Plan *TokenPrices `json:"plan,omitempty"`
+
+	// Priced False when the ratio table has no price for the model (requests are then not billed by tokens).
+	Priced bool `json:"priced"`
+
+	// Standard Micro-USD per 1,000,000 tokens.
+	Standard *TokenPrices `json:"standard,omitempty"`
 }
 
 // MyPeriodUsage PeriodUsage without the upstream cost.
@@ -1186,9 +1611,11 @@ type MyUsageSummaryGranularity string
 
 // OverviewAccounts Accounts counted by `display_status` (each account in exactly one bucket) and the pooled figures.
 type OverviewAccounts struct {
-	Cooldown int `json:"cooldown"`
-	Disabled int `json:"disabled"`
-	Error    int `json:"error"`
+	// Assignable Accounts with runtime.assignable (overlaps the display buckets).
+	Assignable int `json:"assignable"`
+	Cooldown   int `json:"cooldown"`
+	Disabled   int `json:"disabled"`
+	Error      int `json:"error"`
 
 	// Full Hard exhausted: 5-hour or week window full, or paused by the plugin.
 	Full int `json:"full"`
@@ -1237,6 +1664,27 @@ type OverviewToday struct {
 	Requests          int64              `json:"requests"`
 	To                time.Time          `json:"to"`
 	UpstreamCostMicro int64              `json:"upstream_cost_micro"`
+}
+
+// OwnerPlanSummary defines model for OwnerPlanSummary.
+type OwnerPlanSummary struct {
+	FiveHourAvailableMicro nullable.Nullable[int64]     `json:"five_hour_available_micro,omitempty"`
+	PeriodAvailableMicro   nullable.Nullable[int64]     `json:"period_available_micro,omitempty"`
+	PeriodEnd              nullable.Nullable[time.Time] `json:"period_end,omitempty"`
+	PlanName               string                       `json:"plan_name"`
+	Status                 OwnerPlanSummaryStatus       `json:"status"`
+	SubscriptionId         openapi_types.UUID           `json:"subscription_id"`
+}
+
+// OwnerPlanSummaryStatus defines model for OwnerPlanSummary.Status.
+type OwnerPlanSummaryStatus string
+
+// OwnerSummary Only present when the key allows owner queries (same figures as /me/availability).
+type OwnerSummary struct {
+	BalanceAvailableMicro int64                 `json:"balance_available_micro"`
+	Force                 []AvailabilityHorizon `json:"force"`
+	Normal                []AvailabilityHorizon `json:"normal"`
+	Plans                 []OwnerPlanSummary    `json:"plans"`
 }
 
 // PeriodUsage defines model for PeriodUsage.
@@ -1351,6 +1799,25 @@ type PriceStatus struct {
 // PriceStatusOrigin defines model for PriceStatus.Origin.
 type PriceStatusOrigin string
 
+// Pricing defines model for Pricing.
+type Pricing struct {
+	// Items Union of the models of enabled accounts. Price = toll rate (model_ratio × 2 USD, × completion / cache / create_cache ratio) × tier multiplier × model multiplier.
+	Items           []ModelPricing  `json:"items"`
+	TierMultipliers TierMultipliers `json:"tier_multipliers"`
+}
+
+// PublicKeyUsage defines model for PublicKeyUsage.
+type PublicKeyUsage struct {
+	// Account Only present when the key allows owner queries (same figures as /me/availability).
+	Account     *OwnerSummary  `json:"account,omitempty"`
+	GeneratedAt time.Time      `json:"generated_at"`
+	Key         KeyStatusKey   `json:"key"`
+	Limits      KeyLimitStatus `json:"limits"`
+
+	// Recent The key's latest 50 requests (user view).
+	Recent []MyRequestLog `json:"recent"`
+}
+
 // PurchaseRequest defines model for PurchaseRequest.
 type PurchaseRequest struct {
 	AutoRenew *bool `json:"auto_renew,omitempty"`
@@ -1362,6 +1829,9 @@ type QuotaPoint struct {
 	ResetAt     nullable.Nullable[time.Time] `json:"reset_at,omitempty"`
 	UsedPercent float64                      `json:"used_percent"`
 }
+
+// QuotaScope What counts toward the key quota and windows: all = every billed charge (plan quota and balance), balance = only charges of the standard / force tiers.
+type QuotaScope string
 
 // QuotaSeries defines model for QuotaSeries.
 type QuotaSeries struct {
@@ -1409,6 +1879,76 @@ type ReconcileRun struct {
 	Id                openapi_types.UUID `json:"id"`
 	Ok                bool               `json:"ok"`
 	StartedAt         time.Time          `json:"started_at"`
+}
+
+// RedeemBatch defines model for RedeemBatch.
+type RedeemBatch struct {
+	AmountMicro int64                                 `json:"amount_micro"`
+	Count       int                                   `json:"count"`
+	CreatedAt   time.Time                             `json:"created_at"`
+	CreatedBy   nullable.Nullable[openapi_types.UUID] `json:"created_by,omitempty"`
+	ExpiresAt   nullable.Nullable[time.Time]          `json:"expires_at,omitempty"`
+	Id          openapi_types.UUID                    `json:"id"`
+	Note        string                                `json:"note"`
+	Prefix      string                                `json:"prefix"`
+	Unused      int64                                 `json:"unused"`
+	Used        int64                                 `json:"used"`
+	Voided      int64                                 `json:"voided"`
+}
+
+// RedeemBatchCreate defines model for RedeemBatchCreate.
+type RedeemBatchCreate struct {
+	AmountMicro int64                        `json:"amount_micro"`
+	Count       int                          `json:"count"`
+	ExpiresAt   nullable.Nullable[time.Time] `json:"expires_at,omitempty"`
+	Note        *string                      `json:"note,omitempty"`
+
+	// Prefix Optional, 1–8 letters or digits (upper-cased), e.g. OXA.
+	Prefix *string `json:"prefix,omitempty"`
+}
+
+// RedeemBatchPage defines model for RedeemBatchPage.
+type RedeemBatchPage struct {
+	Items      []RedeemBatch             `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor,omitempty"`
+}
+
+// RedeemCode defines model for RedeemCode.
+type RedeemCode struct {
+	AmountMicro int64                        `json:"amount_micro"`
+	BatchId     openapi_types.UUID           `json:"batch_id"`
+	CreatedAt   time.Time                    `json:"created_at"`
+	Expired     *bool                        `json:"expired,omitempty"`
+	ExpiresAt   nullable.Nullable[time.Time] `json:"expires_at,omitempty"`
+
+	// Hint Masked code, e.g. OXA-7K2M-…-PN3C (the full code only appears in the CSV export).
+	Hint     string                                `json:"hint"`
+	Id       openapi_types.UUID                    `json:"id"`
+	Status   RedeemCodeStatus                      `json:"status"`
+	UsedAt   nullable.Nullable[time.Time]          `json:"used_at,omitempty"`
+	UsedBy   nullable.Nullable[openapi_types.UUID] `json:"used_by,omitempty"`
+	VoidedAt nullable.Nullable[time.Time]          `json:"voided_at,omitempty"`
+}
+
+// RedeemCodePage defines model for RedeemCodePage.
+type RedeemCodePage struct {
+	Items      []RedeemCode              `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor,omitempty"`
+}
+
+// RedeemCodeStatus defines model for RedeemCodeStatus.
+type RedeemCodeStatus string
+
+// RedeemRequest defines model for RedeemRequest.
+type RedeemRequest struct {
+	// Code Case
+	Code string `json:"code"`
+}
+
+// RedeemResult defines model for RedeemResult.
+type RedeemResult struct {
+	AmountMicro  int64 `json:"amount_micro"`
+	BalanceMicro int64 `json:"balance_micro"`
 }
 
 // RequestLog defines model for RequestLog.
@@ -1597,6 +2137,14 @@ type TierMultipliers struct {
 	Standard float64 `json:"standard"`
 }
 
+// TokenPrices Micro-USD per 1,000,000 tokens.
+type TokenPrices struct {
+	CacheRead  int64 `json:"cache_read"`
+	CacheWrite int64 `json:"cache_write"`
+	Input      int64 `json:"input"`
+	Output     int64 `json:"output"`
+}
+
 // UsageBucket defines model for UsageBucket.
 type UsageBucket struct {
 	BilledMicro       int64     `json:"billed_micro"`
@@ -1630,6 +2178,9 @@ type AccountId = openapi_types.UUID
 
 // AccountIdFilter defines model for AccountIdFilter.
 type AccountIdFilter = openapi_types.UUID
+
+// AnnouncementId defines model for AnnouncementId.
+type AnnouncementId = openapi_types.UUID
 
 // Cursor defines model for Cursor.
 type Cursor = string
@@ -1728,6 +2279,20 @@ type AdminListLedgerParams struct {
 	Type   *LedgerTypeFilter `form:"type,omitempty" json:"type,omitempty"`
 }
 
+// AdminListRedeemBatchesParams defines parameters for AdminListRedeemBatches.
+type AdminListRedeemBatchesParams struct {
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// AdminListRedeemCodesParams defines parameters for AdminListRedeemCodes.
+type AdminListRedeemCodesParams struct {
+	Cursor  *Cursor             `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit   *Limit              `form:"limit,omitempty" json:"limit,omitempty"`
+	BatchId *openapi_types.UUID `form:"batch_id,omitempty" json:"batch_id,omitempty"`
+	Status  *RedeemCodeStatus   `form:"status,omitempty" json:"status,omitempty"`
+}
+
 // AdminListRequestLogsParams defines parameters for AdminListRequestLogs.
 type AdminListRequestLogsParams struct {
 	Cursor    *Cursor          `form:"cursor,omitempty" json:"cursor,omitempty"`
@@ -1800,11 +2365,22 @@ type AdminListUsersParams struct {
 	Search *string `form:"search,omitempty" json:"search,omitempty"`
 }
 
+// GetKeyDailyUsageParams defines parameters for GetKeyDailyUsage.
+type GetKeyDailyUsageParams struct {
+	Days *int `form:"days,omitempty" json:"days,omitempty"`
+}
+
 // ListMyLedgerParams defines parameters for ListMyLedger.
 type ListMyLedgerParams struct {
 	Cursor *Cursor           `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit  *Limit            `form:"limit,omitempty" json:"limit,omitempty"`
 	Type   *LedgerTypeFilter `form:"type,omitempty" json:"type,omitempty"`
+}
+
+// GetMyKeyUsageParams defines parameters for GetMyKeyUsage.
+type GetMyKeyUsageParams struct {
+	From FromRequired `form:"from" json:"from"`
+	To   ToRequired   `form:"to" json:"to"`
 }
 
 // ListMyUsageLogsParams defines parameters for ListMyUsageLogs.
@@ -1843,6 +2419,15 @@ type AdminUpdateAccountJSONRequestBody = AccountUpdate
 // AdminSetAccountEnabledJSONRequestBody defines body for AdminSetAccountEnabled for application/json ContentType.
 type AdminSetAccountEnabledJSONRequestBody = EnabledRequest
 
+// AdminCreateAnnouncementJSONRequestBody defines body for AdminCreateAnnouncement for application/json ContentType.
+type AdminCreateAnnouncementJSONRequestBody = AnnouncementInput
+
+// AdminUpdateAnnouncementJSONRequestBody defines body for AdminUpdateAnnouncement for application/json ContentType.
+type AdminUpdateAnnouncementJSONRequestBody = AnnouncementInput
+
+// AdminUpdateKeyJSONRequestBody defines body for AdminUpdateKey for application/json ContentType.
+type AdminUpdateKeyJSONRequestBody = ApiKeyUpdate
+
 // AdminSetKeyEnabledJSONRequestBody defines body for AdminSetKeyEnabled for application/json ContentType.
 type AdminSetKeyEnabledJSONRequestBody = EnabledRequest
 
@@ -1851,6 +2436,9 @@ type AdminCreatePlanJSONRequestBody = PlanInput
 
 // AdminUpdatePlanJSONRequestBody defines body for AdminUpdatePlan for application/json ContentType.
 type AdminUpdatePlanJSONRequestBody = PlanInput
+
+// AdminCreateRedeemBatchJSONRequestBody defines body for AdminCreateRedeemBatch for application/json ContentType.
+type AdminCreateRedeemBatchJSONRequestBody = RedeemBatchCreate
 
 // AdminUpdateSettingsJSONRequestBody defines body for AdminUpdateSettings for application/json ContentType.
 type AdminUpdateSettingsJSONRequestBody = SettingsPatch
@@ -1878,6 +2466,9 @@ type AdminAdjustBalanceJSONRequestBody = BalanceAdjust
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
+
+// RedeemCodeJSONRequestBody defines body for RedeemCode for application/json ContentType.
+type RedeemCodeJSONRequestBody = RedeemRequest
 
 // CreateKeyJSONRequestBody defines body for CreateKey for application/json ContentType.
 type CreateKeyJSONRequestBody = ApiKeyCreate
@@ -1933,14 +2524,35 @@ type ServerInterface interface {
 	// (POST /admin/accounts/{accountId}/test)
 	AdminTestAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
 
+	// (GET /admin/announcements)
+	AdminListAnnouncements(w http.ResponseWriter, r *http.Request)
+
+	// (POST /admin/announcements)
+	AdminCreateAnnouncement(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /admin/announcements/{announcementId})
+	AdminDeleteAnnouncement(w http.ResponseWriter, r *http.Request, announcementId AnnouncementId)
+
+	// (PATCH /admin/announcements/{announcementId})
+	AdminUpdateAnnouncement(w http.ResponseWriter, r *http.Request, announcementId AnnouncementId)
+
 	// (GET /admin/audit-logs)
 	AdminListAuditLogs(w http.ResponseWriter, r *http.Request, params AdminListAuditLogsParams)
 	// AdminEvents Server-sent events across replicas.
 	// (GET /admin/events)
 	AdminEvents(w http.ResponseWriter, r *http.Request)
+	// AdminUpdateKey Edit any user's key (limits included).
+	// (PATCH /admin/keys/{keyId})
+	AdminUpdateKey(w http.ResponseWriter, r *http.Request, keyId KeyId)
 	// AdminSetKeyEnabled Enable or disable any user's key (takes effect on every replica at once).
 	// (PUT /admin/keys/{keyId}/enabled)
 	AdminSetKeyEnabled(w http.ResponseWriter, r *http.Request, keyId KeyId)
+
+	// (GET /admin/keys/{keyId}/limits)
+	AdminGetKeyLimits(w http.ResponseWriter, r *http.Request, keyId KeyId)
+
+	// (POST /admin/keys/{keyId}/reset-usage)
+	AdminResetKeyUsage(w http.ResponseWriter, r *http.Request, keyId KeyId)
 
 	// (GET /admin/ledger)
 	AdminListLedger(w http.ResponseWriter, r *http.Request, params AdminListLedgerParams)
@@ -1971,6 +2583,21 @@ type ServerInterface interface {
 	// AdminRunReconcile Run the ledger / balance / charge reconciliation now.
 	// (POST /admin/reconcile)
 	AdminRunReconcile(w http.ResponseWriter, r *http.Request)
+
+	// (GET /admin/redeem-batches)
+	AdminListRedeemBatches(w http.ResponseWriter, r *http.Request, params AdminListRedeemBatchesParams)
+
+	// (POST /admin/redeem-batches)
+	AdminCreateRedeemBatch(w http.ResponseWriter, r *http.Request)
+	// AdminExportRedeemBatch CSV of every code of a batch, original text included (audited).
+	// (GET /admin/redeem-batches/{batchId}/export)
+	AdminExportRedeemBatch(w http.ResponseWriter, r *http.Request, batchId openapi_types.UUID)
+
+	// (GET /admin/redeem-codes)
+	AdminListRedeemCodes(w http.ResponseWriter, r *http.Request, params AdminListRedeemCodesParams)
+
+	// (POST /admin/redeem-codes/{codeId}/void)
+	AdminVoidRedeemCode(w http.ResponseWriter, r *http.Request, codeId openapi_types.UUID)
 
 	// (GET /admin/request-logs)
 	AdminListRequestLogs(w http.ResponseWriter, r *http.Request, params AdminListRequestLogsParams)
@@ -2022,6 +2649,12 @@ type ServerInterface interface {
 	// AdminListUserKeys The user's API keys (secrets are never returned here).
 	// (GET /admin/users/{userId}/keys)
 	AdminListUserKeys(w http.ResponseWriter, r *http.Request, userId UserId)
+	// ListActiveAnnouncements Announcements in effect now that the caller has not dismissed.
+	// (GET /announcements)
+	ListActiveAnnouncements(w http.ResponseWriter, r *http.Request)
+
+	// (POST /announcements/{announcementId}/dismiss)
+	DismissAnnouncement(w http.ResponseWriter, r *http.Request, announcementId AnnouncementId)
 	// Login Log in with username and password (rate limited).
 	// (POST /auth/login)
 	Login(w http.ResponseWriter, r *http.Request)
@@ -2031,6 +2664,9 @@ type ServerInterface interface {
 
 	// (GET /balance)
 	GetBalance(w http.ResponseWriter, r *http.Request)
+	// RedeemCode Redeem a code into the balance (rate limited per user; repeated failures lock redemption for a while).
+	// (POST /balance/redeem)
+	RedeemCode(w http.ResponseWriter, r *http.Request)
 
 	// (GET /keys)
 	ListKeys(w http.ResponseWriter, r *http.Request)
@@ -2046,9 +2682,18 @@ type ServerInterface interface {
 
 	// (PATCH /keys/{keyId})
 	UpdateKey(w http.ResponseWriter, r *http.Request, keyId KeyId)
+	// GetKeyLimits Real-time limits and usage of a key (quota and sliding windows).
+	// (GET /keys/{keyId}/limits)
+	GetKeyLimits(w http.ResponseWriter, r *http.Request, keyId KeyId)
+	// ResetKeyUsage Reset the used amount of the total quota to 0 (windows slide on their own and are not affected).
+	// (POST /keys/{keyId}/reset-usage)
+	ResetKeyUsage(w http.ResponseWriter, r *http.Request, keyId KeyId)
 
 	// (GET /keys/{keyId}/secret)
 	GetKeySecret(w http.ResponseWriter, r *http.Request, keyId KeyId)
+
+	// (GET /keys/{keyId}/usage/daily)
+	GetKeyDailyUsage(w http.ResponseWriter, r *http.Request, keyId KeyId, params GetKeyDailyUsageParams)
 
 	// (GET /ledger)
 	ListMyLedger(w http.ResponseWriter, r *http.Request, params ListMyLedgerParams)
@@ -2070,6 +2715,12 @@ type ServerInterface interface {
 	// PurchasePlan Buy a plan with the balance (no overdraft). The subscription waits for an admin to assign an account.
 	// (POST /plans/{planId}/purchase)
 	PurchasePlan(w http.ResponseWriter, r *http.Request, planId PlanId)
+	// GetPricing Per-million-token prices of every model served by an enabled account, per tier.
+	// (GET /pricing)
+	GetPricing(w http.ResponseWriter, r *http.Request)
+	// GetPublicKeyUsage Usage of the API key in the request headers (no login).
+	// (GET /public/key-usage)
+	GetPublicKeyUsage(w http.ResponseWriter, r *http.Request)
 
 	// (GET /subscriptions)
 	ListMySubscriptions(w http.ResponseWriter, r *http.Request)
@@ -2079,6 +2730,9 @@ type ServerInterface interface {
 	// RenewSubscription Renew by one duration (charged to the balance; from now when already expired).
 	// (POST /subscriptions/{subscriptionId}/renew)
 	RenewSubscription(w http.ResponseWriter, r *http.Request, subscriptionId SubscriptionId)
+
+	// (GET /usage/keys)
+	GetMyKeyUsage(w http.ResponseWriter, r *http.Request, params GetMyKeyUsageParams)
 
 	// (GET /usage/logs)
 	ListMyUsageLogs(w http.ResponseWriter, r *http.Request, params ListMyUsageLogsParams)
@@ -2161,6 +2815,26 @@ func (_ Unimplemented) AdminTestAccount(w http.ResponseWriter, r *http.Request, 
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// (GET /admin/announcements)
+func (_ Unimplemented) AdminListAnnouncements(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /admin/announcements)
+func (_ Unimplemented) AdminCreateAnnouncement(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /admin/announcements/{announcementId})
+func (_ Unimplemented) AdminDeleteAnnouncement(w http.ResponseWriter, r *http.Request, announcementId AnnouncementId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /admin/announcements/{announcementId})
+func (_ Unimplemented) AdminUpdateAnnouncement(w http.ResponseWriter, r *http.Request, announcementId AnnouncementId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (GET /admin/audit-logs)
 func (_ Unimplemented) AdminListAuditLogs(w http.ResponseWriter, r *http.Request, params AdminListAuditLogsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -2172,9 +2846,25 @@ func (_ Unimplemented) AdminEvents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// AdminUpdateKey Edit any user's key (limits included).
+// (PATCH /admin/keys/{keyId})
+func (_ Unimplemented) AdminUpdateKey(w http.ResponseWriter, r *http.Request, keyId KeyId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // AdminSetKeyEnabled Enable or disable any user's key (takes effect on every replica at once).
 // (PUT /admin/keys/{keyId}/enabled)
 func (_ Unimplemented) AdminSetKeyEnabled(w http.ResponseWriter, r *http.Request, keyId KeyId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /admin/keys/{keyId}/limits)
+func (_ Unimplemented) AdminGetKeyLimits(w http.ResponseWriter, r *http.Request, keyId KeyId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /admin/keys/{keyId}/reset-usage)
+func (_ Unimplemented) AdminResetKeyUsage(w http.ResponseWriter, r *http.Request, keyId KeyId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2228,6 +2918,32 @@ func (_ Unimplemented) AdminRefreshPrices(w http.ResponseWriter, r *http.Request
 // AdminRunReconcile Run the ledger / balance / charge reconciliation now.
 // (POST /admin/reconcile)
 func (_ Unimplemented) AdminRunReconcile(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /admin/redeem-batches)
+func (_ Unimplemented) AdminListRedeemBatches(w http.ResponseWriter, r *http.Request, params AdminListRedeemBatchesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /admin/redeem-batches)
+func (_ Unimplemented) AdminCreateRedeemBatch(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminExportRedeemBatch CSV of every code of a batch, original text included (audited).
+// (GET /admin/redeem-batches/{batchId}/export)
+func (_ Unimplemented) AdminExportRedeemBatch(w http.ResponseWriter, r *http.Request, batchId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /admin/redeem-codes)
+func (_ Unimplemented) AdminListRedeemCodes(w http.ResponseWriter, r *http.Request, params AdminListRedeemCodesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /admin/redeem-codes/{codeId}/void)
+func (_ Unimplemented) AdminVoidRedeemCode(w http.ResponseWriter, r *http.Request, codeId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2322,6 +3038,17 @@ func (_ Unimplemented) AdminListUserKeys(w http.ResponseWriter, r *http.Request,
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// ListActiveAnnouncements Announcements in effect now that the caller has not dismissed.
+// (GET /announcements)
+func (_ Unimplemented) ListActiveAnnouncements(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /announcements/{announcementId}/dismiss)
+func (_ Unimplemented) DismissAnnouncement(w http.ResponseWriter, r *http.Request, announcementId AnnouncementId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Login Log in with username and password (rate limited).
 // (POST /auth/login)
 func (_ Unimplemented) Login(w http.ResponseWriter, r *http.Request) {
@@ -2336,6 +3063,12 @@ func (_ Unimplemented) Logout(w http.ResponseWriter, r *http.Request) {
 
 // (GET /balance)
 func (_ Unimplemented) GetBalance(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RedeemCode Redeem a code into the balance (rate limited per user; repeated failures lock redemption for a while).
+// (POST /balance/redeem)
+func (_ Unimplemented) RedeemCode(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2364,8 +3097,25 @@ func (_ Unimplemented) UpdateKey(w http.ResponseWriter, r *http.Request, keyId K
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// GetKeyLimits Real-time limits and usage of a key (quota and sliding windows).
+// (GET /keys/{keyId}/limits)
+func (_ Unimplemented) GetKeyLimits(w http.ResponseWriter, r *http.Request, keyId KeyId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ResetKeyUsage Reset the used amount of the total quota to 0 (windows slide on their own and are not affected).
+// (POST /keys/{keyId}/reset-usage)
+func (_ Unimplemented) ResetKeyUsage(w http.ResponseWriter, r *http.Request, keyId KeyId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (GET /keys/{keyId}/secret)
 func (_ Unimplemented) GetKeySecret(w http.ResponseWriter, r *http.Request, keyId KeyId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /keys/{keyId}/usage/daily)
+func (_ Unimplemented) GetKeyDailyUsage(w http.ResponseWriter, r *http.Request, keyId KeyId, params GetKeyDailyUsageParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2406,6 +3156,18 @@ func (_ Unimplemented) PurchasePlan(w http.ResponseWriter, r *http.Request, plan
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// GetPricing Per-million-token prices of every model served by an enabled account, per tier.
+// (GET /pricing)
+func (_ Unimplemented) GetPricing(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetPublicKeyUsage Usage of the API key in the request headers (no login).
+// (GET /public/key-usage)
+func (_ Unimplemented) GetPublicKeyUsage(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (GET /subscriptions)
 func (_ Unimplemented) ListMySubscriptions(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -2419,6 +3181,11 @@ func (_ Unimplemented) SetAutoRenew(w http.ResponseWriter, r *http.Request, subs
 // RenewSubscription Renew by one duration (charged to the balance; from now when already expired).
 // (POST /subscriptions/{subscriptionId}/renew)
 func (_ Unimplemented) RenewSubscription(w http.ResponseWriter, r *http.Request, subscriptionId SubscriptionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /usage/keys)
+func (_ Unimplemented) GetMyKeyUsage(w http.ResponseWriter, r *http.Request, params GetMyKeyUsageParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2817,6 +3584,86 @@ func (siw *ServerInterfaceWrapper) AdminTestAccount(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// AdminListAnnouncements operation middleware
+func (siw *ServerInterfaceWrapper) AdminListAnnouncements(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminListAnnouncements(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminCreateAnnouncement operation middleware
+func (siw *ServerInterfaceWrapper) AdminCreateAnnouncement(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminCreateAnnouncement(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminDeleteAnnouncement operation middleware
+func (siw *ServerInterfaceWrapper) AdminDeleteAnnouncement(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "announcementId" -------------
+	var announcementId AnnouncementId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "announcementId", chi.URLParam(r, "announcementId"), &announcementId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "announcementId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminDeleteAnnouncement(w, r, announcementId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminUpdateAnnouncement operation middleware
+func (siw *ServerInterfaceWrapper) AdminUpdateAnnouncement(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "announcementId" -------------
+	var announcementId AnnouncementId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "announcementId", chi.URLParam(r, "announcementId"), &announcementId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "announcementId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminUpdateAnnouncement(w, r, announcementId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // AdminListAuditLogs operation middleware
 func (siw *ServerInterfaceWrapper) AdminListAuditLogs(w http.ResponseWriter, r *http.Request) {
 
@@ -2903,6 +3750,32 @@ func (siw *ServerInterfaceWrapper) AdminEvents(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// AdminUpdateKey operation middleware
+func (siw *ServerInterfaceWrapper) AdminUpdateKey(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "keyId" -------------
+	var keyId KeyId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "keyId", chi.URLParam(r, "keyId"), &keyId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "keyId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminUpdateKey(w, r, keyId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // AdminSetKeyEnabled operation middleware
 func (siw *ServerInterfaceWrapper) AdminSetKeyEnabled(w http.ResponseWriter, r *http.Request) {
 
@@ -2920,6 +3793,58 @@ func (siw *ServerInterfaceWrapper) AdminSetKeyEnabled(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminSetKeyEnabled(w, r, keyId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminGetKeyLimits operation middleware
+func (siw *ServerInterfaceWrapper) AdminGetKeyLimits(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "keyId" -------------
+	var keyId KeyId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "keyId", chi.URLParam(r, "keyId"), &keyId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "keyId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminGetKeyLimits(w, r, keyId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminResetKeyUsage operation middleware
+func (siw *ServerInterfaceWrapper) AdminResetKeyUsage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "keyId" -------------
+	var keyId KeyId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "keyId", chi.URLParam(r, "keyId"), &keyId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "keyId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminResetKeyUsage(w, r, keyId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3154,6 +4079,190 @@ func (siw *ServerInterfaceWrapper) AdminRunReconcile(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminRunReconcile(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminListRedeemBatches operation middleware
+func (siw *ServerInterfaceWrapper) AdminListRedeemBatches(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminListRedeemBatchesParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminListRedeemBatches(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminCreateRedeemBatch operation middleware
+func (siw *ServerInterfaceWrapper) AdminCreateRedeemBatch(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminCreateRedeemBatch(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminExportRedeemBatch operation middleware
+func (siw *ServerInterfaceWrapper) AdminExportRedeemBatch(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "batchId" -------------
+	var batchId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "batchId", chi.URLParam(r, "batchId"), &batchId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "batchId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminExportRedeemBatch(w, r, batchId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminListRedeemCodes operation middleware
+func (siw *ServerInterfaceWrapper) AdminListRedeemCodes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminListRedeemCodesParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "batch_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "batch_id", r.URL.Query(), &params.BatchId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "batch_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "batch_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminListRedeemCodes(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminVoidRedeemCode operation middleware
+func (siw *ServerInterfaceWrapper) AdminVoidRedeemCode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "codeId" -------------
+	var codeId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "codeId", chi.URLParam(r, "codeId"), &codeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "codeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminVoidRedeemCode(w, r, codeId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3929,6 +5038,46 @@ func (siw *ServerInterfaceWrapper) AdminListUserKeys(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// ListActiveAnnouncements operation middleware
+func (siw *ServerInterfaceWrapper) ListActiveAnnouncements(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListActiveAnnouncements(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DismissAnnouncement operation middleware
+func (siw *ServerInterfaceWrapper) DismissAnnouncement(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "announcementId" -------------
+	var announcementId AnnouncementId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "announcementId", chi.URLParam(r, "announcementId"), &announcementId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "announcementId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DismissAnnouncement(w, r, announcementId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // Login operation middleware
 func (siw *ServerInterfaceWrapper) Login(w http.ResponseWriter, r *http.Request) {
 
@@ -3962,6 +5111,20 @@ func (siw *ServerInterfaceWrapper) GetBalance(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetBalance(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RedeemCode operation middleware
+func (siw *ServerInterfaceWrapper) RedeemCode(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RedeemCode(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4077,6 +5240,58 @@ func (siw *ServerInterfaceWrapper) UpdateKey(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// GetKeyLimits operation middleware
+func (siw *ServerInterfaceWrapper) GetKeyLimits(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "keyId" -------------
+	var keyId KeyId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "keyId", chi.URLParam(r, "keyId"), &keyId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "keyId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetKeyLimits(w, r, keyId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ResetKeyUsage operation middleware
+func (siw *ServerInterfaceWrapper) ResetKeyUsage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "keyId" -------------
+	var keyId KeyId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "keyId", chi.URLParam(r, "keyId"), &keyId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "keyId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResetKeyUsage(w, r, keyId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetKeySecret operation middleware
 func (siw *ServerInterfaceWrapper) GetKeySecret(w http.ResponseWriter, r *http.Request) {
 
@@ -4094,6 +5309,48 @@ func (siw *ServerInterfaceWrapper) GetKeySecret(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetKeySecret(w, r, keyId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetKeyDailyUsage operation middleware
+func (siw *ServerInterfaceWrapper) GetKeyDailyUsage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "keyId" -------------
+	var keyId KeyId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "keyId", chi.URLParam(r, "keyId"), &keyId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "keyId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetKeyDailyUsageParams
+
+	// ------------- Optional query parameter "days" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "days", r.URL.Query(), &params.Days, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "days"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "days", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetKeyDailyUsage(w, r, keyId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4258,6 +5515,34 @@ func (siw *ServerInterfaceWrapper) PurchasePlan(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// GetPricing operation middleware
+func (siw *ServerInterfaceWrapper) GetPricing(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPricing(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPublicKeyUsage operation middleware
+func (siw *ServerInterfaceWrapper) GetPublicKeyUsage(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPublicKeyUsage(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListMySubscriptions operation middleware
 func (siw *ServerInterfaceWrapper) ListMySubscriptions(w http.ResponseWriter, r *http.Request) {
 
@@ -4315,6 +5600,52 @@ func (siw *ServerInterfaceWrapper) RenewSubscription(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RenewSubscription(w, r, subscriptionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMyKeyUsage operation middleware
+func (siw *ServerInterfaceWrapper) GetMyKeyUsage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetMyKeyUsageParams
+
+	// ------------- Required query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "to", r.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMyKeyUsage(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4654,10 +5985,34 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/keys/{keyId}/secret", wrapper.GetKeySecret)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/keys/{keyId}/limits", wrapper.GetKeyLimits)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/keys/{keyId}/reset-usage", wrapper.ResetKeyUsage)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/keys/{keyId}/usage/daily", wrapper.GetKeyDailyUsage)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/balance", wrapper.GetBalance)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/ledger", wrapper.ListMyLedger)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/balance/redeem", wrapper.RedeemCode)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/announcements", wrapper.ListActiveAnnouncements)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/announcements/{announcementId}/dismiss", wrapper.DismissAnnouncement)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/pricing", wrapper.GetPricing)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/public/key-usage", wrapper.GetPublicKeyUsage)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/plans", wrapper.ListPlansOnSale)
@@ -4676,6 +6031,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/usage/logs", wrapper.ListMyUsageLogs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/usage/keys", wrapper.GetMyKeyUsage)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/usage/summary", wrapper.GetMyUsageSummary)
@@ -4706,6 +6064,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/admin/keys/{keyId}/enabled", wrapper.AdminSetKeyEnabled)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/admin/keys/{keyId}", wrapper.AdminUpdateKey)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/keys/{keyId}/limits", wrapper.AdminGetKeyLimits)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/keys/{keyId}/reset-usage", wrapper.AdminResetKeyUsage)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/admin/overview", wrapper.AdminGetOverview)
@@ -4805,6 +6172,33 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/admin/reconcile", wrapper.AdminRunReconcile)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/redeem-batches", wrapper.AdminListRedeemBatches)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/redeem-batches", wrapper.AdminCreateRedeemBatch)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/redeem-batches/{batchId}/export", wrapper.AdminExportRedeemBatch)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/redeem-codes", wrapper.AdminListRedeemCodes)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/redeem-codes/{codeId}/void", wrapper.AdminVoidRedeemCode)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/announcements", wrapper.AdminListAnnouncements)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/announcements", wrapper.AdminCreateAnnouncement)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/admin/announcements/{announcementId}", wrapper.AdminDeleteAnnouncement)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/admin/announcements/{announcementId}", wrapper.AdminUpdateAnnouncement)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/admin/events", wrapper.AdminEvents)
@@ -5281,6 +6675,156 @@ func (response AdminTestAccountdefaultJSONResponse) VisitAdminTestAccountRespons
 	return err
 }
 
+type AdminListAnnouncementsRequestObject struct {
+}
+
+type AdminListAnnouncementsResponseObject interface {
+	VisitAdminListAnnouncementsResponse(w http.ResponseWriter) error
+}
+
+type AdminListAnnouncements200JSONResponse AnnouncementList
+
+func (response AdminListAnnouncements200JSONResponse) VisitAdminListAnnouncementsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminListAnnouncementsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminListAnnouncementsdefaultJSONResponse) VisitAdminListAnnouncementsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminCreateAnnouncementRequestObject struct {
+	Body *AdminCreateAnnouncementJSONRequestBody
+}
+
+type AdminCreateAnnouncementResponseObject interface {
+	VisitAdminCreateAnnouncementResponse(w http.ResponseWriter) error
+}
+
+type AdminCreateAnnouncement201JSONResponse Announcement
+
+func (response AdminCreateAnnouncement201JSONResponse) VisitAdminCreateAnnouncementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminCreateAnnouncementdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminCreateAnnouncementdefaultJSONResponse) VisitAdminCreateAnnouncementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminDeleteAnnouncementRequestObject struct {
+	AnnouncementId AnnouncementId `json:"announcementId"`
+}
+
+type AdminDeleteAnnouncementResponseObject interface {
+	VisitAdminDeleteAnnouncementResponse(w http.ResponseWriter) error
+}
+
+type AdminDeleteAnnouncement204Response struct {
+}
+
+func (response AdminDeleteAnnouncement204Response) VisitAdminDeleteAnnouncementResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type AdminDeleteAnnouncementdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminDeleteAnnouncementdefaultJSONResponse) VisitAdminDeleteAnnouncementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminUpdateAnnouncementRequestObject struct {
+	AnnouncementId AnnouncementId `json:"announcementId"`
+	Body           *AdminUpdateAnnouncementJSONRequestBody
+}
+
+type AdminUpdateAnnouncementResponseObject interface {
+	VisitAdminUpdateAnnouncementResponse(w http.ResponseWriter) error
+}
+
+type AdminUpdateAnnouncement200JSONResponse Announcement
+
+func (response AdminUpdateAnnouncement200JSONResponse) VisitAdminUpdateAnnouncementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminUpdateAnnouncementdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminUpdateAnnouncementdefaultJSONResponse) VisitAdminUpdateAnnouncementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AdminListAuditLogsRequestObject struct {
 	Params AdminListAuditLogsParams
 }
@@ -5387,6 +6931,46 @@ func (response AdminEventsdefaultJSONResponse) VisitAdminEventsResponse(w http.R
 	return err
 }
 
+type AdminUpdateKeyRequestObject struct {
+	KeyId KeyId `json:"keyId"`
+	Body  *AdminUpdateKeyJSONRequestBody
+}
+
+type AdminUpdateKeyResponseObject interface {
+	VisitAdminUpdateKeyResponse(w http.ResponseWriter) error
+}
+
+type AdminUpdateKey200JSONResponse ApiKey
+
+func (response AdminUpdateKey200JSONResponse) VisitAdminUpdateKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminUpdateKeydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminUpdateKeydefaultJSONResponse) VisitAdminUpdateKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AdminSetKeyEnabledRequestObject struct {
 	KeyId KeyId `json:"keyId"`
 	Body  *AdminSetKeyEnabledJSONRequestBody
@@ -5416,6 +7000,84 @@ type AdminSetKeyEnableddefaultJSONResponse struct {
 }
 
 func (response AdminSetKeyEnableddefaultJSONResponse) VisitAdminSetKeyEnabledResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetKeyLimitsRequestObject struct {
+	KeyId KeyId `json:"keyId"`
+}
+
+type AdminGetKeyLimitsResponseObject interface {
+	VisitAdminGetKeyLimitsResponse(w http.ResponseWriter) error
+}
+
+type AdminGetKeyLimits200JSONResponse KeyLimitStatus
+
+func (response AdminGetKeyLimits200JSONResponse) VisitAdminGetKeyLimitsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetKeyLimitsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminGetKeyLimitsdefaultJSONResponse) VisitAdminGetKeyLimitsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminResetKeyUsageRequestObject struct {
+	KeyId KeyId `json:"keyId"`
+}
+
+type AdminResetKeyUsageResponseObject interface {
+	VisitAdminResetKeyUsageResponse(w http.ResponseWriter) error
+}
+
+type AdminResetKeyUsage200JSONResponse ApiKey
+
+func (response AdminResetKeyUsage200JSONResponse) VisitAdminResetKeyUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminResetKeyUsagedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminResetKeyUsagedefaultJSONResponse) VisitAdminResetKeyUsageResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -5796,6 +7458,207 @@ type AdminRunReconciledefaultJSONResponse struct {
 }
 
 func (response AdminRunReconciledefaultJSONResponse) VisitAdminRunReconcileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminListRedeemBatchesRequestObject struct {
+	Params AdminListRedeemBatchesParams
+}
+
+type AdminListRedeemBatchesResponseObject interface {
+	VisitAdminListRedeemBatchesResponse(w http.ResponseWriter) error
+}
+
+type AdminListRedeemBatches200JSONResponse RedeemBatchPage
+
+func (response AdminListRedeemBatches200JSONResponse) VisitAdminListRedeemBatchesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminListRedeemBatchesdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminListRedeemBatchesdefaultJSONResponse) VisitAdminListRedeemBatchesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminCreateRedeemBatchRequestObject struct {
+	Body *AdminCreateRedeemBatchJSONRequestBody
+}
+
+type AdminCreateRedeemBatchResponseObject interface {
+	VisitAdminCreateRedeemBatchResponse(w http.ResponseWriter) error
+}
+
+type AdminCreateRedeemBatch201JSONResponse RedeemBatch
+
+func (response AdminCreateRedeemBatch201JSONResponse) VisitAdminCreateRedeemBatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminCreateRedeemBatchdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminCreateRedeemBatchdefaultJSONResponse) VisitAdminCreateRedeemBatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminExportRedeemBatchRequestObject struct {
+	BatchId openapi_types.UUID `json:"batchId"`
+}
+
+type AdminExportRedeemBatchResponseObject interface {
+	VisitAdminExportRedeemBatchResponse(w http.ResponseWriter) error
+}
+
+type AdminExportRedeemBatch200TextcsvResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response AdminExportRedeemBatch200TextcsvResponse) VisitAdminExportRedeemBatchResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/csv")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type AdminExportRedeemBatchdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminExportRedeemBatchdefaultJSONResponse) VisitAdminExportRedeemBatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminListRedeemCodesRequestObject struct {
+	Params AdminListRedeemCodesParams
+}
+
+type AdminListRedeemCodesResponseObject interface {
+	VisitAdminListRedeemCodesResponse(w http.ResponseWriter) error
+}
+
+type AdminListRedeemCodes200JSONResponse RedeemCodePage
+
+func (response AdminListRedeemCodes200JSONResponse) VisitAdminListRedeemCodesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminListRedeemCodesdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminListRedeemCodesdefaultJSONResponse) VisitAdminListRedeemCodesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminVoidRedeemCodeRequestObject struct {
+	CodeId openapi_types.UUID `json:"codeId"`
+}
+
+type AdminVoidRedeemCodeResponseObject interface {
+	VisitAdminVoidRedeemCodeResponse(w http.ResponseWriter) error
+}
+
+type AdminVoidRedeemCode200JSONResponse RedeemCode
+
+func (response AdminVoidRedeemCode200JSONResponse) VisitAdminVoidRedeemCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminVoidRedeemCodedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminVoidRedeemCodedefaultJSONResponse) VisitAdminVoidRedeemCodeResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -6485,6 +8348,77 @@ func (response AdminListUserKeysdefaultJSONResponse) VisitAdminListUserKeysRespo
 	return err
 }
 
+type ListActiveAnnouncementsRequestObject struct {
+}
+
+type ListActiveAnnouncementsResponseObject interface {
+	VisitListActiveAnnouncementsResponse(w http.ResponseWriter) error
+}
+
+type ListActiveAnnouncements200JSONResponse AnnouncementList
+
+func (response ListActiveAnnouncements200JSONResponse) VisitListActiveAnnouncementsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListActiveAnnouncementsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListActiveAnnouncementsdefaultJSONResponse) VisitListActiveAnnouncementsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DismissAnnouncementRequestObject struct {
+	AnnouncementId AnnouncementId `json:"announcementId"`
+}
+
+type DismissAnnouncementResponseObject interface {
+	VisitDismissAnnouncementResponse(w http.ResponseWriter) error
+}
+
+type DismissAnnouncement204Response struct {
+}
+
+func (response DismissAnnouncement204Response) VisitDismissAnnouncementResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DismissAnnouncementdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DismissAnnouncementdefaultJSONResponse) VisitDismissAnnouncementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type LoginRequestObject struct {
 	Body *LoginJSONRequestBody
 }
@@ -6601,6 +8535,45 @@ type GetBalancedefaultJSONResponse struct {
 }
 
 func (response GetBalancedefaultJSONResponse) VisitGetBalanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RedeemCodeRequestObject struct {
+	Body *RedeemCodeJSONRequestBody
+}
+
+type RedeemCodeResponseObject interface {
+	VisitRedeemCodeResponse(w http.ResponseWriter) error
+}
+
+type RedeemCode200JSONResponse RedeemResult
+
+func (response RedeemCode200JSONResponse) VisitRedeemCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RedeemCodedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RedeemCodedefaultJSONResponse) VisitRedeemCodeResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -6801,6 +8774,84 @@ func (response UpdateKeydefaultJSONResponse) VisitUpdateKeyResponse(w http.Respo
 	return err
 }
 
+type GetKeyLimitsRequestObject struct {
+	KeyId KeyId `json:"keyId"`
+}
+
+type GetKeyLimitsResponseObject interface {
+	VisitGetKeyLimitsResponse(w http.ResponseWriter) error
+}
+
+type GetKeyLimits200JSONResponse KeyLimitStatus
+
+func (response GetKeyLimits200JSONResponse) VisitGetKeyLimitsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetKeyLimitsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetKeyLimitsdefaultJSONResponse) VisitGetKeyLimitsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResetKeyUsageRequestObject struct {
+	KeyId KeyId `json:"keyId"`
+}
+
+type ResetKeyUsageResponseObject interface {
+	VisitResetKeyUsageResponse(w http.ResponseWriter) error
+}
+
+type ResetKeyUsage200JSONResponse ApiKey
+
+func (response ResetKeyUsage200JSONResponse) VisitResetKeyUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResetKeyUsagedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ResetKeyUsagedefaultJSONResponse) VisitResetKeyUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetKeySecretRequestObject struct {
 	KeyId KeyId `json:"keyId"`
 }
@@ -6829,6 +8880,46 @@ type GetKeySecretdefaultJSONResponse struct {
 }
 
 func (response GetKeySecretdefaultJSONResponse) VisitGetKeySecretResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetKeyDailyUsageRequestObject struct {
+	KeyId  KeyId `json:"keyId"`
+	Params GetKeyDailyUsageParams
+}
+
+type GetKeyDailyUsageResponseObject interface {
+	VisitGetKeyDailyUsageResponse(w http.ResponseWriter) error
+}
+
+type GetKeyDailyUsage200JSONResponse KeyDailyUsage
+
+func (response GetKeyDailyUsage200JSONResponse) VisitGetKeyDailyUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetKeyDailyUsagedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetKeyDailyUsagedefaultJSONResponse) VisitGetKeyDailyUsageResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -7104,6 +9195,82 @@ func (response PurchasePlandefaultJSONResponse) VisitPurchasePlanResponse(w http
 	return err
 }
 
+type GetPricingRequestObject struct {
+}
+
+type GetPricingResponseObject interface {
+	VisitGetPricingResponse(w http.ResponseWriter) error
+}
+
+type GetPricing200JSONResponse Pricing
+
+func (response GetPricing200JSONResponse) VisitGetPricingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPricingdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetPricingdefaultJSONResponse) VisitGetPricingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPublicKeyUsageRequestObject struct {
+}
+
+type GetPublicKeyUsageResponseObject interface {
+	VisitGetPublicKeyUsageResponse(w http.ResponseWriter) error
+}
+
+type GetPublicKeyUsage200JSONResponse PublicKeyUsage
+
+func (response GetPublicKeyUsage200JSONResponse) VisitGetPublicKeyUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPublicKeyUsagedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetPublicKeyUsagedefaultJSONResponse) VisitGetPublicKeyUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListMySubscriptionsRequestObject struct {
 }
 
@@ -7210,6 +9377,45 @@ type RenewSubscriptiondefaultJSONResponse struct {
 }
 
 func (response RenewSubscriptiondefaultJSONResponse) VisitRenewSubscriptionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyKeyUsageRequestObject struct {
+	Params GetMyKeyUsageParams
+}
+
+type GetMyKeyUsageResponseObject interface {
+	VisitGetMyKeyUsageResponse(w http.ResponseWriter) error
+}
+
+type GetMyKeyUsage200JSONResponse KeyUsageComparison
+
+func (response GetMyKeyUsage200JSONResponse) VisitGetMyKeyUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyKeyUsagedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetMyKeyUsagedefaultJSONResponse) VisitGetMyKeyUsageResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -7338,14 +9544,35 @@ type StrictServerInterface interface {
 	// (POST /admin/accounts/{accountId}/test)
 	AdminTestAccount(ctx context.Context, request AdminTestAccountRequestObject) (AdminTestAccountResponseObject, error)
 
+	// (GET /admin/announcements)
+	AdminListAnnouncements(ctx context.Context, request AdminListAnnouncementsRequestObject) (AdminListAnnouncementsResponseObject, error)
+
+	// (POST /admin/announcements)
+	AdminCreateAnnouncement(ctx context.Context, request AdminCreateAnnouncementRequestObject) (AdminCreateAnnouncementResponseObject, error)
+
+	// (DELETE /admin/announcements/{announcementId})
+	AdminDeleteAnnouncement(ctx context.Context, request AdminDeleteAnnouncementRequestObject) (AdminDeleteAnnouncementResponseObject, error)
+
+	// (PATCH /admin/announcements/{announcementId})
+	AdminUpdateAnnouncement(ctx context.Context, request AdminUpdateAnnouncementRequestObject) (AdminUpdateAnnouncementResponseObject, error)
+
 	// (GET /admin/audit-logs)
 	AdminListAuditLogs(ctx context.Context, request AdminListAuditLogsRequestObject) (AdminListAuditLogsResponseObject, error)
 	// AdminEvents Server-sent events across replicas.
 	// (GET /admin/events)
 	AdminEvents(ctx context.Context, request AdminEventsRequestObject) (AdminEventsResponseObject, error)
+	// AdminUpdateKey Edit any user's key (limits included).
+	// (PATCH /admin/keys/{keyId})
+	AdminUpdateKey(ctx context.Context, request AdminUpdateKeyRequestObject) (AdminUpdateKeyResponseObject, error)
 	// AdminSetKeyEnabled Enable or disable any user's key (takes effect on every replica at once).
 	// (PUT /admin/keys/{keyId}/enabled)
 	AdminSetKeyEnabled(ctx context.Context, request AdminSetKeyEnabledRequestObject) (AdminSetKeyEnabledResponseObject, error)
+
+	// (GET /admin/keys/{keyId}/limits)
+	AdminGetKeyLimits(ctx context.Context, request AdminGetKeyLimitsRequestObject) (AdminGetKeyLimitsResponseObject, error)
+
+	// (POST /admin/keys/{keyId}/reset-usage)
+	AdminResetKeyUsage(ctx context.Context, request AdminResetKeyUsageRequestObject) (AdminResetKeyUsageResponseObject, error)
 
 	// (GET /admin/ledger)
 	AdminListLedger(ctx context.Context, request AdminListLedgerRequestObject) (AdminListLedgerResponseObject, error)
@@ -7376,6 +9603,21 @@ type StrictServerInterface interface {
 	// AdminRunReconcile Run the ledger / balance / charge reconciliation now.
 	// (POST /admin/reconcile)
 	AdminRunReconcile(ctx context.Context, request AdminRunReconcileRequestObject) (AdminRunReconcileResponseObject, error)
+
+	// (GET /admin/redeem-batches)
+	AdminListRedeemBatches(ctx context.Context, request AdminListRedeemBatchesRequestObject) (AdminListRedeemBatchesResponseObject, error)
+
+	// (POST /admin/redeem-batches)
+	AdminCreateRedeemBatch(ctx context.Context, request AdminCreateRedeemBatchRequestObject) (AdminCreateRedeemBatchResponseObject, error)
+	// AdminExportRedeemBatch CSV of every code of a batch, original text included (audited).
+	// (GET /admin/redeem-batches/{batchId}/export)
+	AdminExportRedeemBatch(ctx context.Context, request AdminExportRedeemBatchRequestObject) (AdminExportRedeemBatchResponseObject, error)
+
+	// (GET /admin/redeem-codes)
+	AdminListRedeemCodes(ctx context.Context, request AdminListRedeemCodesRequestObject) (AdminListRedeemCodesResponseObject, error)
+
+	// (POST /admin/redeem-codes/{codeId}/void)
+	AdminVoidRedeemCode(ctx context.Context, request AdminVoidRedeemCodeRequestObject) (AdminVoidRedeemCodeResponseObject, error)
 
 	// (GET /admin/request-logs)
 	AdminListRequestLogs(ctx context.Context, request AdminListRequestLogsRequestObject) (AdminListRequestLogsResponseObject, error)
@@ -7427,6 +9669,12 @@ type StrictServerInterface interface {
 	// AdminListUserKeys The user's API keys (secrets are never returned here).
 	// (GET /admin/users/{userId}/keys)
 	AdminListUserKeys(ctx context.Context, request AdminListUserKeysRequestObject) (AdminListUserKeysResponseObject, error)
+	// ListActiveAnnouncements Announcements in effect now that the caller has not dismissed.
+	// (GET /announcements)
+	ListActiveAnnouncements(ctx context.Context, request ListActiveAnnouncementsRequestObject) (ListActiveAnnouncementsResponseObject, error)
+
+	// (POST /announcements/{announcementId}/dismiss)
+	DismissAnnouncement(ctx context.Context, request DismissAnnouncementRequestObject) (DismissAnnouncementResponseObject, error)
 	// Login Log in with username and password (rate limited).
 	// (POST /auth/login)
 	Login(ctx context.Context, request LoginRequestObject) (LoginResponseObject, error)
@@ -7436,6 +9684,9 @@ type StrictServerInterface interface {
 
 	// (GET /balance)
 	GetBalance(ctx context.Context, request GetBalanceRequestObject) (GetBalanceResponseObject, error)
+	// RedeemCode Redeem a code into the balance (rate limited per user; repeated failures lock redemption for a while).
+	// (POST /balance/redeem)
+	RedeemCode(ctx context.Context, request RedeemCodeRequestObject) (RedeemCodeResponseObject, error)
 
 	// (GET /keys)
 	ListKeys(ctx context.Context, request ListKeysRequestObject) (ListKeysResponseObject, error)
@@ -7451,9 +9702,18 @@ type StrictServerInterface interface {
 
 	// (PATCH /keys/{keyId})
 	UpdateKey(ctx context.Context, request UpdateKeyRequestObject) (UpdateKeyResponseObject, error)
+	// GetKeyLimits Real-time limits and usage of a key (quota and sliding windows).
+	// (GET /keys/{keyId}/limits)
+	GetKeyLimits(ctx context.Context, request GetKeyLimitsRequestObject) (GetKeyLimitsResponseObject, error)
+	// ResetKeyUsage Reset the used amount of the total quota to 0 (windows slide on their own and are not affected).
+	// (POST /keys/{keyId}/reset-usage)
+	ResetKeyUsage(ctx context.Context, request ResetKeyUsageRequestObject) (ResetKeyUsageResponseObject, error)
 
 	// (GET /keys/{keyId}/secret)
 	GetKeySecret(ctx context.Context, request GetKeySecretRequestObject) (GetKeySecretResponseObject, error)
+
+	// (GET /keys/{keyId}/usage/daily)
+	GetKeyDailyUsage(ctx context.Context, request GetKeyDailyUsageRequestObject) (GetKeyDailyUsageResponseObject, error)
 
 	// (GET /ledger)
 	ListMyLedger(ctx context.Context, request ListMyLedgerRequestObject) (ListMyLedgerResponseObject, error)
@@ -7475,6 +9735,12 @@ type StrictServerInterface interface {
 	// PurchasePlan Buy a plan with the balance (no overdraft). The subscription waits for an admin to assign an account.
 	// (POST /plans/{planId}/purchase)
 	PurchasePlan(ctx context.Context, request PurchasePlanRequestObject) (PurchasePlanResponseObject, error)
+	// GetPricing Per-million-token prices of every model served by an enabled account, per tier.
+	// (GET /pricing)
+	GetPricing(ctx context.Context, request GetPricingRequestObject) (GetPricingResponseObject, error)
+	// GetPublicKeyUsage Usage of the API key in the request headers (no login).
+	// (GET /public/key-usage)
+	GetPublicKeyUsage(ctx context.Context, request GetPublicKeyUsageRequestObject) (GetPublicKeyUsageResponseObject, error)
 
 	// (GET /subscriptions)
 	ListMySubscriptions(ctx context.Context, request ListMySubscriptionsRequestObject) (ListMySubscriptionsResponseObject, error)
@@ -7484,6 +9750,9 @@ type StrictServerInterface interface {
 	// RenewSubscription Renew by one duration (charged to the balance; from now when already expired).
 	// (POST /subscriptions/{subscriptionId}/renew)
 	RenewSubscription(ctx context.Context, request RenewSubscriptionRequestObject) (RenewSubscriptionResponseObject, error)
+
+	// (GET /usage/keys)
+	GetMyKeyUsage(ctx context.Context, request GetMyKeyUsageRequestObject) (GetMyKeyUsageResponseObject, error)
 
 	// (GET /usage/logs)
 	ListMyUsageLogs(ctx context.Context, request ListMyUsageLogsRequestObject) (ListMyUsageLogsResponseObject, error)
@@ -7868,6 +10137,120 @@ func (sh *strictHandler) AdminTestAccount(w http.ResponseWriter, r *http.Request
 	}
 }
 
+// AdminListAnnouncements operation middleware
+func (sh *strictHandler) AdminListAnnouncements(w http.ResponseWriter, r *http.Request) {
+	var request AdminListAnnouncementsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminListAnnouncements(ctx, request.(AdminListAnnouncementsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminListAnnouncements")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminListAnnouncementsResponseObject); ok {
+		if err := validResponse.VisitAdminListAnnouncementsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminCreateAnnouncement operation middleware
+func (sh *strictHandler) AdminCreateAnnouncement(w http.ResponseWriter, r *http.Request) {
+	var request AdminCreateAnnouncementRequestObject
+
+	var body AdminCreateAnnouncementJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminCreateAnnouncement(ctx, request.(AdminCreateAnnouncementRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminCreateAnnouncement")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminCreateAnnouncementResponseObject); ok {
+		if err := validResponse.VisitAdminCreateAnnouncementResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminDeleteAnnouncement operation middleware
+func (sh *strictHandler) AdminDeleteAnnouncement(w http.ResponseWriter, r *http.Request, announcementId AnnouncementId) {
+	var request AdminDeleteAnnouncementRequestObject
+
+	request.AnnouncementId = announcementId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminDeleteAnnouncement(ctx, request.(AdminDeleteAnnouncementRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminDeleteAnnouncement")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminDeleteAnnouncementResponseObject); ok {
+		if err := validResponse.VisitAdminDeleteAnnouncementResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminUpdateAnnouncement operation middleware
+func (sh *strictHandler) AdminUpdateAnnouncement(w http.ResponseWriter, r *http.Request, announcementId AnnouncementId) {
+	var request AdminUpdateAnnouncementRequestObject
+
+	request.AnnouncementId = announcementId
+
+	var body AdminUpdateAnnouncementJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminUpdateAnnouncement(ctx, request.(AdminUpdateAnnouncementRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminUpdateAnnouncement")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminUpdateAnnouncementResponseObject); ok {
+		if err := validResponse.VisitAdminUpdateAnnouncementResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // AdminListAuditLogs operation middleware
 func (sh *strictHandler) AdminListAuditLogs(w http.ResponseWriter, r *http.Request, params AdminListAuditLogsParams) {
 	var request AdminListAuditLogsRequestObject
@@ -7918,6 +10301,39 @@ func (sh *strictHandler) AdminEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// AdminUpdateKey operation middleware
+func (sh *strictHandler) AdminUpdateKey(w http.ResponseWriter, r *http.Request, keyId KeyId) {
+	var request AdminUpdateKeyRequestObject
+
+	request.KeyId = keyId
+
+	var body AdminUpdateKeyJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminUpdateKey(ctx, request.(AdminUpdateKeyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminUpdateKey")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminUpdateKeyResponseObject); ok {
+		if err := validResponse.VisitAdminUpdateKeyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // AdminSetKeyEnabled operation middleware
 func (sh *strictHandler) AdminSetKeyEnabled(w http.ResponseWriter, r *http.Request, keyId KeyId) {
 	var request AdminSetKeyEnabledRequestObject
@@ -7944,6 +10360,58 @@ func (sh *strictHandler) AdminSetKeyEnabled(w http.ResponseWriter, r *http.Reque
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AdminSetKeyEnabledResponseObject); ok {
 		if err := validResponse.VisitAdminSetKeyEnabledResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminGetKeyLimits operation middleware
+func (sh *strictHandler) AdminGetKeyLimits(w http.ResponseWriter, r *http.Request, keyId KeyId) {
+	var request AdminGetKeyLimitsRequestObject
+
+	request.KeyId = keyId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminGetKeyLimits(ctx, request.(AdminGetKeyLimitsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminGetKeyLimits")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminGetKeyLimitsResponseObject); ok {
+		if err := validResponse.VisitAdminGetKeyLimitsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminResetKeyUsage operation middleware
+func (sh *strictHandler) AdminResetKeyUsage(w http.ResponseWriter, r *http.Request, keyId KeyId) {
+	var request AdminResetKeyUsageRequestObject
+
+	request.KeyId = keyId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminResetKeyUsage(ctx, request.(AdminResetKeyUsageRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminResetKeyUsage")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminResetKeyUsageResponseObject); ok {
+		if err := validResponse.VisitAdminResetKeyUsageResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -8206,6 +10674,141 @@ func (sh *strictHandler) AdminRunReconcile(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AdminRunReconcileResponseObject); ok {
 		if err := validResponse.VisitAdminRunReconcileResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminListRedeemBatches operation middleware
+func (sh *strictHandler) AdminListRedeemBatches(w http.ResponseWriter, r *http.Request, params AdminListRedeemBatchesParams) {
+	var request AdminListRedeemBatchesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminListRedeemBatches(ctx, request.(AdminListRedeemBatchesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminListRedeemBatches")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminListRedeemBatchesResponseObject); ok {
+		if err := validResponse.VisitAdminListRedeemBatchesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminCreateRedeemBatch operation middleware
+func (sh *strictHandler) AdminCreateRedeemBatch(w http.ResponseWriter, r *http.Request) {
+	var request AdminCreateRedeemBatchRequestObject
+
+	var body AdminCreateRedeemBatchJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminCreateRedeemBatch(ctx, request.(AdminCreateRedeemBatchRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminCreateRedeemBatch")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminCreateRedeemBatchResponseObject); ok {
+		if err := validResponse.VisitAdminCreateRedeemBatchResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminExportRedeemBatch operation middleware
+func (sh *strictHandler) AdminExportRedeemBatch(w http.ResponseWriter, r *http.Request, batchId openapi_types.UUID) {
+	var request AdminExportRedeemBatchRequestObject
+
+	request.BatchId = batchId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminExportRedeemBatch(ctx, request.(AdminExportRedeemBatchRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminExportRedeemBatch")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminExportRedeemBatchResponseObject); ok {
+		if err := validResponse.VisitAdminExportRedeemBatchResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminListRedeemCodes operation middleware
+func (sh *strictHandler) AdminListRedeemCodes(w http.ResponseWriter, r *http.Request, params AdminListRedeemCodesParams) {
+	var request AdminListRedeemCodesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminListRedeemCodes(ctx, request.(AdminListRedeemCodesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminListRedeemCodes")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminListRedeemCodesResponseObject); ok {
+		if err := validResponse.VisitAdminListRedeemCodesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminVoidRedeemCode operation middleware
+func (sh *strictHandler) AdminVoidRedeemCode(w http.ResponseWriter, r *http.Request, codeId openapi_types.UUID) {
+	var request AdminVoidRedeemCodeRequestObject
+
+	request.CodeId = codeId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminVoidRedeemCode(ctx, request.(AdminVoidRedeemCodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminVoidRedeemCode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminVoidRedeemCodeResponseObject); ok {
+		if err := validResponse.VisitAdminVoidRedeemCodeResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -8707,6 +11310,56 @@ func (sh *strictHandler) AdminListUserKeys(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// ListActiveAnnouncements operation middleware
+func (sh *strictHandler) ListActiveAnnouncements(w http.ResponseWriter, r *http.Request) {
+	var request ListActiveAnnouncementsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListActiveAnnouncements(ctx, request.(ListActiveAnnouncementsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListActiveAnnouncements")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListActiveAnnouncementsResponseObject); ok {
+		if err := validResponse.VisitListActiveAnnouncementsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DismissAnnouncement operation middleware
+func (sh *strictHandler) DismissAnnouncement(w http.ResponseWriter, r *http.Request, announcementId AnnouncementId) {
+	var request DismissAnnouncementRequestObject
+
+	request.AnnouncementId = announcementId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DismissAnnouncement(ctx, request.(DismissAnnouncementRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DismissAnnouncement")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DismissAnnouncementResponseObject); ok {
+		if err := validResponse.VisitDismissAnnouncementResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Login operation middleware
 func (sh *strictHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var request LoginRequestObject
@@ -8779,6 +11432,37 @@ func (sh *strictHandler) GetBalance(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetBalanceResponseObject); ok {
 		if err := validResponse.VisitGetBalanceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RedeemCode operation middleware
+func (sh *strictHandler) RedeemCode(w http.ResponseWriter, r *http.Request) {
+	var request RedeemCodeRequestObject
+
+	var body RedeemCodeJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RedeemCode(ctx, request.(RedeemCodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RedeemCode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RedeemCodeResponseObject); ok {
+		if err := validResponse.VisitRedeemCodeResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -8926,6 +11610,58 @@ func (sh *strictHandler) UpdateKey(w http.ResponseWriter, r *http.Request, keyId
 	}
 }
 
+// GetKeyLimits operation middleware
+func (sh *strictHandler) GetKeyLimits(w http.ResponseWriter, r *http.Request, keyId KeyId) {
+	var request GetKeyLimitsRequestObject
+
+	request.KeyId = keyId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetKeyLimits(ctx, request.(GetKeyLimitsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetKeyLimits")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetKeyLimitsResponseObject); ok {
+		if err := validResponse.VisitGetKeyLimitsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ResetKeyUsage operation middleware
+func (sh *strictHandler) ResetKeyUsage(w http.ResponseWriter, r *http.Request, keyId KeyId) {
+	var request ResetKeyUsageRequestObject
+
+	request.KeyId = keyId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ResetKeyUsage(ctx, request.(ResetKeyUsageRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ResetKeyUsage")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ResetKeyUsageResponseObject); ok {
+		if err := validResponse.VisitResetKeyUsageResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetKeySecret operation middleware
 func (sh *strictHandler) GetKeySecret(w http.ResponseWriter, r *http.Request, keyId KeyId) {
 	var request GetKeySecretRequestObject
@@ -8945,6 +11681,33 @@ func (sh *strictHandler) GetKeySecret(w http.ResponseWriter, r *http.Request, ke
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetKeySecretResponseObject); ok {
 		if err := validResponse.VisitGetKeySecretResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetKeyDailyUsage operation middleware
+func (sh *strictHandler) GetKeyDailyUsage(w http.ResponseWriter, r *http.Request, keyId KeyId, params GetKeyDailyUsageParams) {
+	var request GetKeyDailyUsageRequestObject
+
+	request.KeyId = keyId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetKeyDailyUsage(ctx, request.(GetKeyDailyUsageRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetKeyDailyUsage")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetKeyDailyUsageResponseObject); ok {
+		if err := validResponse.VisitGetKeyDailyUsageResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -9141,6 +11904,54 @@ func (sh *strictHandler) PurchasePlan(w http.ResponseWriter, r *http.Request, pl
 	}
 }
 
+// GetPricing operation middleware
+func (sh *strictHandler) GetPricing(w http.ResponseWriter, r *http.Request) {
+	var request GetPricingRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPricing(ctx, request.(GetPricingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPricing")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPricingResponseObject); ok {
+		if err := validResponse.VisitGetPricingResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetPublicKeyUsage operation middleware
+func (sh *strictHandler) GetPublicKeyUsage(w http.ResponseWriter, r *http.Request) {
+	var request GetPublicKeyUsageRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPublicKeyUsage(ctx, request.(GetPublicKeyUsageRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPublicKeyUsage")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPublicKeyUsageResponseObject); ok {
+		if err := validResponse.VisitGetPublicKeyUsageResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListMySubscriptions operation middleware
 func (sh *strictHandler) ListMySubscriptions(w http.ResponseWriter, r *http.Request) {
 	var request ListMySubscriptionsRequestObject
@@ -9217,6 +12028,32 @@ func (sh *strictHandler) RenewSubscription(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RenewSubscriptionResponseObject); ok {
 		if err := validResponse.VisitRenewSubscriptionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMyKeyUsage operation middleware
+func (sh *strictHandler) GetMyKeyUsage(w http.ResponseWriter, r *http.Request, params GetMyKeyUsageParams) {
+	var request GetMyKeyUsageRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMyKeyUsage(ctx, request.(GetMyKeyUsageRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMyKeyUsage")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMyKeyUsageResponseObject); ok {
+		if err := validResponse.VisitGetMyKeyUsageResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

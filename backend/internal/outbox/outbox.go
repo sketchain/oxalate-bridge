@@ -103,6 +103,12 @@ func (d *Dispatcher) deliver(ctx context.Context, row sqlc.Outbox) error {
 			return err
 		}
 		return d.St.SyncBase(ctx, ws.Wallet, ws.Base, ws.Version)
+	case store.OutboxKeySync:
+		var ks store.KeySync
+		if err := json.Unmarshal(row.Payload, &ks); err != nil {
+			return err
+		}
+		return d.St.SyncKeyBase(ctx, ks.Key, ks.All, ks.Balance, ks.Version)
 	case store.OutboxSettings:
 		return d.St.R.Publish(ctx, d.St.ChanSettings(), "reload").Err()
 	case store.OutboxRouting:

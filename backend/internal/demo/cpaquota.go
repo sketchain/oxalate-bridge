@@ -65,7 +65,11 @@ func (s *seeder) cpaQuota(ctx context.Context) error {
 		qa := quota.Accounts[0]
 		auth := qa.AuthIndex
 		five, week := qa.FiveHour, qa.Week
-		k := prof.K
+		// k exactly as /quota reports it (week total ÷ 5-hour total).
+		k := prof.K()
+		if qa.K != nil {
+			k = *qa.K
+		}
 		peak5, peak7 := five.UsedPercent, week.UsedPercent
 		detail, _ := json.Marshal(map[string]any{"auth_index": auth, "provider": "claude", "k": k, "demo": true,
 			"profile": map[string]any{"tier": prof.Tier, "five_hour_total_usd": prof.FiveTotal, "weekly_total_usd": prof.WeekTotal,

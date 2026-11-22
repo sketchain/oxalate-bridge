@@ -33,6 +33,7 @@ import (
 	"github.com/sketchain/oxalate-bridge/backend/internal/db/sqlc"
 	"github.com/sketchain/oxalate-bridge/backend/internal/events"
 	"github.com/sketchain/oxalate-bridge/backend/internal/jobs"
+	"github.com/sketchain/oxalate-bridge/backend/internal/keymeter"
 	"github.com/sketchain/oxalate-bridge/backend/internal/metrics"
 	"github.com/sketchain/oxalate-bridge/backend/internal/outbox"
 	"github.com/sketchain/oxalate-bridge/backend/internal/proxy"
@@ -159,11 +160,14 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	if transport == nil {
 		transport = proxy.NewTransport()
 	}
+	meter := &keymeter.Meter{St: a.St, Q: a.Store.Q}
 	a.Proxy = &proxy.Proxy{Auth: a.Auth, Router: a.Router, St: a.St, Settings: a.Settings, Prices: a.Prices, Store: a.Store,
-		Log: log, Transport: transport, ClientIP: a.ClientIP, OnAccountError: a.requestCatalogReload}
+		Log: log, Transport: transport, ClientIP: a.ClientIP, OnAccountError: a.requestCatalogReload, Meter: meter}
 	a.API = &api.Server{Store: a.Store, St: a.St, Box: box, Settings: a.Settings, Router: a.Router, Cat: a.Cat, Subs: a.Subs,
 		Prices: a.Prices, CPA: a.CPA, Hub: a.Hub, Auth: a.Auth, Log: log, CookieSecure: cfg.CookieSecure,
-		RefreshPrices: a.refreshPrices, Avail: a.Avail, Location: cfg.Location, CPAQuota: &cpaquota.Reader{Pool: pool, Schema: cfg.CPAQuotaSchema}}
+		RefreshPrices: a.refreshPrices, Avail: a.Avail, Location: cfg.Location, CPAQuota: &cpaquota.Reader{Pool: pool, Schema: cfg.CPAQuotaSchema},
+		Meter: meter, ClientIPOf: a.ClientIP}
+	a.Proxy.Status = func(ctx context.Context, info authcache.Info) (any, error) { return a.API.KeyStatusOf(ctx, info) }
 	a.Hub.OnInvalidate = a.Auth.DropL1
 	a.Hub.OnSettings = func() {
 		if err := a.Settings.Load(context.Background(), a.Store.Q); err != nil {

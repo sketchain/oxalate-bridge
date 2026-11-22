@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: oxalate-bridge panel API
-  version: 0.3.0
+  version: 0.4.0
   description: |
     Panel API of oxalate-bridge. This file is the single source of truth: the
     backend server code is generated from it with oapi-codegen (chi strict
@@ -25,6 +25,16 @@ info:
 
     The relay endpoints (`/v1/messages`, `/v1/messages/count_tokens`,
     `GET /v1/models`; Claude Messages protocol only) are not part of this API.
+    `GET /v1/bridge/status` (relay domain, API key auth exactly as /v1/messages,
+    not billed or logged, rate limited separately) returns a `KeyStatus`.
+
+    Relay rejections caused by the key itself are Anthropic-shaped errors and never
+    fall through to the next tier: `key_expired` (403, permission_error),
+    `ip_not_allowed` (403, permission_error), `model_not_allowed` (403,
+    permission_error), `key_quota_exhausted` (429, rate_limit_error) and
+    `key_window_exhausted` (429, rate_limit_error; `window` and `recovers_at` say
+    which window and when it is expected to allow requests again). The code is in
+    `error.code` and is also the request log's `error_type`.
 servers:
   - url: /api/v1
 security:
@@ -191,6 +201,51 @@ paths:
               schema: { $ref: '#/components/schemas/ApiKeySecret' }
         default: { $ref: '#/components/responses/Error' }
 
+  /keys/{keyId}/limits:
+    parameters:
+      - $ref: '#/components/parameters/KeyId'
+    get:
+      tags: [keys]
+      operationId: getKeyLimits
+      summary: Real-time limits and usage of a key (quota and sliding windows).
+      responses:
+        '200':
+          description: Limit status.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KeyLimitStatus' }
+        default: { $ref: '#/components/responses/Error' }
+  /keys/{keyId}/reset-usage:
+    parameters:
+      - $ref: '#/components/parameters/KeyId'
+    post:
+      tags: [keys]
+      operationId: resetKeyUsage
+      summary: Reset the used amount of the total quota to 0 (windows slide on their own and are not affected).
+      responses:
+        '200':
+          description: Updated key.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiKey' }
+        default: { $ref: '#/components/responses/Error' }
+  /keys/{keyId}/usage/daily:
+    parameters:
+      - $ref: '#/components/parameters/KeyId'
+    get:
+      tags: [usage]
+      operationId: getKeyDailyUsage
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 90, default: 30 }
+      responses:
+        '200':
+          description: Per day (server time zone) and tier, from the hourly rollup.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KeyDailyUsage' }
+        default: { $ref: '#/components/responses/Error' }
   /balance:
     get:
       tags: [billing]
@@ -218,6 +273,74 @@ paths:
               schema: { $ref: '#/components/schemas/LedgerPage' }
         default: { $ref: '#/components/responses/Error' }
 
+  /balance/redeem:
+    post:
+      tags: [billing]
+      operationId: redeemCode
+      summary: Redeem a code into the balance (rate limited per user; repeated failures lock redemption for a while).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RedeemRequest' }
+      responses:
+        '200':
+          description: Redeemed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RedeemResult' }
+        default: { $ref: '#/components/responses/Error' }
+  /announcements:
+    get:
+      tags: [billing]
+      operationId: listActiveAnnouncements
+      summary: Announcements in effect now that the caller has not dismissed.
+      responses:
+        '200':
+          description: Announcements.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnnouncementList' }
+        default: { $ref: '#/components/responses/Error' }
+  /announcements/{announcementId}/dismiss:
+    parameters:
+      - $ref: '#/components/parameters/AnnouncementId'
+    post:
+      tags: [billing]
+      operationId: dismissAnnouncement
+      responses:
+        '204': { description: Dismissed for the caller (remembered on the server). }
+        default: { $ref: '#/components/responses/Error' }
+  /pricing:
+    get:
+      tags: [usage]
+      operationId: getPricing
+      summary: Per-million-token prices of every model served by an enabled account, per tier.
+      responses:
+        '200':
+          description: Prices.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Pricing' }
+        default: { $ref: '#/components/responses/Error' }
+  /public/key-usage:
+    get:
+      tags: [keys]
+      operationId: getPublicKeyUsage
+      security: []
+      summary: Usage of the API key in the request headers (no login).
+      description: |
+        The key is read from `Authorization: Bearer` or `x-api-key` only (never from the URL).
+        Rate limited per client IP and per key. An unknown or deleted key is a uniform 401;
+        a disabled or expired key still answers with its status. `account` is present only
+        when the key allows owner queries.
+      responses:
+        '200':
+          description: Key usage.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicKeyUsage' }
+        default: { $ref: '#/components/responses/Error' }
   /plans:
     get:
       tags: [plans]
@@ -310,6 +433,20 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/MyRequestLogPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /usage/keys:
+    get:
+      tags: [usage]
+      operationId: getMyKeyUsage
+      parameters:
+        - $ref: '#/components/parameters/FromRequired'
+        - $ref: '#/components/parameters/ToRequired'
+      responses:
+        '200':
+          description: Totals per key and the daily series of the top 10 keys by billed amount (from the hourly rollup).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KeyUsageComparison' }
         default: { $ref: '#/components/responses/Error' }
   /usage/summary:
     get:
@@ -459,6 +596,51 @@ paths:
               schema: { $ref: '#/components/schemas/ApiKey' }
         default: { $ref: '#/components/responses/Error' }
 
+  /admin/keys/{keyId}:
+    parameters:
+      - $ref: '#/components/parameters/KeyId'
+    patch:
+      tags: [admin-users]
+      operationId: adminUpdateKey
+      summary: Edit any user's key (limits included).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApiKeyUpdate' }
+      responses:
+        '200':
+          description: Updated key.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiKey' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/keys/{keyId}/limits:
+    parameters:
+      - $ref: '#/components/parameters/KeyId'
+    get:
+      tags: [admin-users]
+      operationId: adminGetKeyLimits
+      responses:
+        '200':
+          description: Limit status.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KeyLimitStatus' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/keys/{keyId}/reset-usage:
+    parameters:
+      - $ref: '#/components/parameters/KeyId'
+    post:
+      tags: [admin-users]
+      operationId: adminResetKeyUsage
+      responses:
+        '200':
+          description: Updated key.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiKey' }
+        default: { $ref: '#/components/responses/Error' }
   /admin/overview:
     get:
       tags: [admin-system]
@@ -1031,6 +1213,138 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ReconcileResult' }
         default: { $ref: '#/components/responses/Error' }
+  /admin/redeem-batches:
+    get:
+      tags: [admin-system]
+      operationId: adminListRedeemBatches
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Batches, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RedeemBatchPage' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [admin-system]
+      operationId: adminCreateRedeemBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RedeemBatchCreate' }
+      responses:
+        '201':
+          description: Created batch.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RedeemBatch' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/redeem-batches/{batchId}/export:
+    parameters:
+      - name: batchId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [admin-system]
+      operationId: adminExportRedeemBatch
+      summary: CSV of every code of a batch, original text included (audited).
+      responses:
+        '200':
+          description: CSV (code,amount_usd,status,used_by,used_at,expires_at).
+          content:
+            text/csv:
+              schema: { type: string }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/redeem-codes:
+    get:
+      tags: [admin-system]
+      operationId: adminListRedeemCodes
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: batch_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/RedeemCodeStatus' }
+      responses:
+        '200':
+          description: Codes (masked), newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RedeemCodePage' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/redeem-codes/{codeId}/void:
+    parameters:
+      - name: codeId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [admin-system]
+      operationId: adminVoidRedeemCode
+      responses:
+        '200':
+          description: Voided code (only unused codes can be voided).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RedeemCode' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/announcements:
+    get:
+      tags: [admin-system]
+      operationId: adminListAnnouncements
+      responses:
+        '200':
+          description: All announcements, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnnouncementList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [admin-system]
+      operationId: adminCreateAnnouncement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnnouncementInput' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Announcement' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/announcements/{announcementId}:
+    parameters:
+      - $ref: '#/components/parameters/AnnouncementId'
+    patch:
+      tags: [admin-system]
+      operationId: adminUpdateAnnouncement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnnouncementInput' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Announcement' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [admin-system]
+      operationId: adminDeleteAnnouncement
+      responses:
+        '204': { description: Deleted. }
+        default: { $ref: '#/components/responses/Error' }
   /admin/events:
     get:
       tags: [admin-system]
@@ -1071,6 +1385,11 @@ components:
       schema: { type: boolean, default: false }
     KeyId:
       name: keyId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    AnnouncementId:
+      name: announcementId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -1167,7 +1486,9 @@ components:
                 forbidden, csrf_header_missing, not_found, conflict,
                 rate_limited, insufficient_balance, invalid_state,
                 upstream_validation_failed, unsupported_subscription,
-                account_has_subscriptions, cpa_quota_unavailable, internal.
+                account_has_subscriptions, cpa_quota_unavailable, redeem_code_invalid,
+                redeem_code_used, redeem_code_void, redeem_code_expired, redeem_locked,
+                internal.
             message: { type: string }
             subscriptions:
               type: array
@@ -1185,7 +1506,7 @@ components:
       enum: [plan, standard, force]
     LedgerType:
       type: string
-      enum: [admin_topup, admin_adjust, plan_purchase, plan_renewal, api_charge, refund]
+      enum: [admin_topup, admin_adjust, plan_purchase, plan_renewal, api_charge, refund, redeem]
     SubscriptionKind:
       type: string
       description: Only Claude subscriptions are served (since v0.2.0).
@@ -1222,9 +1543,17 @@ components:
         rpm: { type: integer, nullable: true }
         created_at: { type: string, format: date-time }
 
+    QuotaScope:
+      type: string
+      description: 'What counts toward the key quota and windows: all = every billed charge (plan quota and balance), balance = only charges of the standard / force tiers.'
+      enum: [all, balance]
+    KeyStatusValue:
+      type: string
+      description: 'active, disabled (key or its user disabled) or expired.'
+      enum: [active, disabled, expired]
     ApiKey:
       type: object
-      required: [id, name, prefix, tiers, enabled, note, created_at]
+      required: [id, name, prefix, tiers, enabled, note, created_at, status, quota_scope, allow_owner_query, used_all_micro, used_balance_micro]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -1239,6 +1568,27 @@ components:
         note: { type: string }
         last_used_at: { type: string, format: date-time, nullable: true }
         created_at: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/KeyStatusValue' }
+        quota_limit_micro: { type: integer, format: int64, minimum: 0, nullable: true, description: Total quota since the last reset; null = unlimited. }
+        quota_scope: { $ref: '#/components/schemas/QuotaScope' }
+        limit_5h_micro: { type: integer, format: int64, minimum: 0, nullable: true, description: Sliding 5-hour limit; null = unlimited. }
+        limit_1d_micro: { type: integer, format: int64, minimum: 0, nullable: true, description: Sliding 24-hour limit; null = unlimited. }
+        limit_7d_micro: { type: integer, format: int64, minimum: 0, nullable: true, description: Sliding 7-day limit; null = unlimited. }
+        expires_at: { type: string, format: date-time, nullable: true }
+        model_allowlist:
+          type: array
+          nullable: true
+          description: Allowed models (normalized names); null = every model. /v1/models is filtered too.
+          items: { type: string }
+        ip_allowlist:
+          type: array
+          nullable: true
+          description: Allowed client IPs or CIDR prefixes (the real client IP per the trusted proxies); null = any.
+          items: { type: string }
+        allow_owner_query: { type: boolean, description: Lets the key read its owner's balance and plan figures (public key query and status line). }
+        used_all_micro: { type: integer, format: int64, description: Persisted usage since the last reset, all charges (real-time figures are in KeyLimitStatus). }
+        used_balance_micro: { type: integer, format: int64, description: Persisted usage since the last reset, balance tiers only. }
+        usage_reset_at: { type: string, format: date-time, nullable: true, description: Last reset (null = never). }
     ApiKeyWithSecret:
       allOf:
         - $ref: '#/components/schemas/ApiKey'
@@ -1271,6 +1621,23 @@ components:
         rpm: { type: integer, minimum: 0, nullable: true }
         enabled: { type: boolean, default: true }
         note: { type: string, maxLength: 500 }
+        quota_limit_micro: { type: integer, format: int64, minimum: 0, nullable: true, description: Total quota since the last reset; null = unlimited. }
+        quota_scope: { $ref: '#/components/schemas/QuotaScope' }
+        limit_5h_micro: { type: integer, format: int64, minimum: 0, nullable: true, description: Sliding 5-hour limit; null = unlimited. }
+        limit_1d_micro: { type: integer, format: int64, minimum: 0, nullable: true, description: Sliding 24-hour limit; null = unlimited. }
+        limit_7d_micro: { type: integer, format: int64, minimum: 0, nullable: true, description: Sliding 7-day limit; null = unlimited. }
+        expires_at: { type: string, format: date-time, nullable: true }
+        model_allowlist:
+          type: array
+          nullable: true
+          description: Allowed models (normalized names); null = every model. /v1/models is filtered too.
+          items: { type: string }
+        ip_allowlist:
+          type: array
+          nullable: true
+          description: Allowed client IPs or CIDR prefixes (the real client IP per the trusted proxies); null = any.
+          items: { type: string }
+        allow_owner_query: { type: boolean, description: Lets the key read its owner's balance and plan figures (public key query and status line). }
     ApiKeyUpdate:
       type: object
       description: Fields left out keep their value; send null to clear a nullable field.
@@ -1284,6 +1651,23 @@ components:
         rpm: { type: integer, minimum: 0, nullable: true }
         enabled: { type: boolean }
         note: { type: string, maxLength: 500 }
+        quota_limit_micro: { type: integer, format: int64, minimum: 0, nullable: true, description: Total quota since the last reset; null = unlimited. }
+        quota_scope: { $ref: '#/components/schemas/QuotaScope' }
+        limit_5h_micro: { type: integer, format: int64, minimum: 0, nullable: true, description: Sliding 5-hour limit; null = unlimited. }
+        limit_1d_micro: { type: integer, format: int64, minimum: 0, nullable: true, description: Sliding 24-hour limit; null = unlimited. }
+        limit_7d_micro: { type: integer, format: int64, minimum: 0, nullable: true, description: Sliding 7-day limit; null = unlimited. }
+        expires_at: { type: string, format: date-time, nullable: true }
+        model_allowlist:
+          type: array
+          nullable: true
+          description: Allowed models (normalized names); null = every model. /v1/models is filtered too.
+          items: { type: string }
+        ip_allowlist:
+          type: array
+          nullable: true
+          description: Allowed client IPs or CIDR prefixes (the real client IP per the trusted proxies); null = any.
+          items: { type: string }
+        allow_owner_query: { type: boolean, description: Lets the key read its owner's balance and plan figures (public key query and status line). }
 
     Balance:
       type: object
@@ -1721,8 +2105,15 @@ components:
         remaining_usd: { type: number, format: double, description: Already multiplied by the safety factor; local reset applied. }
     AccountRuntime:
       type: object
-      required: [status, display_status, status_reason, status_reason_code, hard_reason, penalized, stale, hard_exhausted, oversold, headroom_micro, reserved_micro, spend_since_observed_micro, current_concurrency, models]
+      required: [status, display_status, status_reason, status_reason_code, hard_reason, penalized, stale, hard_exhausted, oversold, assignable, headroom_micro, reserved_micro, spend_since_observed_micro, current_concurrency, models]
       properties:
+        assignable:
+          type: boolean
+          description: |
+            Decided by the backend: the account can take a new session of a normal call right now —
+            enabled, not stale / cooldown / error / 5h or week full / paused, and H_A above the
+            normal-call threshold (standard_min_headroom_micro). A penalized account with enough
+            headroom is assignable.
         status:
           type: string
           enum: [normal, stale, cooldown, error, disabled]
@@ -1819,7 +2210,9 @@ components:
           type: number
           format: double
           nullable: true
-          description: The k of the account's cpa-quota estimate; null when cpa-quota has none or is unavailable.
+          description: |
+            k = week total ÷ 5-hour total. Taken from the account's /quota response (accounts[0].k);
+            when the response has none, from the cpa-quota estimate's k. Null when neither is known.
     AccountList:
       type: object
       required: [items, summary]
@@ -2221,9 +2614,10 @@ components:
     OverviewAccounts:
       type: object
       description: Accounts counted by `display_status` (each account in exactly one bucket) and the pooled figures.
-      required: [total, normal, penalized, full, stale, cooldown, error, disabled, headroom_micro, reserved_micro, oversold_count, oversold_micro]
+      required: [total, normal, penalized, full, stale, cooldown, error, disabled, assignable, headroom_micro, reserved_micro, oversold_count, oversold_micro]
       properties:
         total: { type: integer }
+        assignable: { type: integer, description: Accounts with runtime.assignable (overlaps the display buckets). }
         normal: { type: integer, description: Normal and not penalized. }
         penalized: { type: integer, description: Normal status with the routing weight reduced (降权中). }
         full: { type: integer, description: 'Hard exhausted: 5-hour or week window full, or paused by the plugin.' }
@@ -2295,3 +2689,287 @@ components:
         upstream_cost_micro: { type: integer, format: int64 }
         billed_micro: { type: integer, format: int64 }
         latency_ms: { type: integer }
+
+    KeyWindowStatus:
+      type: object
+      required: [window, used_micro]
+      properties:
+        window: { type: string, enum: [5h, 1d, 7d] }
+        limit_micro: { type: integer, format: int64, nullable: true }
+        used_micro: { type: integer, format: int64, description: Billed in the sliding window under the key's scope (settled; in-flight holds are in held_micro). }
+        held_micro: { type: integer, format: int64 }
+        remaining_micro: { type: integer, format: int64, nullable: true, description: limit − used − held (may be negative); null without a limit. }
+        recovers_at: { type: string, format: date-time, nullable: true, description: When an exhausted window is expected to allow requests again. }
+    KeyLimitStatus:
+      type: object
+      required: [quota_scope, quota_used_micro, quota_held_micro, used_all_micro, used_balance_micro, windows]
+      properties:
+        quota_scope: { $ref: '#/components/schemas/QuotaScope' }
+        quota_limit_micro: { type: integer, format: int64, nullable: true }
+        quota_used_micro: { type: integer, format: int64, description: Used since the last reset under the key's scope (real time). }
+        quota_held_micro: { type: integer, format: int64 }
+        quota_remaining_micro: { type: integer, format: int64, nullable: true }
+        used_all_micro: { type: integer, format: int64 }
+        used_balance_micro: { type: integer, format: int64 }
+        usage_reset_at: { type: string, format: date-time, nullable: true }
+        windows:
+          type: array
+          items: { $ref: '#/components/schemas/KeyWindowStatus' }
+    KeyStatusKey:
+      type: object
+      required: [name, prefix, status, quota_scope]
+      properties:
+        name: { type: string }
+        prefix: { type: string }
+        status: { $ref: '#/components/schemas/KeyStatusValue' }
+        expires_at: { type: string, format: date-time, nullable: true }
+        quota_scope: { $ref: '#/components/schemas/QuotaScope' }
+        model_allowlist:
+          type: array
+          nullable: true
+          items: { type: string }
+    OwnerPlanSummary:
+      type: object
+      required: [subscription_id, plan_name, status]
+      properties:
+        subscription_id: { type: string, format: uuid }
+        plan_name: { type: string }
+        status: { type: string, enum: [active, pending_assignment] }
+        five_hour_available_micro: { type: integer, format: int64, nullable: true }
+        period_available_micro: { type: integer, format: int64, nullable: true }
+        period_end: { type: string, format: date-time, nullable: true }
+    OwnerSummary:
+      type: object
+      description: Only present when the key allows owner queries (same figures as /me/availability).
+      required: [balance_available_micro, plans, normal, force]
+      properties:
+        balance_available_micro: { type: integer, format: int64 }
+        plans:
+          type: array
+          items: { $ref: '#/components/schemas/OwnerPlanSummary' }
+        normal:
+          type: array
+          items: { $ref: '#/components/schemas/AvailabilityHorizon' }
+        force:
+          type: array
+          items: { $ref: '#/components/schemas/AvailabilityHorizon' }
+    KeyStatus:
+      type: object
+      description: Compact key status (also the body of GET /v1/bridge/status on the relay domain).
+      required: [key, limits, generated_at]
+      properties:
+        generated_at: { type: string, format: date-time }
+        key: { $ref: '#/components/schemas/KeyStatusKey' }
+        limits: { $ref: '#/components/schemas/KeyLimitStatus' }
+        account: { $ref: '#/components/schemas/OwnerSummary' }
+    PublicKeyUsage:
+      allOf:
+        - $ref: '#/components/schemas/KeyStatus'
+        - type: object
+          required: [recent]
+          properties:
+            recent:
+              type: array
+              description: The key's latest 50 requests (user view).
+              items: { $ref: '#/components/schemas/MyRequestLog' }
+    KeyDailyRow:
+      type: object
+      required: [day, tier, requests, errors, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, reasoning_tokens, billed_micro]
+      properties:
+        day: { type: string, format: date }
+        tier: { type: string }
+        requests: { type: integer, format: int64 }
+        errors: { type: integer, format: int64 }
+        input_tokens: { type: integer, format: int64 }
+        cache_read_tokens: { type: integer, format: int64 }
+        cache_write_tokens: { type: integer, format: int64 }
+        output_tokens: { type: integer, format: int64 }
+        reasoning_tokens: { type: integer, format: int64 }
+        billed_micro: { type: integer, format: int64 }
+    KeyDailyUsage:
+      type: object
+      required: [key_id, days, timezone, items]
+      properties:
+        key_id: { type: string, format: uuid }
+        days: { type: integer }
+        timezone: { type: string }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/KeyDailyRow' }
+    KeyUsageTotal:
+      type: object
+      required: [key_id, name, prefix, deleted, requests, errors, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, reasoning_tokens, billed_micro]
+      properties:
+        key_id: { type: string, format: uuid }
+        name: { type: string }
+        prefix: { type: string }
+        deleted: { type: boolean }
+        requests: { type: integer, format: int64 }
+        errors: { type: integer, format: int64 }
+        input_tokens: { type: integer, format: int64 }
+        cache_read_tokens: { type: integer, format: int64 }
+        cache_write_tokens: { type: integer, format: int64 }
+        output_tokens: { type: integer, format: int64 }
+        reasoning_tokens: { type: integer, format: int64 }
+        billed_micro: { type: integer, format: int64 }
+    KeyDailyPoint:
+      type: object
+      required: [day, requests, billed_micro]
+      properties:
+        day: { type: string, format: date }
+        requests: { type: integer, format: int64 }
+        billed_micro: { type: integer, format: int64 }
+    KeySeries:
+      type: object
+      required: [key_id, points]
+      properties:
+        key_id: { type: string, format: uuid }
+        points:
+          type: array
+          items: { $ref: '#/components/schemas/KeyDailyPoint' }
+    KeyUsageComparison:
+      type: object
+      required: [from, to, timezone, items, top]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        timezone: { type: string }
+        items:
+          type: array
+          description: Every key with usage in the range, by billed amount (descending).
+          items: { $ref: '#/components/schemas/KeyUsageTotal' }
+        top:
+          type: array
+          description: Daily series of the top 10 keys by billed amount.
+          items: { $ref: '#/components/schemas/KeySeries' }
+    RedeemRequest:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string, minLength: 1, maxLength: 64, description: Case, spaces and dashes do not matter. }
+    RedeemResult:
+      type: object
+      required: [amount_micro, balance_micro]
+      properties:
+        amount_micro: { type: integer, format: int64 }
+        balance_micro: { type: integer, format: int64 }
+    RedeemCodeStatus:
+      type: string
+      enum: [unused, used, void]
+    RedeemBatchCreate:
+      type: object
+      required: [amount_micro, count]
+      properties:
+        amount_micro: { type: integer, format: int64, minimum: 1 }
+        count: { type: integer, minimum: 1, maximum: 1000 }
+        prefix: { type: string, maxLength: 8, description: 'Optional, 1–8 letters or digits (upper-cased), e.g. OXA.' }
+        expires_at: { type: string, format: date-time, nullable: true }
+        note: { type: string, maxLength: 500 }
+    RedeemBatch:
+      type: object
+      required: [id, prefix, amount_micro, count, note, created_at, unused, used, voided]
+      properties:
+        id: { type: string, format: uuid }
+        prefix: { type: string }
+        amount_micro: { type: integer, format: int64 }
+        count: { type: integer }
+        expires_at: { type: string, format: date-time, nullable: true }
+        note: { type: string }
+        created_by: { type: string, format: uuid, nullable: true }
+        created_at: { type: string, format: date-time }
+        unused: { type: integer, format: int64 }
+        used: { type: integer, format: int64 }
+        voided: { type: integer, format: int64 }
+    RedeemBatchPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/RedeemBatch' }
+        next_cursor: { type: string, nullable: true }
+    RedeemCode:
+      type: object
+      required: [id, batch_id, hint, status, amount_micro, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        batch_id: { type: string, format: uuid }
+        hint: { type: string, description: 'Masked code, e.g. OXA-7K2M-…-PN3C (the full code only appears in the CSV export).' }
+        status: { $ref: '#/components/schemas/RedeemCodeStatus' }
+        amount_micro: { type: integer, format: int64 }
+        expires_at: { type: string, format: date-time, nullable: true }
+        expired: { type: boolean }
+        used_by: { type: string, format: uuid, nullable: true }
+        used_at: { type: string, format: date-time, nullable: true }
+        voided_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+    RedeemCodePage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/RedeemCode' }
+        next_cursor: { type: string, nullable: true }
+    AnnouncementLevel:
+      type: string
+      enum: [info, warning]
+    AnnouncementInput:
+      type: object
+      required: [title, body, level, enabled]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        body: { type: string, maxLength: 5000, description: Plain text; line breaks and http(s) links are rendered, HTML is not. }
+        level: { $ref: '#/components/schemas/AnnouncementLevel' }
+        starts_at: { type: string, format: date-time, nullable: true }
+        ends_at: { type: string, format: date-time, nullable: true }
+        enabled: { type: boolean }
+    Announcement:
+      type: object
+      required: [id, title, body, level, enabled, active, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        body: { type: string }
+        level: { $ref: '#/components/schemas/AnnouncementLevel' }
+        starts_at: { type: string, format: date-time, nullable: true }
+        ends_at: { type: string, format: date-time, nullable: true }
+        enabled: { type: boolean }
+        active: { type: boolean, description: Enabled and inside its time window now. }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AnnouncementList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Announcement' }
+    TokenPrices:
+      type: object
+      description: Micro-USD per 1,000,000 tokens.
+      required: [input, output, cache_read, cache_write]
+      properties:
+        input: { type: integer, format: int64 }
+        output: { type: integer, format: int64 }
+        cache_read: { type: integer, format: int64 }
+        cache_write: { type: integer, format: int64 }
+    ModelPricing:
+      type: object
+      required: [model, priced, model_multiplier]
+      properties:
+        model: { type: string }
+        priced: { type: boolean, description: False when the ratio table has no price for the model (requests are then not billed by tokens). }
+        model_multiplier: { type: number, format: double }
+        plan: { $ref: '#/components/schemas/TokenPrices' }
+        standard: { $ref: '#/components/schemas/TokenPrices' }
+        force: { $ref: '#/components/schemas/TokenPrices' }
+    Pricing:
+      type: object
+      required: [items, tier_multipliers]
+      properties:
+        tier_multipliers: { $ref: '#/components/schemas/TierMultipliers' }
+        items:
+          type: array
+          description: 'Union of the models of enabled accounts. Price = toll rate (model_ratio × 2 USD, × completion / cache / create_cache ratio) × tier multiplier × model multiplier.'
+          items: { $ref: '#/components/schemas/ModelPricing' }

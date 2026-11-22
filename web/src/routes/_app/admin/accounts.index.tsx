@@ -65,7 +65,7 @@ function AccountsPage() {
           loading={q.isPending}
           stats={[
             { label: t("accounts.total"), value: items.length, note: t("accounts.enabledCount", { n: items.filter((a) => a.enabled).length }) },
-            { label: t("accounts.assignable"), value: items.filter(isAssignable).length, note: t("accounts.assignableNote") },
+            { label: t("accounts.assignable"), value: q.data?.summary.assignable ?? items.filter(isAssignable).length, note: t("accounts.assignableNote") },
             {
               label: t("accounts.attention"),
               value: attention,

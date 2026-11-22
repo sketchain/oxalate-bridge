@@ -276,7 +276,7 @@ func TestAuthInvalidationReachesOtherReplica(t *testing.T) {
 	raw := secret.NewAPIKey()
 	id, _ := uuid.NewV7()
 	_, err := a.App.Store.Q.CreateAPIKey(ctx, sqlc.CreateAPIKeyParams{ID: id, UserID: user, KeyHash: secret.KeyHash(raw),
-		KeyEnc: a.App.Box.Seal(raw), KeyPrefix: secret.KeyPrefix(raw), Tiers: []string{"standard"}, Enabled: true})
+		KeyEnc: a.App.Box.Seal(raw), KeyPrefix: secret.KeyPrefix(raw), Tiers: []string{"standard"}, Enabled: true, QuotaScope: "all"})
 	testutil.Must(t, err)
 	// Replica B caches the key (L1 + L2).
 	info, err := b.App.Auth.Lookup(ctx, raw)
@@ -289,7 +289,7 @@ func TestAuthInvalidationReachesOtherReplica(t *testing.T) {
 	_, _ = b.App.Auth.Lookup(ctx, raw)
 	// Replica A disables the key through the transactional outbox.
 	testutil.Must(t, a.App.Store.InTx(ctx, func(tx *store.Tx) error {
-		if _, err := tx.Q.UpdateAPIKey(ctx, sqlc.UpdateAPIKeyParams{ID: id, Tiers: []string{"standard"}, Enabled: false}); err != nil {
+		if _, err := tx.Q.UpdateAPIKey(ctx, sqlc.UpdateAPIKeyParams{ID: id, Tiers: []string{"standard"}, Enabled: false, QuotaScope: "all"}); err != nil {
 			return err
 		}
 		return tx.InvalidateHashes(ctx, [][]byte{secret.KeyHash(raw)})

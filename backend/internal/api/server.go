@@ -23,6 +23,7 @@ import (
 	"github.com/sketchain/oxalate-bridge/backend/internal/cpaquota"
 	"github.com/sketchain/oxalate-bridge/backend/internal/db/sqlc"
 	"github.com/sketchain/oxalate-bridge/backend/internal/events"
+	"github.com/sketchain/oxalate-bridge/backend/internal/keymeter"
 	"github.com/sketchain/oxalate-bridge/backend/internal/router"
 	"github.com/sketchain/oxalate-bridge/backend/internal/rstate"
 	"github.com/sketchain/oxalate-bridge/backend/internal/secret"
@@ -54,6 +55,10 @@ type Server struct {
 	Avail *avail.Service
 	// Location is the server time zone used to cut days (admin overview).
 	Location *time.Location
+	// Meter reads key meters (limits, public key query, status line).
+	Meter *keymeter.Meter
+	// ClientIPOf resolves the real client IP (public key query rate limit).
+	ClientIPOf func(*http.Request) string
 }
 
 var _ StrictServerInterface = (*Server)(nil)
@@ -211,6 +216,16 @@ func (s *Server) Middleware(prefix string) func(http.Handler) http.Handler {
 			}
 			if path == "/auth/login" {
 				next.ServeHTTP(w, r)
+				return
+			}
+			if strings.HasPrefix(path, "/public/") {
+				// No session: the API key in the headers authenticates.
+				key := r.Header.Get("X-Api-Key")
+				if h := r.Header.Get("Authorization"); len(h) > 7 && strings.EqualFold(h[:7], "bearer ") {
+					key = h[7:]
+				}
+				w.Header().Set("Cache-Control", "no-store")
+				next.ServeHTTP(w, r.WithContext(withPublic(r.Context(), strings.TrimSpace(key), clientIP(r.Context()))))
 				return
 			}
 			c, err := r.Cookie(SessionCookie)

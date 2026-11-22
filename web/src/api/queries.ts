@@ -17,6 +17,11 @@ export const keys = {
   usageLogs: (f: Q<"listMyUsageLogs">) => ["me", "usage", "logs", f] as const,
   usageSummary: (f: Q<"getMyUsageSummary">) => ["me", "usage", "summary", f] as const,
   models: ["models"] as const,
+  keyLimits: (id: string) => ["me", "keys", id, "limits"] as const,
+  keyDaily: (id: string, days: number) => ["me", "keys", id, "daily", days] as const,
+  keyCompare: (f: Q<"getMyKeyUsage">) => ["me", "usage", "keys", f] as const,
+  announcements: ["me", "announcements"] as const,
+  pricing: ["pricing"] as const,
 
   admin: ["admin"] as const,
   overview: ["admin", "overview"] as const,
@@ -38,6 +43,10 @@ export const keys = {
   adminLedger: (f: Q<"adminListLedger">) => ["admin", "ledger", f] as const,
   audit: (f: Q<"adminListAuditLogs">) => ["admin", "audit", f] as const,
   safeguard: (f: Q<"adminListSafeguardEvents">) => ["admin", "safeguard", f] as const,
+  adminKeyLimits: (id: string) => ["admin", "keys", id, "limits"] as const,
+  redeemBatches: ["admin", "redeem", "batches"] as const,
+  redeemCodes: (f: Omit<Q<"adminListRedeemCodes">, "cursor">) => ["admin", "redeem", "codes", f] as const,
+  adminAnnouncements: ["admin", "announcements"] as const,
 };
 
 // ---- user ------------------------------------------------------------------------
@@ -67,6 +76,27 @@ export const keySecretQuery = (id: string) =>
 export const subscriptionsQuery = queryOptions({ queryKey: keys.subscriptions, queryFn: () => unwrap(api.GET("/subscriptions")) });
 export const plansOnSaleQuery = queryOptions({ queryKey: keys.plansOnSale, queryFn: () => unwrap(api.GET("/plans")) });
 export const modelsQuery = queryOptions({ queryKey: keys.models, queryFn: () => unwrap(api.GET("/models")), staleTime: 5 * 60_000 });
+
+export const keyLimitsQuery = (id: string) =>
+  queryOptions({
+    queryKey: keys.keyLimits(id),
+    queryFn: () => unwrap(api.GET("/keys/{keyId}/limits", { params: { path: { keyId: id } } })),
+    refetchInterval: 30_000,
+  });
+export const keyDailyQuery = (id: string, days: number) =>
+  queryOptions({
+    queryKey: keys.keyDaily(id, days),
+    queryFn: () => unwrap(api.GET("/keys/{keyId}/usage/daily", { params: { path: { keyId: id }, query: { days } } })),
+  });
+export const keyCompareQuery = (f: Q<"getMyKeyUsage">) =>
+  queryOptions({ queryKey: keys.keyCompare(f), queryFn: () => unwrap(api.GET("/usage/keys", { params: { query: f } })) });
+export const announcementsQuery = queryOptions({
+  queryKey: keys.announcements,
+  queryFn: () => unwrap(api.GET("/announcements")),
+  staleTime: 60_000,
+  refetchInterval: 5 * 60_000,
+});
+export const pricingQuery = queryOptions({ queryKey: keys.pricing, queryFn: () => unwrap(api.GET("/pricing")), staleTime: 60_000 });
 
 export const usageSummaryQuery = (f: Q<"getMyUsageSummary">) =>
   queryOptions({ queryKey: keys.usageSummary(f), queryFn: () => unwrap(api.GET("/usage/summary", { params: { query: f } })) });
@@ -192,6 +222,29 @@ export const safeguardInfinite = (f: Omit<Q<"adminListSafeguardEvents">, "cursor
     initialPageParam: "",
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
+
+export const adminKeyLimitsQuery = (id: string) =>
+  queryOptions({
+    queryKey: keys.adminKeyLimits(id),
+    queryFn: () => unwrap(api.GET("/admin/keys/{keyId}/limits", { params: { path: { keyId: id } } })),
+  });
+
+export const redeemBatchesInfinite = infiniteQueryOptions({
+  queryKey: keys.redeemBatches,
+  queryFn: ({ pageParam }) => unwrap(api.GET("/admin/redeem-batches", { params: { query: { cursor: pageParam || undefined } } })),
+  initialPageParam: "",
+  getNextPageParam: (last) => last.next_cursor ?? undefined,
+});
+
+export const redeemCodesInfinite = (f: Omit<Q<"adminListRedeemCodes">, "cursor">) =>
+  infiniteQueryOptions({
+    queryKey: keys.redeemCodes(f),
+    queryFn: ({ pageParam }) => unwrap(api.GET("/admin/redeem-codes", { params: { query: { ...f, cursor: pageParam || undefined } } })),
+    initialPageParam: "",
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  });
+
+export const adminAnnouncementsQuery = queryOptions({ queryKey: keys.adminAnnouncements, queryFn: () => unwrap(api.GET("/admin/announcements")) });
 
 // ---- cache helpers ------------------------------------------------------------------
 

@@ -36,3 +36,38 @@ FROM usage_hourly
 WHERE account_id = $1 AND hour >= sqlc.arg('from_at')::timestamptz AND hour < sqlc.arg('to_at')::timestamptz
 GROUP BY 1
 ORDER BY 1;
+
+-- name: KeyDailyUsage :many
+-- One key per day (in the given time zone) and tier, from the hourly rollup.
+SELECT (date_trunc('day', hour AT TIME ZONE sqlc.arg('tz')::text))::date AS day, tier,
+       sum(requests)::bigint AS requests, sum(errors)::bigint AS errors,
+       sum(input_tokens)::bigint AS input_tokens, sum(cache_read_tokens)::bigint AS cache_read_tokens,
+       sum(cache_write_tokens)::bigint AS cache_write_tokens, sum(output_tokens)::bigint AS output_tokens,
+       sum(reasoning_tokens)::bigint AS reasoning_tokens, sum(billed_micro)::bigint AS billed_micro
+FROM usage_hourly
+WHERE key_id = sqlc.arg('key_id') AND hour >= sqlc.arg('from_at')::timestamptz
+GROUP BY 1, 2
+ORDER BY 1, 2;
+
+-- name: UserKeyTotals :many
+SELECT key_id, sum(requests)::bigint AS requests, sum(errors)::bigint AS errors,
+       sum(input_tokens)::bigint AS input_tokens, sum(cache_read_tokens)::bigint AS cache_read_tokens,
+       sum(cache_write_tokens)::bigint AS cache_write_tokens, sum(output_tokens)::bigint AS output_tokens,
+       sum(reasoning_tokens)::bigint AS reasoning_tokens, sum(billed_micro)::bigint AS billed_micro
+FROM usage_hourly
+WHERE user_id = sqlc.arg('user_id') AND hour >= sqlc.arg('from_at')::timestamptz AND hour < sqlc.arg('to_at')::timestamptz
+GROUP BY key_id
+ORDER BY billed_micro DESC, requests DESC;
+
+-- name: UserKeyDaily :many
+SELECT key_id, (date_trunc('day', hour AT TIME ZONE sqlc.arg('tz')::text))::date AS day,
+       sum(requests)::bigint AS requests, sum(billed_micro)::bigint AS billed_micro
+FROM usage_hourly
+WHERE user_id = sqlc.arg('user_id') AND key_id = ANY(sqlc.arg('key_ids')::uuid[])
+  AND hour >= sqlc.arg('from_at')::timestamptz AND hour < sqlc.arg('to_at')::timestamptz
+GROUP BY 1, 2
+ORDER BY 2, 1;
+
+-- name: ListAllAPIKeysByUser :many
+-- Including deleted keys (usage comparison names them).
+SELECT id, name, key_prefix, deleted_at FROM api_keys WHERE user_id = $1;

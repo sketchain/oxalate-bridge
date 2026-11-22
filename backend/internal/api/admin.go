@@ -330,6 +330,7 @@ func (s *Server) runtimeOf(ctx context.Context, row sqlc.Account, st *router.Acc
 		}
 	}
 	rt.Oversold = rt.HeadroomMicro < 0
+	rt.Assignable = Assignable(row.Enabled, row.ErrorStatus, st, s.Settings.Get().StandardMinHeadroomMicro)
 	lastErr := ""
 	if rt.LastError != nil {
 		lastErr = *rt.LastError
@@ -1207,3 +1208,15 @@ func (s *Server) AdminEvents(ctx context.Context, _ AdminEventsRequestObject) (A
 }
 
 var _ = errors.Is(nil, pgx.ErrNoRows)
+
+// Assignable is the backend's single definition of "可分配": the account can
+// take a new session of a normal call right now — enabled, not in error, not
+// cooling down, not stale, not hard exhausted (5h / week full, paused) and
+// with H_A above the normal-call threshold. Penalized accounts with enough
+// headroom are assignable (the same rule as router.Candidates for standard).
+func Assignable(enabled, errored bool, st *router.AccountState, minHeadroom int64) bool {
+	if !enabled || errored || st == nil {
+		return false
+	}
+	return st.Cooldown == nil && !st.Stale && !st.HardExhausted && st.HasWeek && st.Headroom > minHeadroom
+}

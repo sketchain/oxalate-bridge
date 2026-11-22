@@ -1,7 +1,7 @@
 {
   "name": "oxalate-bridge-web",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.4.0",
   "type": "module",
   "description": "Panel frontend. `pnpm build` writes to backend/internal/webui/dist, which the Go binary embeds.",
   "packageManager": "pnpm@10.33.4",
