@@ -1,5 +1,59 @@
 # Changelog
 
+## v0.4.0
+
+### 升级须知
+
+- 新迁移 `00003_key_limits_redeem`：`api_keys` 增加 `quota_limit_micro`、`quota_scope`（all / balance，默认 all）、`limit_5h_micro` / `limit_1d_micro` / `limit_7d_micro`、`expires_at`、`model_allowlist`、`ip_allowlist`、`allow_owner_query`，以及计量用的 `used_all_micro`、`used_balance_micro`、`usage_version`、`usage_reset_at`（老 key 的已用量从 `usage_hourly` 回填）。新表 `redeem_batches`、`redeem_codes`、`announcements`、`announcement_dismissals`；`ledger_entries.type` 增加 `redeem`；新增索引 `usage_hourly (key_id, hour)`、`request_logs (key_id, created_at DESC, request_id DESC)`。
+- `ApiKey` 新增 `status`（active / disabled / expired）、上面的限制字段、`used_all_micro`、`used_balance_micro`、`usage_reset_at`；`ApiKeyCreate` / `ApiKeyUpdate` 可设置限制字段（空 = 不限，`null` 清除）。
+- `AccountRuntime` 新增 `assignable`，`OverviewAccounts`（`/admin/overview` 与 `/admin/accounts` 的 `summary`）新增 `assignable` 计数：「可分配」改由后端统一判定。
+- 账号的 `k` 优先取 `/quota` 的 `accounts[0].k`，没有时才取 cpa-quota 估算表的 `k`。`cpa.Account` 读取新的 `k` 字段，fakecpa 也会返回它。
+- Redis 结算与落库脚本多了 key 计量的参数，新旧版本副本不要混跑（滚动升级时先停旧副本再起新副本）。
+
+### 新增错误码
+
+- 转发接口（Anthropic 原生错误格式，`error.code` 同时写入请求日志的 `error_type`，key 级别拒绝不会切到下一档）：`key_expired`（403，permission_error）、`ip_not_allowed`（403，permission_error）、`model_not_allowed`（403，permission_error）、`key_quota_exhausted`（429，rate_limit_error）、`key_window_exhausted`（429，rate_limit_error，附 `window` 与 `recovers_at`）。
+- 面板接口：`redeem_code_invalid`、`redeem_code_used`、`redeem_code_void`、`redeem_code_expired`（400）、`redeem_locked`（429）。所有新错误码都有中英文文案。
+
+### 新增接口
+
+- `GET /v1/bridge/status`（转发域名）：鉴权同 `/v1/messages`，不计费、不写日志，每个 key 60 次/分钟。
+- `GET /api/v1/public/key-usage`：免登录凭 key 查询（key 只认请求头），按 IP、按 key 各 30 次/分钟。
+- `GET /api/v1/keys/{id}/limits`、`POST /api/v1/keys/{id}/reset-usage`、`GET /api/v1/keys/{id}/usage/daily`、`GET /api/v1/usage/keys`。
+- `POST /api/v1/balance/redeem`、`GET /api/v1/announcements`、`POST /api/v1/announcements/{id}/dismiss`、`GET /api/v1/pricing`。
+- 管理端：`PATCH /admin/keys/{id}`、`GET /admin/keys/{id}/limits`、`POST /admin/keys/{id}/reset-usage`、`GET|POST /admin/redeem-batches`、`GET /admin/redeem-batches/{id}/export`（CSV）、`GET /admin/redeem-codes`、`POST /admin/redeem-codes/{id}/void`、`GET|POST /admin/announcements`、`PATCH|DELETE /admin/announcements/{id}`。
+
+### API key 限制
+
+- 总额度、额度口径（全部计入 / 仅余额）、5h / 1d / 7d 滑动窗口、过期时间、模型白名单（`/v1/models` 同步过滤）、IP 白名单（CIDR，按信任代理解析的真实 IP）、允许凭 key 查询账户；用户和管理员都能设置，管理员修改写审计日志。
+- 计量沿用钱包的「PG 基准 + 版本号 + pending」：Redis 维护两套累计用量（all / balance）和按分钟的窗口桶，结算脚本原子累加，消费者落库时锁住 key 行并只计入重置之后开始的请求；Redis 丢失时基准从 PG、窗口从最近 7 天的 `request_logs` 重建。
+- 预扣同时受钱包、key 剩余额度和各窗口剩余额度约束（一个 Lua 脚本内完成），剩余 > 0 才放行，允许最后一笔超出。
+- 重置已用额度：总额度从 0 重新计起，窗口不受影响。
+
+### 前端
+
+- Key 新建 / 编辑对话框分组（基本信息、档位与订阅、并发与频率、额度限制、访问控制）；额度口径用方形拨动开关（2px 墨框、无圆角、选中格墨底反色，radiogroup + 方向键 / Home / End 操作）。
+- Key 列表新增状态与总额度列；点开 key 显示详情抽屉：各项限制、实时用量进度（窗口用完时显示预计恢复时间）、重置按钮、7 / 30 / 90 天每日用量图。
+- 新的公开页面 `/query`：密码框输入 key（可切换显示），key 只在内存里；手机端可用；登录页有入口。
+- 用量页新增「按 Key 对比」视图（前 10 个 key 的每日扣费折线 + 各 key 合计表）。
+- 「余额与账单」页可以兑换兑换码；管理端新增「兑换码」页（生成批次、按批次与状态筛选、作废、导出 CSV）和「公告」页；面板顶部显示生效中的公告横幅（警告整条填黄，普通用墨框，可关闭，关闭状态记在服务端；正文只渲染换行与链接）。
+- 新页面「模型与价格」（用户侧与管理侧导航都有）：搜索、三档切换，桌面表格、手机卡片，未定价模型单独标注。
+- 管理端用户详情的 key 列表可以编辑限额、重置已用额度。
+- 概览「近 14 天花费」一行改为顶部对齐，图表固定 280px，不再被 Plan 卡片拉高。
+- 账号页汇总、筛选和管理概览的「可分配」使用后端的 `assignable`。
+
+### 修正
+
+- **k 值异常的根因是演示种子配错了**：`fakecpa.DemoProfiles` 里手写了 `K: 4.12 / 1.03 / 0.98 / 0.41`，注释把 k 误当成「5h 窗口每个百分点多少美元」，`bridge seed-demo` 把它原样写进演示 cpa-quota 的 `estimates.k`，桥读取 `estimates.k` 的路径本身没错。现在 k 一律按「周总额 ÷ 5h 总额」由 profile 的总额算出（演示四个账号为 8.25 / 7.6 / 9.2 / 6），fakecpa 的 `/quota` 也返回 `accounts[0].k`，种子与面板都以它为准；测试保证账号显示的 k 等于 `/quota` 的 `accounts[0].k`（没有时取估算表的 `k`），并且演示账号的 k 在 5–10 之间。
+- 截图脚本每个用户只登录一次，不再触发登录限频（每 IP 15 分钟 30 次）。
+
+### 测试与演示数据
+
+- 后端：key 额度口径切换、滑动窗口边界与恢复时间、重置已用、各拒绝错误码与日志、预扣受 key 额度和窗口约束、Redis 丢失后重建；查询接口（开关为 false 时没有 `account`、限频、URL 里的 key 不被接受）；状态栏接口不计费不写日志；兑换码并发只成功一次、过期 / 作废不能兑换、连续失败锁定；公告生效时间段与按用户关闭；价格与「可分配」计数。
+- Playwright 冒烟：创建带限额的 key 并在抽屉和查询页看到它、兑换码兑换后余额增加、公告横幅显示后能关闭、价格页能打开、14 天图表固定高度；手机端无横向溢出的页面加上了价格页、按 Key 对比和查询页。
+- 截图新增查询页、key 详情抽屉、兑换码管理页、价格页（浅色、深色、手机），其余受影响的截图全部重新生成（概览带公告横幅）。
+- `seed-demo` 新增带限额的 key（含开启凭 key 查询的「Claude Code」）、一批 20 个兑换码（一个已兑换、一个已作废）和一条公告。
+
 ## v0.3.1
 
 ### 升级须知

@@ -2,7 +2,7 @@
 
 自建的 Claude API 中转站：用户与 API key、token plan、余额、计费和路由全部由本项目管理，上游是多个 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)（CPA）v8 实例。每个 CPA 实例只挂一个 Claude 订阅账号（Pro / Max 5x / Max 20x），额度估算来自 CPA 上的 [cpa-quota](https://github.com/sketchain/cpa-quota) 插件。中转站只服务 Claude Messages 协议，只接受 Claude 订阅的上游账号。
 
-本仓库目前是第四轮（v0.3.1）：后端完整，前端面板（`web/`，React + TanStack）已完成，用户侧与管理侧都在同一个应用里；只装了 Docker 也能用一条命令跑起完整演示（见「只用 Docker 体验」）。界面截图见 [docs/screenshots](docs/screenshots)。
+本仓库目前是第五轮（v0.4.0）：在第四轮的基础上补齐了完整中转站常用的功能——API key 的额度 / 滑动窗口 / 过期 / 模型与 IP 白名单、免登录的凭 key 查询页、Claude Code 状态栏接口、按 key 用量、兑换码、公告和模型价格页。只装了 Docker 也能用一条命令跑起完整演示（见「只用 Docker 体验」）。界面截图见 [docs/screenshots](docs/screenshots)（例如 [查询页](docs/screenshots/query-light.png)、[key 详情抽屉](docs/screenshots/user-key-drawer-light.png)、[兑换码管理](docs/screenshots/admin-redeem-light.png)、[价格页](docs/screenshots/user-pricing-light.png)）。
 
 ## 仓库结构
 
@@ -47,12 +47,13 @@ docs/screenshots         登录页与用户侧、管理侧主要页面的浅色 
 1. 鉴权：`Authorization: Bearer` 或 `X-Api-Key`。进程内 L1（10 秒）→ Redis L2（10 分钟）→ PG；key / 用户改动写 outbox，由投递器删除 L2 并 pub/sub 通知所有副本清 L1。
 2. 请求体只读一次并原样保留；用 gjson 取 `model`、`stream`、`max_tokens`、`cache_control` 的 1h ttl。
 3. 会话标识按 CPA `ExtractSessionInfo` 的优先级提取（移植，未直接 import：直接依赖会让二进制增加约 15 MB），取不到用 key id；只存哈希。
-4. 用户与 key 两个维度的并发（Redis 租约，带过期，进程崩溃自动回收）和 RPM（60 秒滑动窗口），超限 429。
-5. 按 key 的 `tiers` 顺序逐档尝试 plan → standard → force（顺序由 key 决定）。只有「这一档不放行」才切下一档，上游报错不切档；全部不放行时 429，`error.rejections` 逐档列出原因。
-6. 预扣（Lua 原子操作）：估算 = 请求体字节 / 3 按输入价 + min(max_tokens, 4096) 按输出价，乘档位与模型倍率，再与 `hold_cap` 和可用额取小。可用额 > 0 才放行，最后一笔允许扣成负数。
-7. 原样转发给 CPA，绝不改写请求体；响应（含 SSE）逐块原样回给客户端，同时读取 usage。
-8. 还没向客户端写出任何字节前：429 → 冷却到 Retry-After / 已用尽窗口的 reset_at / 60 秒；401/403 → 账号置 error；5xx / 网络错误 → 冷却 30 秒；然后同档换号重试（最多 `max_retries` 次，plan 档不换号）。`claude refusal` 开头的 400 不重试、原样透传并记 safeguard 事件。
-9. 结算（Lua 原子操作）：退回预扣、计入待落库额、累加账号分钟桶、续期粘性映射，并把完整结算记录 XADD 到 Redis Stream。
+4. key 级别检查（不往下一档切）：过期 → 403 `key_expired`；来源 IP 不在白名单 → 403 `ip_not_allowed`；模型不在白名单 → 403 `model_not_allowed`；总额度用完 → 429 `key_quota_exhausted`；滑动窗口用完 → 429 `key_window_exhausted`（`error.window` 与预计恢复时间 `error.recovers_at`）。错误体是 Anthropic 原生格式，`error.code` 同时写进请求日志的 `error_type`。见下文「API key 限制」。
+5. 用户与 key 两个维度的并发（Redis 租约，带过期，进程崩溃自动回收）和 RPM（60 秒滑动窗口），超限 429。
+6. 按 key 的 `tiers` 顺序逐档尝试 plan → standard → force（顺序由 key 决定）。只有「这一档不放行」才切下一档，上游报错不切档；全部不放行时 429，`error.rejections` 逐档列出原因。
+7. 预扣（Lua 原子操作）：估算 = 请求体字节 / 3 按输入价 + min(max_tokens, 4096) 按输出价，乘档位与模型倍率，再与 `hold_cap`、可用额、key 剩余额度和各窗口剩余额度取小（同一个脚本里原子完成）。剩余 > 0 才放行，最后一笔允许超出。
+8. 原样转发给 CPA，绝不改写请求体；响应（含 SSE）逐块原样回给客户端，同时读取 usage。
+9. 还没向客户端写出任何字节前：429 → 冷却到 Retry-After / 已用尽窗口的 reset_at / 60 秒；401/403 → 账号置 error；5xx / 网络错误 → 冷却 30 秒；然后同档换号重试（最多 `max_retries` 次，plan 档不换号）。`claude refusal` 开头的 400 不重试、原样透传并记 safeguard 事件。
+10. 结算（Lua 原子操作）：退回钱包与 key 的预扣、计入待落库额、把 billed 累加到 key 的两套用量和分钟桶、累加账号分钟桶、续期粘性映射，并把完整结算记录 XADD 到 Redis Stream。
 
 ### 实时钱包（余额与 plan 本期额度）
 
@@ -63,6 +64,111 @@ Redis 中每个钱包（用户余额，或某订阅某一期的额度）由三�
 - `holds`：在途请求的预扣（ZSET，带过期时间，读的时候先清掉过期的）。
 
 可用额 = base − pending − holds。管理员充值、购买、退款等写操作先提交 PG，再由 outbox 投递「绝对值 + 版本」；消费者落库后也用同样方式同步。三者顺序任意都收敛到 PG − 未落库金额；key 丢失时按 PG 值重建即可。Redis 必须 `maxmemory-policy noeviction` 并开启 AOF。
+
+### API key 限制
+
+每个 key 可以设置（用户和管理员都能改，管理员的修改写审计日志）：
+
+| 字段 | 含义 |
+| --- | --- |
+| `quota_limit_micro` | 总额度，从上次重置开始计；空 = 不限 |
+| `quota_scope` | `all`（默认）：这个 key 产生的所有 billed 都计入，包括 Plan 档消耗的 plan 额度；`balance`：只计入普通 / 强制档扣的余额。同时作用于总额度和时间窗口 |
+| `limit_5h_micro` / `limit_1d_micro` / `limit_7d_micro` | 滑动窗口限额：过去 5 小时 / 24 小时 / 7 天内计入口径的 billed 之和（按分钟分桶） |
+| `expires_at` | 过期时间 |
+| `model_allowlist` | 规范化后的模型名；`/v1/models` 也按它过滤 |
+| `ip_allowlist` | IP 或 CIDR，按信任代理配置解析出的真实客户端 IP 判断 |
+| `allow_owner_query` | 允许凭此 key 查询账户余额与 Plan 可用额度（查询页、状态栏接口） |
+
+计量沿用钱包的做法：PG `api_keys.used_all_micro / used_balance_micro / usage_version` 是基准，Redis 里是 `kb:<key>`（基准 + 版本）、`kp:<key>`（已结算未落库）、`kh / khv:<key>`（在途预扣）和按分钟的窗口桶 `kwm:<key>:<a|b>:<小时>`（保留 8 天，另有小时合计）。消费者落库时在同一个事务里锁住 key 行、只累加「请求开始时间 ≥ 上次重置时间」的金额，提交后按版本同步回 Redis 并按消息 id 只减一次 pending。Redis 数据丢失时，基准从 PG 重建，窗口桶从最近 7 天的 `request_logs` 重建。
+
+重置（`POST /keys/{id}/reset-usage`、`POST /admin/keys/{id}/reset-usage`）把总额度的已用归零、版本 +1，经 outbox 同步到 Redis；时间窗口本来就是滑动的，不受影响。重置前已结算但还没落库的那几笔（通常 1–2 秒内）落库时会被过滤掉，在此之前查询页可能短暂显示一点已用。
+
+检查顺序：鉴权 → 过期 → IP → 模型白名单 → key 额度与窗口 → 逐档尝试。`quota_scope = balance` 的 key 额度用完时整个 key 都会被拒绝（包括 Plan 档），因为 key 级别的拒绝发生在逐档尝试之前。
+
+### 凭 key 查询（不用登录）
+
+- 页面：`/query`（登录页有入口）。用密码框输入 key，只存在页面内存里，不写 localStorage，页面上不回显完整 key。
+- 接口：`GET /api/v1/public/key-usage`，key 只能放在 `Authorization: Bearer` 或 `x-api-key` 请求头里（URL 参数一律忽略）。按 IP 和按 key 各 30 次/分钟。key 无效或已删除时统一 401；已停用或已过期的 key 仍返回信息并带状态。
+- 返回 key 名称、前缀、状态、过期时间、额度口径、总额度与已用、三个窗口的限额与已用（窗口用完时带预计恢复时间）、模型白名单和最近 50 条调用（用户视角，不含上游成本）。`allow_owner_query` 为 true 时另外返回账户可用余额、各 Plan 订阅的 5h / 本期可用（口径同 `/me/availability`）和普通 / 强制调用的可用额度；为 false 时 `account` 字段完全不出现。
+
+### 在 Claude Code 状态栏显示余额
+
+转发域名下有 `GET /v1/bridge/status`：鉴权方式和 `/v1/messages` 完全一样（`x-api-key` 或 `Authorization: Bearer`），**不计费、不写 request_logs**，单独限频（每个 key 60 次/分钟）。返回紧凑 JSON，字段同上面的查询接口，但不含调用日志：
+
+```json
+{
+  "generated_at": "2026-11-22T10:31:00Z",
+  "key": { "name": "Claude Code", "prefix": "sk-pl…eqh7", "status": "active", "quota_scope": "all", "expires_at": null },
+  "limits": {
+    "quota_scope": "all", "quota_limit_micro": 50000000, "quota_used_micro": 45800000, "quota_remaining_micro": 4200000,
+    "windows": [ { "window": "5h", "limit_micro": 40000000, "used_micro": 50000, "remaining_micro": 39950000 } ]
+  },
+  "account": { "balance_available_micro": 12300000, "plans": [ { "plan_name": "Max 周卡", "period_available_micro": 88000000 } ] }
+}
+```
+
+Claude Code 的状态栏（[官方文档](https://code.claude.com/docs/en/statusline)）在 `~/.claude/settings.json`（或项目设置）里配置一个命令：Claude Code 会在会话开始、每条助手消息之后等时机运行它（更新会做 300ms 去抖），把会话 JSON 写到命令的 stdin，命令打到 stdout 的每一行就是状态栏的一行，退出码非 0 或没有输出时状态栏留空；可以用 `refreshInterval`（秒，最小 1）额外定时刷新。脚本运行慢会卡住状态栏更新，所以下面的脚本把结果缓存 30 秒，不会每次刷新都请求中转站。
+
+`~/.claude/settings.json`：
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/oxalate-status.sh",
+    "padding": 0,
+    "refreshInterval": 30
+  }
+}
+```
+
+`~/.claude/oxalate-status.sh`（需要 `curl` 和 `jq`，然后 `chmod +x ~/.claude/oxalate-status.sh`）：
+
+```bash
+#!/usr/bin/env bash
+# Status line for oxalate-bridge. Reads the relay URL and key from the
+# environment, caches the answer for ~30 s and prints one short line, e.g.
+#   余额 $12.30 · Plan 本期 $88 · Key 剩 $4.20
+# OXALATE_BASE_URL  relay base URL, e.g. https://relay.example.com (falls back to ANTHROPIC_BASE_URL)
+# OXALATE_API_KEY   the key (falls back to ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN)
+set -u
+cat >/dev/null # the session JSON on stdin is not needed here
+base="${OXALATE_BASE_URL:-${ANTHROPIC_BASE_URL:-}}"
+key="${OXALATE_API_KEY:-${ANTHROPIC_API_KEY:-${ANTHROPIC_AUTH_TOKEN:-}}}"
+[ -n "$base" ] && [ -n "$key" ] || { echo "oxalate: 未设置地址或 key"; exit 0; }
+cache="${TMPDIR:-/tmp}/oxalate-status-$(printf '%s' "$key" | cksum | cut -d' ' -f1).json"
+now=$(date +%s)
+mtime=$(stat -c %Y "$cache" 2>/dev/null || stat -f %m "$cache" 2>/dev/null || echo 0)
+if [ $((now - mtime)) -ge 30 ]; then
+  if curl -fsS --max-time 3 -H "x-api-key: $key" "${base%/}/v1/bridge/status" -o "$cache.tmp" 2>/dev/null; then
+    mv "$cache.tmp" "$cache"
+  else
+    rm -f "$cache.tmp"
+    touch "$cache" 2>/dev/null # back off 30 s even when the relay is down
+  fi
+fi
+[ -s "$cache" ] || { echo "oxalate: 暂不可用"; exit 0; }
+jq -r '
+  def usd: (. / 1e6) as $v | if $v >= 100 then "$\($v | floor)" else "$\(($v * 100 | round) / 100)" end;
+  [
+    (if .account then "余额 \(.account.balance_available_micro | usd)" else empty end),
+    (if (.account.plans // []) | map(select(.period_available_micro != null)) | length > 0
+       then "Plan 本期 \(.account.plans | map(.period_available_micro // 0) | add | usd)" else empty end),
+    (if .limits.quota_remaining_micro != null then "Key 剩 \(.limits.quota_remaining_micro | usd)" else empty end),
+    (.limits.windows[] | select(.remaining_micro != null and .remaining_micro <= 0) | "\(.window) 已用完"),
+    (if .key.status != "active" then "Key \(.key.status)" else empty end)
+  ] | if length == 0 then "oxalate 正常" else join(" · ") end
+' "$cache" 2>/dev/null || echo "oxalate: 解析失败"
+```
+
+把地址和 key 写进环境（例如 `~/.zshrc` 里 `export OXALATE_BASE_URL=https://relay.example.com OXALATE_API_KEY=sk-…`）。账户余额和 Plan 数字只在这个 key 开启了「允许凭此 Key 查询账户」时才有。可以用 `echo '{}' | ~/.claude/oxalate-status.sh` 先在终端里试一下。
+
+### 按 key 用量、兑换码、公告、价格
+
+- `GET /api/v1/keys/{id}/usage/daily?days=N`（默认 30，最大 90）按天、按档位汇总；`GET /api/v1/usage/keys?from=&to=` 给出每个 key 的合计和前 10 个 key 的每日序列。都读小时汇总表 `usage_hourly`（本来就有 key 维度，补了 `(key_id, hour)` 索引），按服务器时区切天。前端：Key 页点开 key 显示详情抽屉；用量页右上角切到「按 Key 对比」。
+- 兑换码：管理端「兑换码」页生成批次（面额、数量 ≤ 1000、可选过期时间、前缀、备注），格式为 `前缀-XXXX-XXXX-XXXX-XXXX`（Crockford Base32，80 位随机）。库里只存 sha256（兑换时查找）和加密后的原文（按批次导出 CSV）。用户在「余额与账单」页兑换：一个事务里用条件更新保证一个码只能用一次，写一条 `redeem` 类型的 ledger（幂等键是兑换码 id），经 outbox 同步钱包。每个用户 10 次/分钟，连续失败 5 次锁定 15 分钟。生成、作废、导出都写审计日志。
+- 公告：管理端增删改查（标题、纯文本正文、级别普通 / 警告、生效起止时间、启用开关）。用户面板顶部显示当前生效的公告，正文只渲染换行和 http(s) 链接，不解析 HTML；关闭状态按用户记在服务端。
+- 模型与价格：`GET /api/v1/pricing` 列出所有启用账号可用模型的并集，每个模型三档各自的每百万 token 价格（输入、输出、缓存读、缓存写）= toll 倍率换算出的单价 × 档位倍率 × 模型倍率；没有定价的模型标 `priced: false`。用户侧和管理侧导航都有「模型与价格」。
 
 ### 落库
 
@@ -178,11 +284,11 @@ seed（一次性任务，执行 `bridge seed-demo` 写入演示数据后退出�
 | 用户名 | 密码 | 说明 |
 | --- | --- | --- |
 | `admin` | `admin-pass-123` | 管理员：概览、上游账号、订阅分配、日志等 |
-| `alice` | `demo-pass-123` | 余额 $80，一份有效的 Max 周卡 + 一份待分配的 Sonnet 轻量包，两个 key |
+| `alice` | `demo-pass-123` | 余额 $80（另兑换过一个 $10 兑换码），一份有效的 Max 周卡 + 一份待分配的 Sonnet 轻量包，两个带限额的 key（「Claude Code」开启了凭 key 查询账户） |
 | `bob` | `demo-pass-123` | 余额较少，管理员直接开通的 Max 月卡（所在账号已超卖） |
 | `carol` | `demo-pass-123` | 几乎没有余额，只有余额档 key |
 
-4 个上游账号分别处于：正常、降权中、5h 已满、几分钟后变成「数据过期」。
+4 个上游账号分别处于：正常、降权中、5h 已满、几分钟后变成「数据过期」。另有一批 20 个兑换码（前缀 OXA，其中一个已用、一个已作废）和一条公告。凭 key 查询页在 <http://localhost:8080/query>。
 
 停止与重置：
 

@@ -179,7 +179,7 @@ function KeysPage() {
           renderCard={(k) => (
             <div className="border border-ink p-3">
               <div className="flex items-center justify-between gap-2">
-                <button type="button" className="truncate text-left font-semibold underline underline-offset-4" onClick={() => setDetail(k.id)}>
+                <button type="button" className="truncate text-left font-semibold underline underline-offset-4" onClick={() => setDetail(k.id)} aria-label={t("keys.openDetail", { name: k.name || k.prefix })}>
                   {k.name || t("keys.unnamed")}
                 </button>
                 <Switch checked={k.enabled} aria-label={t("keys.toggle", { name: k.name || k.prefix })} onCheckedChange={(v) => toggle.mutate({ id: k.id, enabled: v })} />

@@ -160,7 +160,7 @@ test("create a key with limits, open its drawer and see it on the query page", a
   await expect(result).toContainText("$0.00 / $2.00");
   await expect(result.getByRole("region", { name: "账户" })).toContainText("可用余额");
   // The page never shows the full key outside the input, and never stores it.
-  expect(await page.locator("main, body").first().evaluate((el, k) => el.innerText.includes(k), key)).toBe(false);
+  expect(await page.locator("body").innerText()).not.toContain(key);
   expect(await page.evaluate(() => JSON.stringify(localStorage) + JSON.stringify(sessionStorage))).not.toContain("sk-");
 });
 
