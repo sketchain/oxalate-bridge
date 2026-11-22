@@ -282,3 +282,36 @@ test.describe("mobile", () => {
     await expect(page.getByRole("heading", { level: 1, name: "我的" })).toBeVisible();
   });
 });
+
+test("a balance-only key with its quota used up says Plan is still available", async ({ page, baseURL }) => {
+  const api = await request.newContext({ baseURL, extraHTTPHeaders: { "X-Requested-With": "e2e" } });
+  expect((await api.post("/api/v1/auth/login", { data: { username: USER.username, password: USER.password } })).ok()).toBeTruthy();
+  const res = await api.post("/api/v1/keys", { data: { name: "balance used up", tiers: ["standard"], quota_limit_micro: 0, quota_scope: "balance" } });
+  expect(res.status()).toBe(201);
+  const { key } = await res.json();
+  await api.dispose();
+
+  await page.goto("/query");
+  await page.getByLabel("API Key").fill(key);
+  await page.getByRole("button", { name: "查询", exact: true }).click();
+  const result = page.getByTestId("query-result");
+  await expect(result.getByRole("status").filter({ hasText: "Plan 仍可用" })).toContainText("普通 / 强制档不再放行");
+});
+
+test("admin edits the public endpoint rate limits", async ({ page, baseURL }) => {
+  await login(page, ADMIN, "/admin/settings");
+  const group = page.getByRole("region", { name: /公开接口限频/ });
+  const status = group.getByLabel("状态栏接口 · 每个 key");
+  await expect(status).toHaveValue("60");
+  await status.fill("0");
+  await group.getByRole("button", { name: "保存" }).click();
+  await expect(group).toContainText("取值范围 1 – 10000");
+  await status.fill("75");
+  await group.getByRole("button", { name: "保存" }).click();
+  await expect(page.getByText("设置已保存，所有实例立即生效")).toBeVisible();
+  const admin = await adminApi(baseURL!);
+  expect((await (await admin.get("/api/v1/admin/settings")).json()).status_key_per_minute).toBe(75);
+  // Restore the default for the other tests.
+  expect((await admin.patch("/api/v1/admin/settings", { data: { status_key_per_minute: 60 } })).ok()).toBeTruthy();
+  await admin.dispose();
+});

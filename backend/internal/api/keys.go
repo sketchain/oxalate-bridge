@@ -489,7 +489,41 @@ func (s *Server) KeyLimits(ctx context.Context, k sqlc.ApiKey, now time.Time) (K
 		}
 		out.Windows = append(out.Windows, w)
 	}
+	out.Exhausted = exhaustionOf(out, scope)
 	return out, nil
+}
+
+// exhaustionOf reports the first exhausted limit (quota before windows) in
+// the words of the relay's rejection; nil when nothing is used up.
+func exhaustionOf(st KeyLimitStatus, scope string) *KeyExhaustion {
+	var rej *keymeter.Rejection
+	if r, err := st.QuotaRemainingMicro.Get(); err == nil && r <= 0 {
+		rej = keymeter.QuotaRejection(scope)
+	} else {
+		for i, w := range st.Windows {
+			if r, err := w.RemainingMicro.Get(); err == nil && r <= 0 {
+				var rec *time.Time
+				if t, err := w.RecoversAt.Get(); err == nil {
+					rec = &t
+				}
+				rej = keymeter.WindowRejection(scope, i, rec)
+				break
+			}
+		}
+	}
+	if rej == nil {
+		return nil
+	}
+	out := &KeyExhaustion{Code: KeyExhaustionCode(rej.Code), Message: rej.Message, PlanAvailable: rej.TierOnly(),
+		RecoversAt: nullable.NewNullNullable[time.Time]()}
+	if rej.Window != "" {
+		win := KeyExhaustionWindow(rej.Window)
+		out.Window = &win
+	}
+	if rej.RecoversAt != nil {
+		out.RecoversAt = nullable.NewNullableWithValue(*rej.RecoversAt)
+	}
+	return out
 }
 
 // GetKeyLimits implements GET /keys/{keyId}/limits.

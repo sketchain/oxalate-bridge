@@ -289,7 +289,7 @@ function PricesAndReconcile({ settings }: { settings: Settings }) {
   return (
     <div className="grid gap-6 xl:grid-cols-2">
       <Section
-        n={5}
+        n={6}
         title={t("adminSettings.prices")}
         aside={
           <Button size="sm" onClick={() => refresh.mutate()} disabled={refresh.isPending}>
@@ -327,7 +327,7 @@ function PricesAndReconcile({ settings }: { settings: Settings }) {
         </form>
       </Section>
       <Section
-        n={6}
+        n={7}
         title={t("adminOverview.reconcile")}
         aside={
           <Button size="sm" onClick={() => reconcile.mutate()} disabled={reconcile.isPending}>
@@ -414,6 +414,17 @@ function AdminSettings() {
               { key: "auto_renew_lead_hours", kind: "duration", base: "h" },
               { key: "cooldown_5xx_seconds", kind: "duration", base: "s" },
               { key: "cooldown_429_default_seconds", kind: "duration", base: "s" },
+            ]}
+          />
+          <NumberGroup
+            n={5}
+            title={t("adminSettings.publicRates")}
+            settings={s}
+            note={t("adminSettings.publicRatesNote")}
+            specs={[
+              { key: "public_query_ip_per_minute", kind: "int", min: 1, max: 10000 },
+              { key: "public_query_key_per_minute", kind: "int", min: 1, max: 10000 },
+              { key: "status_key_per_minute", kind: "int", min: 1, max: 10000 },
             ]}
           />
           <PricesAndReconcile settings={s} />

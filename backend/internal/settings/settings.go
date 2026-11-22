@@ -35,7 +35,16 @@ type Values struct {
 	AutoRenewLeadHours       int                `json:"auto_renew_lead_hours"`
 	Cooldown5xxSeconds       int                `json:"cooldown_5xx_seconds"`
 	Cooldown429Seconds       int                `json:"cooldown_429_default_seconds"`
+	PublicQueryIPPerMinute   int                `json:"public_query_ip_per_minute"`
+	PublicQueryKeyPerMinute  int                `json:"public_query_key_per_minute"`
+	StatusKeyPerMinute       int                `json:"status_key_per_minute"`
 }
+
+// Bounds of the public endpoint rate limits (requests per minute).
+const (
+	MinPublicRate = 1
+	MaxPublicRate = 10000
+)
 
 // TierMultipliers are the billing multipliers of the three tiers.
 type TierMultipliers struct {
@@ -80,6 +89,9 @@ func Defaults() Values {
 		AutoRenewLeadHours:       24,
 		Cooldown5xxSeconds:       30,
 		Cooldown429Seconds:       60,
+		PublicQueryIPPerMinute:   30,
+		PublicQueryKeyPerMinute:  30,
+		StatusKeyPerMinute:       60,
 	}
 }
 
@@ -124,6 +136,12 @@ func (v Values) Validate() error {
 		return fmt.Errorf("auto_renew_lead_hours must be >= 0")
 	case v.Cooldown5xxSeconds < 0 || v.Cooldown429Seconds < 0:
 		return fmt.Errorf("cooldowns must be >= 0")
+	case !rateOK(v.PublicQueryIPPerMinute):
+		return fmt.Errorf("public_query_ip_per_minute must be within %d..%d", MinPublicRate, MaxPublicRate)
+	case !rateOK(v.PublicQueryKeyPerMinute):
+		return fmt.Errorf("public_query_key_per_minute must be within %d..%d", MinPublicRate, MaxPublicRate)
+	case !rateOK(v.StatusKeyPerMinute):
+		return fmt.Errorf("status_key_per_minute must be within %d..%d", MinPublicRate, MaxPublicRate)
 	}
 	for model, m := range v.ModelMultipliers {
 		if m < 0 {
@@ -232,3 +250,5 @@ func Patch(v Values, patch map[string]json.RawMessage) (Values, []string, error)
 	}
 	return out, changed, nil
 }
+
+func rateOK(n int) bool { return n >= MinPublicRate && n <= MaxPublicRate }

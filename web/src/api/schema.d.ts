@@ -312,7 +312,7 @@ export interface paths {
         /**
          * Usage of the API key in the request headers (no login).
          * @description The key is read from `Authorization: Bearer` or `x-api-key` only (never from the URL).
-         *     Rate limited per client IP and per key. An unknown or deleted key is a uniform 401;
+         *     Rate limited per client IP and per key (`public_query_ip_per_minute` / `public_query_key_per_minute` in the runtime settings, default 30 each; changes apply immediately). An unknown or deleted key is a uniform 401;
          *     a disabled or expired key still answers with its status. `account` is present only
          *     when the key allows owner queries.
          */
@@ -2375,6 +2375,12 @@ export interface components {
             auto_renew_lead_hours: number;
             cooldown_5xx_seconds: number;
             cooldown_429_default_seconds: number;
+            /** @description GET /public/key-usage per client IP per minute (default 30). */
+            public_query_ip_per_minute: number;
+            /** @description GET /public/key-usage per key per minute (default 30). */
+            public_query_key_per_minute: number;
+            /** @description GET /v1/bridge/status (relay domain) per key per minute (default 60). */
+            status_key_per_minute: number;
         };
         /** @description Any subset of Settings. */
         SettingsPatch: {
@@ -2405,6 +2411,9 @@ export interface components {
             auto_renew_lead_hours?: number;
             cooldown_5xx_seconds?: number;
             cooldown_429_default_seconds?: number;
+            public_query_ip_per_minute?: number;
+            public_query_key_per_minute?: number;
+            status_key_per_minute?: number;
         };
         AuditLog: {
             /** Format: uuid */
@@ -2642,6 +2651,24 @@ export interface components {
             /** Format: date-time */
             usage_reset_at?: string | null;
             windows: components["schemas"]["KeyWindowStatus"][];
+            exhausted?: components["schemas"]["KeyExhaustion"];
+        };
+        /**
+         * @description Present when the total quota or a window of the key is used up (the
+         *     quota is reported before the windows). With `quota_scope = all` the
+         *     whole key is refused; with `balance` only the standard and force tiers
+         *     are, and `plan_available` is true.
+         */
+        KeyExhaustion: {
+            /** @enum {string} */
+            code: "key_quota_exhausted" | "key_window_exhausted" | "key_balance_quota_exhausted";
+            /** @enum {string} */
+            window?: "5h" | "1d" | "7d";
+            /** Format: date-time */
+            recovers_at?: string | null;
+            /** @description True when requests on the plan tier are still allowed (balance scope). */
+            plan_available: boolean;
+            message: string;
         };
         KeyStatusKey: {
             name: string;

@@ -784,8 +784,13 @@
       "auto_renew_lead_hours": "Auto-renew lead time",
       "cooldown_5xx_seconds": "Cooldown after 5xx",
       "cooldown_429_default_seconds": "Default cooldown after 429",
-      "price_url": "Price table URL"
-    }
+      "price_url": "Price table URL",
+      "public_query_ip_per_minute": "Key query · per IP",
+      "public_query_key_per_minute": "Key query · per key",
+      "status_key_per_minute": "Status line · per key"
+    },
+    "publicRates": "Public endpoint rate limits",
+    "publicRatesNote": "Requests per minute, 1–10000. Applies to every replica as soon as it is saved."
   },
   "reason": {
     "disabled": "Disabled by an admin",
@@ -809,7 +814,8 @@
     "ip_not_allowed": "Client IP not in the key's allowlist (403)",
     "model_not_allowed": "Model not in the key's allowlist (403)",
     "key_quota_exhausted": "Key quota exhausted (429)",
-    "key_window_exhausted": "Key window limit reached (429)"
+    "key_window_exhausted": "Key window limit reached (429)",
+    "key_balance_quota_exhausted": "Key balance quota used up: standard / force refused, Plan still available (listed per tier in the 429)"
   },
   "keyStatus": {
     "active": "Active",
@@ -871,7 +877,13 @@
     "dailyRange": "Days",
     "days": "{{n}} d",
     "editLimits": "Edit limits",
-    "adminTitle": "Limits and access of {{name}}"
+    "adminTitle": "Limits and access of {{name}}",
+    "exhausted": {
+      "key_quota_exhausted": "The total quota is used up; every request with this key is refused (429).",
+      "key_window_exhausted": "The {{window}} is used up; every request with this key is refused (429).",
+      "key_balance_quota_exhausted": "The balance-only quota is used up: standard / force are no longer allowed, Plan is still available.",
+      "key_balance_window_exhausted": "The balance-only {{window}} is used up: standard / force are paused, Plan is still available."
+    }
   },
   "redeem": {
     "title": "Redeem code",

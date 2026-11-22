@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.4.1
+
+### 新增错误码
+
+- 转发接口：`key_balance_quota_exhausted`。`quota_scope = balance`（仅余额）的 key 总额度或某个窗口用完时，只把 standard 和 force 两档从这次请求的档位链里去掉，这两档的拒绝原因就是这个码（窗口导致时附 `window` 与 `recovers_at`）；plan 档照常尝试。所有档都不放行时仍按原规则返回 429（rate_limit_error，请求日志 `error_type = tier_rejected`），`error.rejections` 逐档列出原因。中英文文案已补齐。
+- `quota_scope = all` 不变：总额度或任何窗口用完，整个 key 拒绝（`key_quota_exhausted` / `key_window_exhausted`），不往下一档切。
+
+### 新增接口字段
+
+- `KeyLimitStatus.exhausted`（`GET /keys/{id}/limits`、`GET /admin/keys/{id}/limits`、`GET /public/key-usage`、`GET /v1/bridge/status`）：额度或窗口用完时给出 `code`、`window`、`recovers_at`、`plan_available`（仅余额口径为 true）和 `message`；总额度优先于窗口。
+- `Settings` / `SettingsPatch` 新增 `public_query_ip_per_minute`（默认 30）、`public_query_key_per_minute`（默认 30）、`status_key_per_minute`（默认 60），取值 1–10000。
+
+### 仅余额口径不再拦 Plan 档
+
+- key 级别的额度检查和预扣按口径分流：仅余额口径额度用完时只标记 standard / force 不放行，Plan 档继续走原来的判定。
+- 预扣：仅余额口径下 plan 档请求不受 key 额度和窗口约束；standard / force 的预扣额仍以 key 剩余额度和窗口剩余额度为上限（同一个 Lua 脚本，行为未变）。
+- 查询页、key 详情抽屉显示用完提示：仅余额口径为黄色横条「普通 / 强制档不再放行，Plan 仍可用」，全部计入口径为红色横条「所有请求都会被拒绝」，窗口导致时带预计恢复时间。README 里的状态栏脚本改为读取 `limits.exhausted`，仅余额口径显示「Key 余额额度用完（Plan 仍可用）」。
+
+### 公开接口限频可在运行时调整
+
+- 凭 key 查询（按 IP、按 key）和状态栏接口（按 key）的限频从常量移进运行时设置，改动经 pub/sub 在所有副本即时生效；状态栏接口的 429 文案带上当前限额。
+- 管理端「系统设置」新增「公开接口限频」分组，三个值做 1–10000 的整数校验（前后端都校验）。
+
+### 测试
+
+- 后端：两种口径下总额度用完、窗口用完后的行为；仅余额口径档位链切换（standard → plan）、只剩余额档时 429 逐档列出新原因码、Plan 也用完时同时列出 `plan_quota_exhausted` 与新原因码；预扣上限（仅余额口径 plan 请求在途时 key 上无预扣、standard 请求被窗口剩余额度封顶，全部计入口径 plan 请求被剩余额度封顶）；`exhausted` 字段；限频设置的范围校验、另一个副本即时生效、调小后立即限流、调大后当分钟立即放行。
+- Playwright 冒烟：仅余额口径额度为 0 的 key 在查询页显示「Plan 仍可用」；管理员在「公开接口限频」里修改并校验范围。
+
 ## v0.4.0
 
 ### 升级须知

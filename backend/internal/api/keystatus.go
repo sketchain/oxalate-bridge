@@ -13,12 +13,6 @@ import (
 	"github.com/sketchain/oxalate-bridge/backend/internal/db/sqlc"
 )
 
-// Public key query limits (per client IP and per key, each per minute).
-const (
-	publicPerIP  = 30
-	publicPerKey = 30
-)
-
 type publicCtx struct {
 	key string
 	ip  string
@@ -88,14 +82,16 @@ func (s *Server) KeyStatusOf(ctx context.Context, info authcache.Info) (KeyStatu
 // GetPublicKeyUsage implements GET /public/key-usage.
 func (s *Server) GetPublicKeyUsage(ctx context.Context, _ GetPublicKeyUsageRequestObject) (GetPublicKeyUsageResponseObject, error) {
 	pc, _ := ctx.Value(ctxPublic).(publicCtx)
-	if s.rateHit(ctx, "pq-ip", pc.ip, publicPerIP) {
+	// Per client IP and per key, each per minute (runtime settings).
+	set := s.Settings.Get()
+	if s.rateHit(ctx, "pq-ip", pc.ip, int64(set.PublicQueryIPPerMinute)) {
 		return nil, apiErr(http.StatusTooManyRequests, "rate_limited", "too many queries, try again in a minute")
 	}
 	if pc.key == "" {
 		return nil, unauthorized("API key required in Authorization: Bearer or x-api-key")
 	}
 	hash := authcache.HashHex(pc.key)
-	if s.rateHit(ctx, "pq-key", hash, publicPerKey) {
+	if s.rateHit(ctx, "pq-key", hash, int64(set.PublicQueryKeyPerMinute)) {
 		return nil, apiErr(http.StatusTooManyRequests, "rate_limited", "too many queries, try again in a minute")
 	}
 	info, err := s.Auth.Lookup(ctx, pc.key)
