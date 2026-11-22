@@ -175,4 +175,3 @@ func (s *Server) SetMyLocale(ctx context.Context, req SetMyLocaleRequestObject) 
 	}
 	return SetMyLocale204Response{}, nil
 }
-

@@ -1,5 +1,54 @@
 # Changelog
 
+## v0.5.0
+
+### 新增错误码
+
+- 管理 API token：`admin_token_invalid`（401，未知 token 或创建人不再是有效管理员）、`admin_token_expired`（401）、`admin_token_revoked`（401）、`admin_token_ip_denied`（403）、`admin_token_read_only`（403，只读 token 做修改操作）、`admin_token_forbidden`（403，任何 token 都不能做的操作）、`admin_token_rate_limited`（429）。
+- 推送：`push_unavailable`（503，VAPID 密钥未加载）。所有新错误码都有中英文文案。
+
+### 新增接口
+
+- `GET|POST /admin/admin-tokens`、`POST /admin/admin-tokens/{id}/revoke`（只接受会话）。
+- `GET /push/config`（VAPID 公钥）、`GET|POST /push/subscriptions`、`DELETE /push/subscriptions/{id}`、`POST /push/test`。
+- `GET|PUT /notifications/prefs`、`PUT /me/locale`；`Me` 新增 `locale`。
+- `AuditLog` 新增 `token_id`、`token_name`；`Settings` / `SettingsPatch` 新增 `admin_token_per_minute`（默认 120）、`stream_backlog_threshold`（默认 1000）、`vapid_subject`（`Settings` 另有只读的 `vapid_subject_effective`）。
+- openapi.yaml 新增 bearer securityScheme `adminToken`，每个管理接口标注 `x-admin-token-scope`（read / write / none），有测试保证标注与中间件一致。
+- 新环境变量 `BRIDGE_VAPID_SUBJECT`。
+
+### 管理 API token
+
+- 新表 `admin_tokens`（名称、sha256、显示前缀、scope、创建人、过期时间、CIDR 白名单、最近使用时间与 IP、吊销时间）。只有管理员能创建，格式 `oba-` + 43 位 base62（无模数偏差），完整 token 只在创建时返回一次。
+- `/api/v1/admin/*` 同时接受会话 Cookie 和 `Authorization: Bearer oba-…`，token 请求跳过 CSRF 头校验。只读：GET / HEAD（含 SSE）；读写：全部管理操作。两种都不能管理 token、修改角色、创建管理员、设置管理员密码。
+- 按 token 限频（`admin_token_per_minute`）；审计日志记录 token 的 id 和名称，操作者为创建人。
+- 管理端「系统设置」新增「管理 API Token」分组：列表（名称、前缀、权限、过期时间、最近使用、状态）、创建对话框（名称、只读 / 读写、过期时间预设或自定义、IP 白名单）、创建后醒目展示完整 token 并可复制（「关闭后无法再次查看」）、吊销二次确认。审计日志页显示经由哪个 token。
+
+### PWA
+
+- `manifest.webmanifest`（Oxalate's Bridge / Bridge，standalone，start_url 与 scope 为 /，浅色主题色；深色主题用带 media 的 theme-color，面板手动切换主题时同步更新）。`scripts/gen-logo.py` 新增 192、512、maskable 512 图标和通知用的单色 badge。`index.html` 补齐 iOS 的 `apple-mobile-web-app-*` meta。
+- 手写 service worker（`web/sw/sw.js`），由 Vite 插件在构建时写入预缓存列表（带 hash 的产物 + 应用外壳）和由产物计算的版本号：`/api/*`、`/v1/*` 不缓存不拦截；断网导航显示离线页（试剂标签风格，「当前离线」+ 重试）；新版本 waiting 时底部提示「有新版本，点击刷新」，点击后 skipWaiting 并刷新。
+- Go 服务端给 `/sw.js`、`manifest.webmanifest`、`index.html`、`offline.html` 返回正确的 Content-Type 和 `Cache-Control: no-cache`（`/sw.js` 另带 `Service-Worker-Allowed: /`）。
+- iOS Safari 未从主屏幕打开时显示一次可关闭的「分享 → 添加到主屏幕」引导（关闭状态存 localStorage）；Android / 桌面端捕获 `beforeinstallprompt`，在「设置」页显示「安装应用」按钮。
+
+### Web 推送
+
+- 首次启动生成 VAPID 密钥对存入 settings（私钥用 `BRIDGE_SECRET_KEY` 加密，多副本先写者为准）；联系方式可在管理端修改，默认 `BRIDGE_VAPID_SUBJECT`，再缺省为占位 mailto。推送库 `github.com/SherClockHolmes/webpush-go`。
+- 新表 `push_subscriptions`（端点唯一，设备标签由 User-Agent 推断，最近成功时间、失败次数；404 / 410 自动删除）、`notification_prefs`（每用户每事件开关 + 余额阈值）；`users` 新增 `locale`，面板语言变化时同步，推送文案按它选中文或英文。订阅端点只接受已知推送服务的 https 地址。
+- 事件只在状态变化时触发（上次状态存 Redis）：管理员默认开 `account_auth_error`、`account_stale`、`subscription_pending`、`reconcile_mismatch`、`stream_backlog_high`（超过阈值并持续 5 分钟），默认关 `account_full`、`safeguard_event`；用户默认开 `balance_low`（跌破阈值推一次、回到阈值以上才重新计）、`plan_expiring`（到期前 3 天，每个续费周期一次）、`auto_renew_failed`（每个周期一次），默认关 `key_exhausted`。
+- 去重：同一用户、事件、对象 30 分钟内只推一次（Redis SET NX EX，多副本共享）。发送走 Redis 有序集合队列（每个副本一个 worker，Lua 原子取任务），失败指数退避重试；TTL 1 小时，账号异常类 high urgency；payload 含标题、正文和深链地址。SW 显示带 logo 的通知，点击时聚焦已打开的窗口（并跳到目标页）或新开窗口。
+- 前端「设置 → 通知」（设置页新增「通用 / 通知」标签）：本设备状态与开启 / 关闭（iOS 未添加到主屏幕时提示先添加）、我的设备列表（可逐个删除）、按角色分组的事件开关、余额阈值（USD）、发送测试通知。
+
+### 修正
+
+- 首页 `index.html` 现在也带 `Cache-Control: no-cache`（之前只有 SPA 路由回退时才带）。
+
+### 测试与演示数据
+
+- 后端：token 两种 scope 的权限边界（含 SSE）、禁止的操作、过期 / 吊销 / IP 白名单、按 token 限频、审计记录与最近使用；推送设备的注册与删除、测试通知送达、404 / 410 清理与 5xx 重试；状态变化检测不重复触发、30 分钟去重与跨副本去重、积压持续 5 分钟才推、对账只在转为不一致时推、`balance_low` 回升后重置、`plan_expiring` 每个周期一次、`auto_renew_failed` 每个周期一次、`key_exhausted` 默认关闭、按角色的默认开关；购买后推送待分配订阅；静态文件响应头；openapi scope 标注一致性。
+- Playwright 冒烟：manifest 字段与图标、SW 注册并且不缓存 API、断网后导航显示离线页并能重试、新版本出现刷新提示条并能刷新、iOS 安装引导可关闭且只显示一次、管理员创建 / 使用 / 吊销 token、通知设置页（开关、阈值、设备、测试按钮、订阅接口校验）、管理员看到管理员事件；手机端无横向溢出的页面加上了通知设置页和系统设置页。
+- 截图新增「管理 API Token」分组、token 创建后的弹窗、通知设置页、离线页、手机端安装引导条（浅色、深色、手机），其余截图随版本号重新生成。
+- `seed-demo` 为每个演示用户写入通知偏好的默认值（alice 打开 `key_exhausted`、阈值 $20，carol 使用英文推送）。
+
 ## v0.4.1
 
 ### 新增错误码
