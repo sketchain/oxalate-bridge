@@ -1,6 +1,14 @@
-import { useMemo } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Ticket } from "lucide-react";
+import { toast } from "sonner";
+import { api, unwrap } from "@/api/client";
+import { keys } from "@/api/queries";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ErrorBox } from "@/components/Feedback";
+import { useApiMutation } from "@/lib/mutations";
 import { useTranslation } from "react-i18next";
 import type { Schemas } from "@/api/client";
 import { balanceQuery, ledgerInfinite } from "@/api/queries";
@@ -57,8 +65,9 @@ function BillingPage() {
             { label: t("billing.pending"), value: formatUSD(b?.pending_micro ?? 0), note: t("billing.pendingNote") },
           ]}
         />
+        <RedeemSection />
         <Section
-          n={1}
+          n={2}
           title={t("billing.ledger")}
           aside={
             <div className="flex items-center gap-2">
@@ -110,5 +119,52 @@ function BillingPage() {
         </Section>
       </div>
     </>
+  );
+}
+
+/** Redeem a code into the balance. */
+function RedeemSection() {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const [code, setCode] = useState("");
+  const redeem = useApiMutation({
+    mutationFn: (c: string) => unwrap(api.POST("/balance/redeem", { body: { code: c } })),
+    silentError: true,
+    onSuccess: (r) => {
+      toast.success(t("redeem.done", { amount: formatUSD(r.amount_micro) }));
+      setCode("");
+      void qc.invalidateQueries({ queryKey: keys.balance });
+      void qc.invalidateQueries({ queryKey: ["me", "ledger"] });
+      void qc.invalidateQueries({ queryKey: keys.availability });
+      void qc.invalidateQueries({ queryKey: keys.me });
+    },
+  });
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (code.trim()) redeem.mutate(code.trim());
+  };
+  return (
+    <Section n={1} title={t("redeem.title")}>
+      <form onSubmit={submit} className="flex flex-col gap-2" autoComplete="off">
+        <Label htmlFor="redeem-code">{t("redeem.label")}</Label>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Input
+            id="redeem-code"
+            className="num uppercase sm:max-w-md"
+            placeholder="OXA-XXXX-XXXX-XXXX-XXXX"
+            spellCheck={false}
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            aria-invalid={!!redeem.error}
+          />
+          <Button type="submit" variant="primary" disabled={redeem.isPending || !code.trim()}>
+            <Ticket aria-hidden />
+            {redeem.isPending ? t("redeem.redeeming") : t("redeem.submit")}
+          </Button>
+        </div>
+        <p className="text-[12px] text-muted">{t("redeem.hint")}</p>
+        {redeem.error ? <ErrorBox error={redeem.error} /> : null}
+      </form>
+    </Section>
   );
 }

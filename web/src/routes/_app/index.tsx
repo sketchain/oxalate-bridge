@@ -83,22 +83,15 @@ function Overview() {
 
         <AvailabilityBlock n={2} />
 
-        <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
-          {/* The chart grows with the row (min 240px) so the Plan cards next to it never leave a blank band. */}
-          <Section
-            n={3}
-            title={t("overview.spend14")}
-            aside={<span className="num text-[12px] text-muted">{facts.total}</span>}
-            className="flex flex-col"
-            bodyClassName="flex min-h-0 flex-1 flex-col"
-            id="spend14"
-          >
+        {/* Top-aligned row: the chart keeps a fixed 280px height and is never stretched by the Plan cards. */}
+        <div className="grid items-start gap-6 xl:grid-cols-[1.4fr_1fr]" data-testid="spend-row">
+          <Section n={3} title={t("overview.spend14")} aside={<span className="num text-[12px] text-muted">{facts.total}</span>} id="spend14">
             {history.isPending ? (
-              <Skeleton className="h-60" />
+              <Skeleton className="h-[280px]" />
             ) : history.error ? (
               <ErrorBox error={history.error} onRetry={() => history.refetch()} />
             ) : (
-              <TierStackedBars fill data={series} description={t("charts.tierSeries", { title: t("overview.spend14"), ...facts })} />
+              <TierStackedBars height={280} data={series} description={t("charts.tierSeries", { title: t("overview.spend14"), ...facts })} />
             )}
           </Section>
           <Section n={4} title={t("overview.myPlans")} aside={<Link to="/plans" className="text-[13px] font-semibold underline underline-offset-4">{t("common.viewAll")}</Link>}>

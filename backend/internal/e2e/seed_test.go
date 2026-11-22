@@ -76,6 +76,10 @@ func TestSeedDemo(t *testing.T) {
 			{gjson.Get(est, "k").Float(), acc.Get("k").Float()},
 			{gjson.Get(est, "k").Float(), prof.K()},
 		}
+		// k = week total ÷ 5h total, a plausible 5–10 (not a per-percent figure).
+		if k := acc.Get("k").Float(); k < 5 || k > 10 || math.Abs(k-rt.Get("week.total_usd").Float()/rt.Get("five_hour.total_usd").Float()) > 1e-6 {
+			t.Fatalf("account %d k %v", i+1, k)
+		}
 		for j, p := range pairs {
 			if math.Abs(p[0]-p[1]) > 1e-6 {
 				t.Fatalf("account %d pair %d: estimate %v runtime/profile %v\nestimate %s\nruntime %s", i+1, j, p[0], p[1], est, rt.Raw)
@@ -92,6 +96,27 @@ func TestSeedDemo(t *testing.T) {
 	}
 	if n := gjson.Get(rawGet(t, alice, "/usage/logs?limit=200"), "items.#").Int(); n < 50 {
 		t.Fatalf("alice history %d", n)
+	}
+	// A key with limits whose meter includes the history, a redeem batch, an announcement.
+	keys := gjson.Get(rawGet(t, alice, "/keys"), "items").Array()
+	limited := 0
+	for _, k := range keys {
+		if k.Get("limit_1d_micro").Exists() && k.Get("limit_1d_micro").Type != gjson.Null {
+			limited++
+			lim := gjson.Parse(rawGet(t, alice, "/keys/"+k.Get("id").String()+"/limits"))
+			if lim.Get("used_all_micro").Int() <= 0 || lim.Get("windows.2.used_micro").Int() <= 0 {
+				t.Fatalf("limited key meter %s", lim.Raw)
+			}
+		}
+	}
+	if limited != 2 {
+		t.Fatalf("limited keys %d", limited)
+	}
+	if b := gjson.Get(rawGet(t, admin, "/admin/redeem-batches"), "items.0"); b.Get("count").Int() != 20 || b.Get("used").Int() != 1 || b.Get("voided").Int() != 1 {
+		t.Fatalf("redeem batch %s", b.Raw)
+	}
+	if n := gjson.Get(rawGet(t, alice, "/announcements"), "items.#").Int(); n != 1 {
+		t.Fatalf("announcements %d", n)
 	}
 	res, err := jobs.Reconcile(ctx, rep.App.Store, testutil.Logger())
 	testutil.Must(t, err)

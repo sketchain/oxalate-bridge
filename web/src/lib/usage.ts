@@ -81,3 +81,21 @@ export function seriesFacts(rows: TierRow[], fmt: (v: number) => string) {
     force: fmt(tiers.force),
   };
 }
+
+/** Daily tier totals of the last `days` days (server-zone dates "YYYY-MM-DD"), zero-filled, oldest first. */
+export function dailyTierPoints(items: { day: string; tier: string; billed_micro: number }[], days: number, today = new Date()): TierRow[] {
+  const map = new Map<string, TierRow>();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    map.set(key, { key, label: `${d.getMonth() + 1}/${d.getDate()}`, plan: 0, standard: 0, force: 0 });
+  }
+  for (const it of items) {
+    const [, m, d] = it.day.split("-").map(Number);
+    const row = map.get(it.day) ?? { key: it.day, label: `${m}/${d}`, plan: 0, standard: 0, force: 0 };
+    if (it.tier === "plan" || it.tier === "standard" || it.tier === "force") row[it.tier] += it.billed_micro;
+    map.set(it.day, row);
+  }
+  return [...map.values()].sort((a, b) => a.key.localeCompare(b.key));
+}

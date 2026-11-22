@@ -122,6 +122,9 @@ func (s *seeder) run(ctx context.Context) error {
 		{"live requests", s.liveRequests},
 		{"history", s.history},
 		{"settle", s.waitSettled},
+		{"key meters", s.keyMeters},
+		{"redeem codes", s.redeemCodes},
+		{"announcement", s.announcement},
 		{"cpa-quota demo schema", s.cpaQuota},
 		{"reconcile", s.reconcile},
 		{"stale account", s.staleAccount},
@@ -286,14 +289,22 @@ func (s *seeder) createKeys(context.Context) error {
 		tiers             []string
 		sub               string
 		conc, rpm         *int
+		limits            map[string]any
 	}{
-		{"alice-cli", "alice", "Claude Code", []string{"plan", "standard"}, "alice", nil, nil},
-		{"alice-batch", "alice", "批处理脚本", []string{"standard", "force"}, "", ptr(2), ptr(30)},
-		{"bob-main", "bob", "默认", []string{"plan", "standard", "force"}, "bob", nil, nil},
-		{"carol-main", "carol", "试用", []string{"standard"}, "", nil, nil},
+		{"alice-cli", "alice", "Claude Code", []string{"plan", "standard"}, "alice", nil, nil,
+			map[string]any{"limit_5h_micro": 40_000_000, "limit_1d_micro": 120_000_000, "allow_owner_query": true}},
+		{"alice-batch", "alice", "批处理脚本", []string{"standard", "force"}, "", ptr(2), ptr(30),
+			map[string]any{"quota_limit_micro": 30_000_000, "quota_scope": "balance", "limit_1d_micro": 15_000_000,
+				"model_allowlist": []string{"claude-sonnet-4.6"}, "expires_at": time.Now().UTC().AddDate(0, 3, 0).Truncate(time.Hour)}},
+		{"bob-main", "bob", "默认", []string{"plan", "standard", "force"}, "bob", nil, nil, nil},
+		{"carol-main", "carol", "试用", []string{"standard"}, "", nil, nil,
+			map[string]any{"quota_limit_micro": 5_000_000, "ip_allowlist": []string{"0.0.0.0/0", "::/0"}}},
 	}
 	for _, k := range specs {
 		body := map[string]any{"name": k.name, "tiers": k.tiers}
+		for f, v := range k.limits {
+			body[f] = v
+		}
 		var sub *uuid.UUID
 		if k.sub != "" {
 			id := s.subs[k.sub]
@@ -567,4 +578,53 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// keyMeters adds the directly written history to the key usage counters and
+// drops the Redis key meters so they are rebuilt from PostgreSQL and
+// request_logs (history included) on their next read.
+func (s *seeder) keyMeters(ctx context.Context) error {
+	if _, err := s.app.Pool.Exec(ctx, `UPDATE api_keys k SET used_all_micro = t.a, used_balance_micro = t.b, usage_version = k.usage_version + 1
+		FROM (SELECT key_id, sum(billed_micro)::bigint AS a,
+		             COALESCE(sum(billed_micro) FILTER (WHERE tier IN ('standard', 'force')), 0)::bigint AS b
+		      FROM request_logs WHERE key_id IS NOT NULL GROUP BY key_id) t
+		WHERE t.key_id = k.id`); err != nil {
+		return err
+	}
+	for _, k := range s.keys {
+		if err := s.app.St.DropKeyMeter(ctx, k.id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// redeemCodes creates a batch of redeem codes; alice redeems one and one is voided.
+func (s *seeder) redeemCodes(ctx context.Context) error {
+	var batch struct {
+		ID uuid.UUID `json:"id"`
+	}
+	if err := s.admin.call("POST", "/admin/redeem-batches", map[string]any{"amount_micro": 10_000_000, "count": 20, "prefix": "OXA",
+		"expires_at": time.Now().UTC().AddDate(0, 6, 0).Truncate(time.Hour), "note": "演示兑换码"}, &batch); err != nil {
+		return err
+	}
+	codes, err := s.app.Store.Q.ListRedeemCodesByBatch(ctx, batch.ID)
+	if err != nil || len(codes) < 2 {
+		return fmt.Errorf("list demo codes: %w", err)
+	}
+	raw, err := s.app.Box.Open(codes[0].CodeEnc)
+	if err != nil {
+		return err
+	}
+	if err := s.clients["alice"].call("POST", "/balance/redeem", map[string]any{"code": raw}, nil); err != nil {
+		return err
+	}
+	return s.admin.call("POST", "/admin/redeem-codes/"+codes[1].ID.String()+"/void", nil, nil)
+}
+
+// announcement publishes one info announcement.
+func (s *seeder) announcement(context.Context) error {
+	return s.admin.call("POST", "/admin/announcements", map[string]any{"title": "欢迎使用 oxalate-bridge 演示站",
+		"body": "这是演示数据：账号、用量和兑换码都是假的。\n使用说明见 https://github.com/sketchain/oxalate-bridge", "level": "info",
+		"enabled": true}, nil)
 }

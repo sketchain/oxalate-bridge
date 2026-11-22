@@ -145,6 +145,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/keys/{keyId}/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                keyId: components["parameters"]["KeyId"];
+            };
+            cookie?: never;
+        };
+        /** Real-time limits and usage of a key (quota and sliding windows). */
+        get: operations["getKeyLimits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/keys/{keyId}/reset-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                keyId: components["parameters"]["KeyId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset the used amount of the total quota to 0 (windows slide on their own and are not affected). */
+        post: operations["resetKeyUsage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/keys/{keyId}/usage/daily": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                keyId: components["parameters"]["KeyId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getKeyDailyUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/balance": {
         parameters: {
             query?: never;
@@ -169,6 +225,98 @@ export interface paths {
             cookie?: never;
         };
         get: operations["listMyLedger"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/balance/redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Redeem a code into the balance (rate limited per user; repeated failures lock redemption for a while). */
+        post: operations["redeemCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/announcements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Announcements in effect now that the caller has not dismissed. */
+        get: operations["listActiveAnnouncements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/announcements/{announcementId}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                announcementId: components["parameters"]["AnnouncementId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["dismissAnnouncement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pricing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Per-million-token prices of every model served by an enabled account, per tier. */
+        get: operations["getPricing"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/key-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Usage of the API key in the request headers (no login).
+         * @description The key is read from `Authorization: Bearer` or `x-api-key` only (never from the URL).
+         *     Rate limited per client IP and per key. An unknown or deleted key is a uniform 401;
+         *     a disabled or expired key still answers with its status. `account` is present only
+         *     when the key allows owner queries.
+         */
+        get: operations["getPublicKeyUsage"];
         put?: never;
         post?: never;
         delete?: never;
@@ -273,6 +421,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["listMyUsageLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/usage/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getMyKeyUsage"];
         put?: never;
         post?: never;
         delete?: never;
@@ -398,6 +562,61 @@ export interface paths {
         /** Enable or disable any user's key (takes effect on every replica at once). */
         put: operations["adminSetKeyEnabled"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/keys/{keyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                keyId: components["parameters"]["KeyId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Edit any user's key (limits included). */
+        patch: operations["adminUpdateKey"];
+        trace?: never;
+    };
+    "/admin/keys/{keyId}/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                keyId: components["parameters"]["KeyId"];
+            };
+            cookie?: never;
+        };
+        get: operations["adminGetKeyLimits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/keys/{keyId}/reset-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                keyId: components["parameters"]["KeyId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["adminResetKeyUsage"];
         delete?: never;
         options?: never;
         head?: never;
@@ -896,6 +1115,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/redeem-batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["adminListRedeemBatches"];
+        put?: never;
+        post: operations["adminCreateRedeemBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/redeem-batches/{batchId}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batchId: string;
+            };
+            cookie?: never;
+        };
+        /** CSV of every code of a batch, original text included (audited). */
+        get: operations["adminExportRedeemBatch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/redeem-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["adminListRedeemCodes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/redeem-codes/{codeId}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                codeId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["adminVoidRedeemCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/announcements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["adminListAnnouncements"];
+        put?: never;
+        post: operations["adminCreateAnnouncement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/announcements/{announcementId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                announcementId: components["parameters"]["AnnouncementId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["adminDeleteAnnouncement"];
+        options?: never;
+        head?: never;
+        patch: operations["adminUpdateAnnouncement"];
+        trace?: never;
+    };
     "/admin/events": {
         parameters: {
             query?: never;
@@ -929,7 +1251,9 @@ export interface components {
                  *     forbidden, csrf_header_missing, not_found, conflict,
                  *     rate_limited, insufficient_balance, invalid_state,
                  *     upstream_validation_failed, unsupported_subscription,
-                 *     account_has_subscriptions, cpa_quota_unavailable, internal.
+                 *     account_has_subscriptions, cpa_quota_unavailable, redeem_code_invalid,
+                 *     redeem_code_used, redeem_code_void, redeem_code_expired, redeem_locked,
+                 *     internal.
                  */
                 code: string;
                 message: string;
@@ -944,7 +1268,7 @@ export interface components {
         /** @enum {string} */
         Tier: "plan" | "standard" | "force";
         /** @enum {string} */
-        LedgerType: "admin_topup" | "admin_adjust" | "plan_purchase" | "plan_renewal" | "api_charge" | "refund";
+        LedgerType: "admin_topup" | "admin_adjust" | "plan_purchase" | "plan_renewal" | "api_charge" | "refund" | "redeem";
         /**
          * @description Only Claude subscriptions are served (since v0.2.0).
          * @enum {string}
@@ -975,6 +1299,16 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        /**
+         * @description What counts toward the key quota and windows: all = every billed charge (plan quota and balance), balance = only charges of the standard / force tiers.
+         * @enum {string}
+         */
+        QuotaScope: "all" | "balance";
+        /**
+         * @description active, disabled (key or its user disabled) or expired.
+         * @enum {string}
+         */
+        KeyStatusValue: "active" | "disabled" | "expired";
         ApiKey: {
             /** Format: uuid */
             id: string;
@@ -992,6 +1326,51 @@ export interface components {
             last_used_at?: string | null;
             /** Format: date-time */
             created_at: string;
+            status: components["schemas"]["KeyStatusValue"];
+            /**
+             * Format: int64
+             * @description Total quota since the last reset; null = unlimited.
+             */
+            quota_limit_micro?: number | null;
+            quota_scope: components["schemas"]["QuotaScope"];
+            /**
+             * Format: int64
+             * @description Sliding 5-hour limit; null = unlimited.
+             */
+            limit_5h_micro?: number | null;
+            /**
+             * Format: int64
+             * @description Sliding 24-hour limit; null = unlimited.
+             */
+            limit_1d_micro?: number | null;
+            /**
+             * Format: int64
+             * @description Sliding 7-day limit; null = unlimited.
+             */
+            limit_7d_micro?: number | null;
+            /** Format: date-time */
+            expires_at?: string | null;
+            /** @description Allowed models (normalized names); null = every model. /v1/models is filtered too. */
+            model_allowlist?: string[] | null;
+            /** @description Allowed client IPs or CIDR prefixes (the real client IP per the trusted proxies); null = any. */
+            ip_allowlist?: string[] | null;
+            /** @description Lets the key read its owner's balance and plan figures (public key query and status line). */
+            allow_owner_query: boolean;
+            /**
+             * Format: int64
+             * @description Persisted usage since the last reset
+             */
+            used_all_micro: number;
+            /**
+             * Format: int64
+             * @description Persisted usage since the last reset
+             */
+            used_balance_micro: number;
+            /**
+             * Format: date-time
+             * @description Last reset (null = never).
+             */
+            usage_reset_at?: string | null;
         };
         ApiKeyWithSecret: components["schemas"]["ApiKey"] & {
             key: string;
@@ -1016,6 +1395,35 @@ export interface components {
             /** @default true */
             enabled: boolean;
             note?: string;
+            /**
+             * Format: int64
+             * @description Total quota since the last reset; null = unlimited.
+             */
+            quota_limit_micro?: number | null;
+            quota_scope?: components["schemas"]["QuotaScope"];
+            /**
+             * Format: int64
+             * @description Sliding 5-hour limit; null = unlimited.
+             */
+            limit_5h_micro?: number | null;
+            /**
+             * Format: int64
+             * @description Sliding 24-hour limit; null = unlimited.
+             */
+            limit_1d_micro?: number | null;
+            /**
+             * Format: int64
+             * @description Sliding 7-day limit; null = unlimited.
+             */
+            limit_7d_micro?: number | null;
+            /** Format: date-time */
+            expires_at?: string | null;
+            /** @description Allowed models (normalized names); null = every model. /v1/models is filtered too. */
+            model_allowlist?: string[] | null;
+            /** @description Allowed client IPs or CIDR prefixes (the real client IP per the trusted proxies); null = any. */
+            ip_allowlist?: string[] | null;
+            /** @description Lets the key read its owner's balance and plan figures (public key query and status line). */
+            allow_owner_query?: boolean;
         };
         /** @description Fields left out keep their value; send null to clear a nullable field. */
         ApiKeyUpdate: {
@@ -1027,6 +1435,35 @@ export interface components {
             rpm?: number | null;
             enabled?: boolean;
             note?: string;
+            /**
+             * Format: int64
+             * @description Total quota since the last reset; null = unlimited.
+             */
+            quota_limit_micro?: number | null;
+            quota_scope?: components["schemas"]["QuotaScope"];
+            /**
+             * Format: int64
+             * @description Sliding 5-hour limit; null = unlimited.
+             */
+            limit_5h_micro?: number | null;
+            /**
+             * Format: int64
+             * @description Sliding 24-hour limit; null = unlimited.
+             */
+            limit_1d_micro?: number | null;
+            /**
+             * Format: int64
+             * @description Sliding 7-day limit; null = unlimited.
+             */
+            limit_7d_micro?: number | null;
+            /** Format: date-time */
+            expires_at?: string | null;
+            /** @description Allowed models (normalized names); null = every model. /v1/models is filtered too. */
+            model_allowlist?: string[] | null;
+            /** @description Allowed client IPs or CIDR prefixes (the real client IP per the trusted proxies); null = any. */
+            ip_allowlist?: string[] | null;
+            /** @description Lets the key read its owner's balance and plan figures (public key query and status line). */
+            allow_owner_query?: boolean;
         };
         Balance: {
             /**
@@ -1511,6 +1948,13 @@ export interface components {
             remaining_usd: number;
         };
         AccountRuntime: {
+            /**
+             * @description Decided by the backend: the account can take a new session of a normal call right now —
+             *     enabled, not stale / cooldown / error / 5h or week full / paused, and H_A above the
+             *     normal-call threshold (standard_min_headroom_micro). A penalized account with enough
+             *     headroom is assignable.
+             */
+            assignable: boolean;
             /** @enum {string} */
             status: "normal" | "stale" | "cooldown" | "error" | "disabled";
             display_status: components["schemas"]["AccountDisplayStatus"];
@@ -1613,7 +2057,8 @@ export interface components {
             week_total_micro?: number | null;
             /**
              * Format: double
-             * @description The k of the account's cpa-quota estimate; null when cpa-quota has none or is unavailable.
+             * @description k = week total ÷ 5-hour total. Taken from the account's /quota response (accounts[0].k);
+             *     when the response has none, from the cpa-quota estimate's k. Null when neither is known.
              */
             k?: number | null;
         };
@@ -2060,6 +2505,8 @@ export interface components {
         /** @description Accounts counted by `display_status` (each account in exactly one bucket) and the pooled figures. */
         OverviewAccounts: {
             total: number;
+            /** @description Accounts with runtime.assignable (overlaps the display buckets). */
+            assignable: number;
             /** @description Normal and not penalized. */
             normal: number;
             /** @description Normal status with the routing weight reduced (降权中). */
@@ -2152,6 +2599,300 @@ export interface components {
             billed_micro: number;
             latency_ms: number;
         };
+        KeyWindowStatus: {
+            /** @enum {string} */
+            window: "5h" | "1d" | "7d";
+            /** Format: int64 */
+            limit_micro?: number | null;
+            /**
+             * Format: int64
+             * @description Billed in the sliding window under the key's scope (settled; in-flight holds are in held_micro).
+             */
+            used_micro: number;
+            /** Format: int64 */
+            held_micro?: number;
+            /**
+             * Format: int64
+             * @description limit − used − held (may be negative); null without a limit.
+             */
+            remaining_micro?: number | null;
+            /**
+             * Format: date-time
+             * @description When an exhausted window is expected to allow requests again.
+             */
+            recovers_at?: string | null;
+        };
+        KeyLimitStatus: {
+            quota_scope: components["schemas"]["QuotaScope"];
+            /** Format: int64 */
+            quota_limit_micro?: number | null;
+            /**
+             * Format: int64
+             * @description Used since the last reset under the key's scope (real time).
+             */
+            quota_used_micro: number;
+            /** Format: int64 */
+            quota_held_micro: number;
+            /** Format: int64 */
+            quota_remaining_micro?: number | null;
+            /** Format: int64 */
+            used_all_micro: number;
+            /** Format: int64 */
+            used_balance_micro: number;
+            /** Format: date-time */
+            usage_reset_at?: string | null;
+            windows: components["schemas"]["KeyWindowStatus"][];
+        };
+        KeyStatusKey: {
+            name: string;
+            prefix: string;
+            status: components["schemas"]["KeyStatusValue"];
+            /** Format: date-time */
+            expires_at?: string | null;
+            quota_scope: components["schemas"]["QuotaScope"];
+            model_allowlist?: string[] | null;
+        };
+        OwnerPlanSummary: {
+            /** Format: uuid */
+            subscription_id: string;
+            plan_name: string;
+            /** @enum {string} */
+            status: "active" | "pending_assignment";
+            /** Format: int64 */
+            five_hour_available_micro?: number | null;
+            /** Format: int64 */
+            period_available_micro?: number | null;
+            /** Format: date-time */
+            period_end?: string | null;
+        };
+        /** @description Only present when the key allows owner queries (same figures as /me/availability). */
+        OwnerSummary: {
+            /** Format: int64 */
+            balance_available_micro: number;
+            plans: components["schemas"]["OwnerPlanSummary"][];
+            normal: components["schemas"]["AvailabilityHorizon"][];
+            force: components["schemas"]["AvailabilityHorizon"][];
+        };
+        /** @description Compact key status (also the body of GET /v1/bridge/status on the relay domain). */
+        KeyStatus: {
+            /** Format: date-time */
+            generated_at: string;
+            key: components["schemas"]["KeyStatusKey"];
+            limits: components["schemas"]["KeyLimitStatus"];
+            account?: components["schemas"]["OwnerSummary"];
+        };
+        PublicKeyUsage: components["schemas"]["KeyStatus"] & {
+            /** @description The key's latest 50 requests (user view). */
+            recent: components["schemas"]["MyRequestLog"][];
+        };
+        KeyDailyRow: {
+            /** Format: date */
+            day: string;
+            tier: string;
+            /** Format: int64 */
+            requests: number;
+            /** Format: int64 */
+            errors: number;
+            /** Format: int64 */
+            input_tokens: number;
+            /** Format: int64 */
+            cache_read_tokens: number;
+            /** Format: int64 */
+            cache_write_tokens: number;
+            /** Format: int64 */
+            output_tokens: number;
+            /** Format: int64 */
+            reasoning_tokens: number;
+            /** Format: int64 */
+            billed_micro: number;
+        };
+        KeyDailyUsage: {
+            /** Format: uuid */
+            key_id: string;
+            days: number;
+            timezone: string;
+            items: components["schemas"]["KeyDailyRow"][];
+        };
+        KeyUsageTotal: {
+            /** Format: uuid */
+            key_id: string;
+            name: string;
+            prefix: string;
+            deleted: boolean;
+            /** Format: int64 */
+            requests: number;
+            /** Format: int64 */
+            errors: number;
+            /** Format: int64 */
+            input_tokens: number;
+            /** Format: int64 */
+            cache_read_tokens: number;
+            /** Format: int64 */
+            cache_write_tokens: number;
+            /** Format: int64 */
+            output_tokens: number;
+            /** Format: int64 */
+            reasoning_tokens: number;
+            /** Format: int64 */
+            billed_micro: number;
+        };
+        KeyDailyPoint: {
+            /** Format: date */
+            day: string;
+            /** Format: int64 */
+            requests: number;
+            /** Format: int64 */
+            billed_micro: number;
+        };
+        KeySeries: {
+            /** Format: uuid */
+            key_id: string;
+            points: components["schemas"]["KeyDailyPoint"][];
+        };
+        KeyUsageComparison: {
+            /** Format: date-time */
+            from: string;
+            /** Format: date-time */
+            to: string;
+            timezone: string;
+            /** @description Every key with usage in the range, by billed amount (descending). */
+            items: components["schemas"]["KeyUsageTotal"][];
+            /** @description Daily series of the top 10 keys by billed amount. */
+            top: components["schemas"]["KeySeries"][];
+        };
+        RedeemRequest: {
+            /** @description Case */
+            code: string;
+        };
+        RedeemResult: {
+            /** Format: int64 */
+            amount_micro: number;
+            /** Format: int64 */
+            balance_micro: number;
+        };
+        /** @enum {string} */
+        RedeemCodeStatus: "unused" | "used" | "void";
+        RedeemBatchCreate: {
+            /** Format: int64 */
+            amount_micro: number;
+            count: number;
+            /** @description Optional, 1–8 letters or digits (upper-cased), e.g. OXA. */
+            prefix?: string;
+            /** Format: date-time */
+            expires_at?: string | null;
+            note?: string;
+        };
+        RedeemBatch: {
+            /** Format: uuid */
+            id: string;
+            prefix: string;
+            /** Format: int64 */
+            amount_micro: number;
+            count: number;
+            /** Format: date-time */
+            expires_at?: string | null;
+            note: string;
+            /** Format: uuid */
+            created_by?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int64 */
+            unused: number;
+            /** Format: int64 */
+            used: number;
+            /** Format: int64 */
+            voided: number;
+        };
+        RedeemBatchPage: {
+            items: components["schemas"]["RedeemBatch"][];
+            next_cursor?: string | null;
+        };
+        RedeemCode: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            batch_id: string;
+            /** @description Masked code, e.g. OXA-7K2M-…-PN3C (the full code only appears in the CSV export). */
+            hint: string;
+            status: components["schemas"]["RedeemCodeStatus"];
+            /** Format: int64 */
+            amount_micro: number;
+            /** Format: date-time */
+            expires_at?: string | null;
+            expired?: boolean;
+            /** Format: uuid */
+            used_by?: string | null;
+            /** Format: date-time */
+            used_at?: string | null;
+            /** Format: date-time */
+            voided_at?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        RedeemCodePage: {
+            items: components["schemas"]["RedeemCode"][];
+            next_cursor?: string | null;
+        };
+        /** @enum {string} */
+        AnnouncementLevel: "info" | "warning";
+        AnnouncementInput: {
+            title: string;
+            /** @description Plain text; line breaks and http(s) links are rendered */
+            body: string;
+            level: components["schemas"]["AnnouncementLevel"];
+            /** Format: date-time */
+            starts_at?: string | null;
+            /** Format: date-time */
+            ends_at?: string | null;
+            enabled: boolean;
+        };
+        Announcement: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            body: string;
+            level: components["schemas"]["AnnouncementLevel"];
+            /** Format: date-time */
+            starts_at?: string | null;
+            /** Format: date-time */
+            ends_at?: string | null;
+            enabled: boolean;
+            /** @description Enabled and inside its time window now. */
+            active: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        AnnouncementList: {
+            items: components["schemas"]["Announcement"][];
+        };
+        /** @description Micro-USD per 1,000,000 tokens. */
+        TokenPrices: {
+            /** Format: int64 */
+            input: number;
+            /** Format: int64 */
+            output: number;
+            /** Format: int64 */
+            cache_read: number;
+            /** Format: int64 */
+            cache_write: number;
+        };
+        ModelPricing: {
+            model: string;
+            /** @description False when the ratio table has no price for the model (requests are then not billed by tokens). */
+            priced: boolean;
+            /** Format: double */
+            model_multiplier: number;
+            plan?: components["schemas"]["TokenPrices"];
+            standard?: components["schemas"]["TokenPrices"];
+            force?: components["schemas"]["TokenPrices"];
+        };
+        Pricing: {
+            tier_multipliers: components["schemas"]["TierMultipliers"];
+            /** @description Union of the models of enabled accounts. Price = toll rate (model_ratio × 2 USD, × completion / cache / create_cache ratio) × tier multiplier × model multiplier. */
+            items: components["schemas"]["ModelPricing"][];
+        };
     };
     responses: {
         /** @description Error. */
@@ -2168,6 +2909,7 @@ export interface components {
         /** @description Validate and report capacity and warnings without changing anything. */
         DryRun: boolean;
         KeyId: string;
+        AnnouncementId: string;
         PlanId: string;
         SubscriptionId: string;
         UserId: string;
@@ -2444,6 +3186,77 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    getKeyLimits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                keyId: components["parameters"]["KeyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Limit status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyLimitStatus"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    resetKeyUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                keyId: components["parameters"]["KeyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated key. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKey"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getKeyDailyUsage: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path: {
+                keyId: components["parameters"]["KeyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per day (server time zone) and tier, from the hourly rollup. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyDailyUsage"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     getBalance: {
         parameters: {
             query?: never;
@@ -2485,6 +3298,115 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LedgerPage"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    redeemCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RedeemRequest"];
+            };
+        };
+        responses: {
+            /** @description Redeemed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedeemResult"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listActiveAnnouncements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Announcements. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnouncementList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    dismissAnnouncement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                announcementId: components["parameters"]["AnnouncementId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Dismissed for the caller (remembered on the server). */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getPricing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Prices. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pricing"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getPublicKeyUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Key usage. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicKeyUsage"];
                 };
             };
             default: components["responses"]["Error"];
@@ -2634,6 +3556,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MyRequestLogPage"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getMyKeyUsage: {
+        parameters: {
+            query: {
+                from: components["parameters"]["FromRequired"];
+                to: components["parameters"]["ToRequired"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Totals per key and the daily series of the top 10 keys by billed amount (from the hourly rollup). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyUsageComparison"];
                 };
             };
             default: components["responses"]["Error"];
@@ -2871,6 +3817,79 @@ export interface operations {
                 "application/json": components["schemas"]["EnabledRequest"];
             };
         };
+        responses: {
+            /** @description Updated key. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKey"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminUpdateKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                keyId: components["parameters"]["KeyId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiKeyUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated key. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKey"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminGetKeyLimits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                keyId: components["parameters"]["KeyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Limit status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyLimitStatus"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminResetKeyUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                keyId: components["parameters"]["KeyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Updated key. */
             200: {
@@ -3713,6 +4732,221 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReconcileResult"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminListRedeemBatches: {
+        parameters: {
+            query?: {
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Batches, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedeemBatchPage"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminCreateRedeemBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RedeemBatchCreate"];
+            };
+        };
+        responses: {
+            /** @description Created batch. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedeemBatch"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminExportRedeemBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batchId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description CSV (code,amount_usd,status,used_by,used_at,expires_at). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminListRedeemCodes: {
+        parameters: {
+            query?: {
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+                batch_id?: string;
+                status?: components["schemas"]["RedeemCodeStatus"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Codes (masked), newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedeemCodePage"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminVoidRedeemCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                codeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Voided code (only unused codes can be voided). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedeemCode"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminListAnnouncements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All announcements, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnouncementList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminCreateAnnouncement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnouncementInput"];
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminDeleteAnnouncement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                announcementId: components["parameters"]["AnnouncementId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminUpdateAnnouncement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                announcementId: components["parameters"]["AnnouncementId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnouncementInput"];
+            };
+        };
+        responses: {
+            /** @description Updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
                 };
             };
             default: components["responses"]["Error"];

@@ -15,6 +15,7 @@ import { CountBadge } from "./Tags";
 import { Button } from "./ui/button";
 import { SheetContent } from "./ui/dialog";
 import { CommandPalette, useCommandPaletteHotkey } from "./CommandPalette";
+import { AnnouncementBanner } from "./AnnouncementBanner";
 
 function isActive(item: NavItem, path: string) {
   return item.exact ? path === item.to : path === item.to || path.startsWith(item.to + "/");
@@ -183,7 +184,10 @@ export function AppShell({ me, children }: { me: Schemas["Me"]; children: ReactN
           !onAdmin && "max-lg:pb-[calc(var(--tabbar-h)+env(safe-area-inset-bottom)+24px)]",
         )}
       >
-        <div className="mx-auto max-w-[1400px]">{children}</div>
+        <div className="mx-auto max-w-[1400px]">
+          <AnnouncementBanner />
+          {children}
+        </div>
       </main>
 
       {/* Mobile bottom tabs (user side) */}
@@ -194,7 +198,7 @@ export function AppShell({ me, children }: { me: Schemas["Me"]; children: ReactN
           className="fixed right-0 bottom-0 left-0 z-40 grid grid-cols-4 border-t-2 border-ink bg-bg pb-[env(safe-area-inset-bottom)] lg:hidden"
         >
           {mobileTabs.map((item) => {
-            const active = isActive(item, path) || (item.to === "/me" && ["/plans", "/billing", "/settings"].some((p) => path.startsWith(p)));
+            const active = isActive(item, path) || (item.to === "/me" && ["/plans", "/billing", "/pricing", "/settings"].some((p) => path.startsWith(p)));
             return (
               <Link
                 key={item.to}

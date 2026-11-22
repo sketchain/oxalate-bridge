@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from "./routes/__root"
 import { Route as AppRouteImport } from "./routes/_app"
 import { Route as LoginRouteImport } from "./routes/login"
+import { Route as QueryRouteImport } from "./routes/query"
 import { Route as AppIndexRouteImport } from "./routes/_app/index"
 import { Route as AppAdminRouteImport } from "./routes/_app/admin"
 import { Route as AppBillingRouteImport } from "./routes/_app/billing"
@@ -39,6 +40,11 @@ const AppRoute = AppRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: "/login",
   path: "/login",
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QueryRoute = QueryRouteImport.update({
+  id: "/query",
+  path: "/query",
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -146,6 +152,7 @@ const AppAdminUsersUserIdRoute = AppAdminUsersUserIdRouteImport.update({
 export interface FileRoutesByFullPath {
   "/": typeof AppIndexRoute
   "/login": typeof LoginRoute
+  "/query": typeof QueryRoute
   "/admin": typeof AppAdminRouteWithChildren
   "/billing": typeof AppBillingRoute
   "/keys": typeof AppKeysRoute
@@ -168,6 +175,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   "/login": typeof LoginRoute
+  "/query": typeof QueryRoute
   "/billing": typeof AppBillingRoute
   "/keys": typeof AppKeysRoute
   "/me": typeof AppMeRoute
@@ -192,6 +200,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   "/_app": typeof AppRouteWithChildren
   "/login": typeof LoginRoute
+  "/query": typeof QueryRoute
   "/_app/admin": typeof AppAdminRouteWithChildren
   "/_app/billing": typeof AppBillingRoute
   "/_app/keys": typeof AppKeysRoute
@@ -218,6 +227,7 @@ export interface FileRouteTypes {
   fullPaths:
     | "/"
     | "/login"
+    | "/query"
     | "/admin"
     | "/billing"
     | "/keys"
@@ -240,6 +250,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | "/login"
+    | "/query"
     | "/billing"
     | "/keys"
     | "/me"
@@ -263,6 +274,7 @@ export interface FileRouteTypes {
     | "__root__"
     | "/_app"
     | "/login"
+    | "/query"
     | "/_app/admin"
     | "/_app/billing"
     | "/_app/keys"
@@ -288,6 +300,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
+  QueryRoute: typeof QueryRoute
 }
 
 declare module "@tanstack/react-router" {
@@ -304,6 +317,13 @@ declare module "@tanstack/react-router" {
       path: "/login"
       fullPath: "/login"
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    "/query": {
+      id: "/query"
+      path: "/query"
+      fullPath: "/query"
+      preLoaderRoute: typeof QueryRouteImport
       parentRoute: typeof rootRouteImport
     }
     "/_app/": {
@@ -510,6 +530,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
+  QueryRoute: QueryRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
