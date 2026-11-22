@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { api, unwrap } from "@/api/client";
 import { PageHeader } from "@/components/PageHeader";
+import { SettingsNav } from "@/components/SettingsNav";
 import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,8 +15,10 @@ import { useApiMutation } from "@/lib/mutations";
 import { setLanguage, LANGUAGES, type Language } from "@/i18n";
 import { getTheme, setTheme, type ThemeChoice } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import { isIOS, isStandalone, promptInstall, useInstallPrompt } from "@/lib/pwa";
+import { Download } from "lucide-react";
 
-export const Route = createFileRoute("/_app/settings")({
+export const Route = createFileRoute("/_app/settings/")({
   component: SettingsPage,
 });
 
@@ -63,6 +66,7 @@ function SettingsPage() {
   return (
     <>
       <PageHeader code="OB-06" title={t("settings.title")} />
+      <SettingsNav />
       <div className="grid gap-6 lg:grid-cols-2">
         <Section n={1} title={t("settings.password")}>
           <form onSubmit={form.handleSubmit((v) => change.mutate(v))} noValidate className="flex flex-col gap-4">
@@ -112,7 +116,38 @@ function SettingsPage() {
             <p className="text-[12px] text-muted">{t("settings.rememberNote")}</p>
           </div>
         </Section>
+        <InstallSection />
       </div>
     </>
+  );
+}
+
+/** Install as an app: the browser's prompt (Android, desktop Chrome / Edge) or the iOS steps. */
+function InstallSection() {
+  const { t } = useTranslation();
+  const prompt = useInstallPrompt();
+  const installed = isStandalone();
+  return (
+    <Section n={3} title={t("pwa.installTitle")}>
+      <div className="flex flex-col gap-3">
+        <p className="text-[13px] text-muted">{t("pwa.installBody")}</p>
+        {installed ? (
+          <p className="label-mono" data-testid="install-state">
+            {t("pwa.installed")}
+          </p>
+        ) : prompt ? (
+          <div>
+            <Button variant="primary" onClick={() => void promptInstall()}>
+              <Download aria-hidden />
+              {t("pwa.installButton")}
+            </Button>
+          </div>
+        ) : (
+          <p className="text-[13px]" data-testid="install-state">
+            {isIOS() ? t("pwa.installIOS") : t("pwa.installUnavailable")}
+          </p>
+        )}
+      </div>
+    </Section>
   );
 }

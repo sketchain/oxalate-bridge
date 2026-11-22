@@ -231,7 +231,7 @@ test.describe("mobile", () => {
 
   test("no horizontal overflow on any user page", async ({ page }) => {
     await login(page, USER);
-    for (const path of [...USER_PAGES, "/usage?view=keys", "/query"]) {
+    for (const path of [...USER_PAGES, "/usage?view=keys", "/query", "/settings/notifications"]) {
       await page.goto(path);
       await page.waitForLoadState("networkidle");
       const width = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, viewport: window.innerWidth }));

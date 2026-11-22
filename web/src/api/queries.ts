@@ -22,6 +22,9 @@ export const keys = {
   keyCompare: (f: Q<"getMyKeyUsage">) => ["me", "usage", "keys", f] as const,
   announcements: ["me", "announcements"] as const,
   pricing: ["pricing"] as const,
+  pushConfig: ["push", "config"] as const,
+  pushDevices: ["me", "push", "devices"] as const,
+  notificationPrefs: ["me", "notifications", "prefs"] as const,
 
   admin: ["admin"] as const,
   overview: ["admin", "overview"] as const,
@@ -47,6 +50,7 @@ export const keys = {
   redeemBatches: ["admin", "redeem", "batches"] as const,
   redeemCodes: (f: Omit<Q<"adminListRedeemCodes">, "cursor">) => ["admin", "redeem", "codes", f] as const,
   adminAnnouncements: ["admin", "announcements"] as const,
+  adminTokens: ["admin", "admin-tokens"] as const,
 };
 
 // ---- user ------------------------------------------------------------------------
@@ -264,3 +268,18 @@ export function putKey(qc: QueryClient, key: Schemas["ApiKey"]) {
 }
 
 export type { Q };
+
+// ---- notifications and admin tokens -------------------------------------------
+
+export const pushConfigQuery = queryOptions({
+  queryKey: keys.pushConfig,
+  queryFn: () => unwrap(api.GET("/push/config")),
+  staleTime: Infinity,
+  retry: false,
+});
+export const pushDevicesQuery = queryOptions({ queryKey: keys.pushDevices, queryFn: () => unwrap(api.GET("/push/subscriptions")) });
+export const notificationPrefsQuery = queryOptions({
+  queryKey: keys.notificationPrefs,
+  queryFn: () => unwrap(api.GET("/notifications/prefs")),
+});
+export const adminTokensQuery = queryOptions({ queryKey: keys.adminTokens, queryFn: () => unwrap(api.GET("/admin/admin-tokens")) });

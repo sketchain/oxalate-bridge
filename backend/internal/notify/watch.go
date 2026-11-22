@@ -153,7 +153,7 @@ func (s *Service) SubscriptionPending(ctx context.Context, sub sqlc.PlanSubscrip
 	if u, err := s.Store.Q.GetUser(ctx, sub.UserID); err == nil {
 		username = u.Username
 	}
-	s.emit(ctx, Notification{Event: SubscriptionPending, Object: sub.ID.String(), URL: "/admin/subscriptions?status=pending_assignment",
+	s.emit(ctx, Notification{Event: SubscriptionPending, Object: sub.ID.String(), URL: "/admin/subscriptions?tab=pending",
 		Params: func(string) map[string]string { return map[string]string{"user": username, "plan": sub.PlanName} }})
 }
 

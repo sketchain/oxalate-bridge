@@ -19,7 +19,6 @@ import { Route as AppKeysRouteImport } from "./routes/_app/keys"
 import { Route as AppMeRouteImport } from "./routes/_app/me"
 import { Route as AppPlansRouteImport } from "./routes/_app/plans"
 import { Route as AppPricingRouteImport } from "./routes/_app/pricing"
-import { Route as AppSettingsRouteImport } from "./routes/_app/settings"
 import { Route as AppUsageRouteImport } from "./routes/_app/usage"
 import { Route as AppAdminIndexRouteImport } from "./routes/_app/admin/index"
 import { Route as AppAdminAnnouncementsRouteImport } from "./routes/_app/admin/announcements"
@@ -32,6 +31,8 @@ import { Route as AppAdminRedeemRouteImport } from "./routes/_app/admin/redeem"
 import { Route as AppAdminSafeguardRouteImport } from "./routes/_app/admin/safeguard"
 import { Route as AppAdminSettingsRouteImport } from "./routes/_app/admin/settings"
 import { Route as AppAdminSubscriptionsRouteImport } from "./routes/_app/admin/subscriptions"
+import { Route as AppSettingsIndexRouteImport } from "./routes/_app/settings.index"
+import { Route as AppSettingsNotificationsRouteImport } from "./routes/_app/settings.notifications"
 import { Route as AppAdminAccountsIndexRouteImport } from "./routes/_app/admin/accounts.index"
 import { Route as AppAdminAccountsAccountIdRouteImport } from "./routes/_app/admin/accounts.$accountId"
 import { Route as AppAdminUsersIndexRouteImport } from "./routes/_app/admin/users.index"
@@ -84,11 +85,6 @@ const AppPlansRoute = AppPlansRouteImport.update({
 const AppPricingRoute = AppPricingRouteImport.update({
   id: "/pricing",
   path: "/pricing",
-  getParentRoute: () => AppRoute,
-} as any)
-const AppSettingsRoute = AppSettingsRouteImport.update({
-  id: "/settings",
-  path: "/settings",
   getParentRoute: () => AppRoute,
 } as any)
 const AppUsageRoute = AppUsageRouteImport.update({
@@ -151,6 +147,17 @@ const AppAdminSubscriptionsRoute = AppAdminSubscriptionsRouteImport.update({
   path: "/subscriptions",
   getParentRoute: () => AppAdminRoute,
 } as any)
+const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
+  id: "/settings/",
+  path: "/settings/",
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSettingsNotificationsRoute =
+  AppSettingsNotificationsRouteImport.update({
+    id: "/settings/notifications",
+    path: "/settings/notifications",
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppAdminAccountsIndexRoute = AppAdminAccountsIndexRouteImport.update({
   id: "/accounts/",
   path: "/accounts/",
@@ -183,7 +190,6 @@ export interface FileRoutesByFullPath {
   "/me": typeof AppMeRoute
   "/plans": typeof AppPlansRoute
   "/pricing": typeof AppPricingRoute
-  "/settings": typeof AppSettingsRoute
   "/usage": typeof AppUsageRoute
   "/admin/announcements": typeof AppAdminAnnouncementsRoute
   "/admin/audit": typeof AppAdminAuditRoute
@@ -195,7 +201,9 @@ export interface FileRoutesByFullPath {
   "/admin/safeguard": typeof AppAdminSafeguardRoute
   "/admin/settings": typeof AppAdminSettingsRoute
   "/admin/subscriptions": typeof AppAdminSubscriptionsRoute
+  "/settings/notifications": typeof AppSettingsNotificationsRoute
   "/admin/": typeof AppAdminIndexRoute
+  "/settings/": typeof AppSettingsIndexRoute
   "/admin/accounts/$accountId": typeof AppAdminAccountsAccountIdRoute
   "/admin/users/$userId": typeof AppAdminUsersUserIdRoute
   "/admin/accounts/": typeof AppAdminAccountsIndexRoute
@@ -209,7 +217,6 @@ export interface FileRoutesByTo {
   "/me": typeof AppMeRoute
   "/plans": typeof AppPlansRoute
   "/pricing": typeof AppPricingRoute
-  "/settings": typeof AppSettingsRoute
   "/usage": typeof AppUsageRoute
   "/": typeof AppIndexRoute
   "/admin/announcements": typeof AppAdminAnnouncementsRoute
@@ -222,7 +229,9 @@ export interface FileRoutesByTo {
   "/admin/safeguard": typeof AppAdminSafeguardRoute
   "/admin/settings": typeof AppAdminSettingsRoute
   "/admin/subscriptions": typeof AppAdminSubscriptionsRoute
+  "/settings/notifications": typeof AppSettingsNotificationsRoute
   "/admin": typeof AppAdminIndexRoute
+  "/settings": typeof AppSettingsIndexRoute
   "/admin/accounts/$accountId": typeof AppAdminAccountsAccountIdRoute
   "/admin/users/$userId": typeof AppAdminUsersUserIdRoute
   "/admin/accounts": typeof AppAdminAccountsIndexRoute
@@ -239,7 +248,6 @@ export interface FileRoutesById {
   "/_app/me": typeof AppMeRoute
   "/_app/plans": typeof AppPlansRoute
   "/_app/pricing": typeof AppPricingRoute
-  "/_app/settings": typeof AppSettingsRoute
   "/_app/usage": typeof AppUsageRoute
   "/_app/": typeof AppIndexRoute
   "/_app/admin/announcements": typeof AppAdminAnnouncementsRoute
@@ -252,7 +260,9 @@ export interface FileRoutesById {
   "/_app/admin/safeguard": typeof AppAdminSafeguardRoute
   "/_app/admin/settings": typeof AppAdminSettingsRoute
   "/_app/admin/subscriptions": typeof AppAdminSubscriptionsRoute
+  "/_app/settings/notifications": typeof AppSettingsNotificationsRoute
   "/_app/admin/": typeof AppAdminIndexRoute
+  "/_app/settings/": typeof AppSettingsIndexRoute
   "/_app/admin/accounts/$accountId": typeof AppAdminAccountsAccountIdRoute
   "/_app/admin/users/$userId": typeof AppAdminUsersUserIdRoute
   "/_app/admin/accounts/": typeof AppAdminAccountsIndexRoute
@@ -270,7 +280,6 @@ export interface FileRouteTypes {
     | "/me"
     | "/plans"
     | "/pricing"
-    | "/settings"
     | "/usage"
     | "/admin/announcements"
     | "/admin/audit"
@@ -282,7 +291,9 @@ export interface FileRouteTypes {
     | "/admin/safeguard"
     | "/admin/settings"
     | "/admin/subscriptions"
+    | "/settings/notifications"
     | "/admin/"
+    | "/settings/"
     | "/admin/accounts/$accountId"
     | "/admin/users/$userId"
     | "/admin/accounts/"
@@ -296,7 +307,6 @@ export interface FileRouteTypes {
     | "/me"
     | "/plans"
     | "/pricing"
-    | "/settings"
     | "/usage"
     | "/"
     | "/admin/announcements"
@@ -309,7 +319,9 @@ export interface FileRouteTypes {
     | "/admin/safeguard"
     | "/admin/settings"
     | "/admin/subscriptions"
+    | "/settings/notifications"
     | "/admin"
+    | "/settings"
     | "/admin/accounts/$accountId"
     | "/admin/users/$userId"
     | "/admin/accounts"
@@ -325,7 +337,6 @@ export interface FileRouteTypes {
     | "/_app/me"
     | "/_app/plans"
     | "/_app/pricing"
-    | "/_app/settings"
     | "/_app/usage"
     | "/_app/"
     | "/_app/admin/announcements"
@@ -338,7 +349,9 @@ export interface FileRouteTypes {
     | "/_app/admin/safeguard"
     | "/_app/admin/settings"
     | "/_app/admin/subscriptions"
+    | "/_app/settings/notifications"
     | "/_app/admin/"
+    | "/_app/settings/"
     | "/_app/admin/accounts/$accountId"
     | "/_app/admin/users/$userId"
     | "/_app/admin/accounts/"
@@ -421,13 +434,6 @@ declare module "@tanstack/react-router" {
       path: "/pricing"
       fullPath: "/pricing"
       preLoaderRoute: typeof AppPricingRouteImport
-      parentRoute: typeof AppRoute
-    }
-    "/_app/settings": {
-      id: "/_app/settings"
-      path: "/settings"
-      fullPath: "/settings"
-      preLoaderRoute: typeof AppSettingsRouteImport
       parentRoute: typeof AppRoute
     }
     "/_app/usage": {
@@ -514,6 +520,20 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AppAdminSubscriptionsRouteImport
       parentRoute: typeof AppAdminRoute
     }
+    "/_app/settings/": {
+      id: "/_app/settings/"
+      path: "/settings"
+      fullPath: "/settings/"
+      preLoaderRoute: typeof AppSettingsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    "/_app/settings/notifications": {
+      id: "/_app/settings/notifications"
+      path: "/settings/notifications"
+      fullPath: "/settings/notifications"
+      preLoaderRoute: typeof AppSettingsNotificationsRouteImport
+      parentRoute: typeof AppRoute
+    }
     "/_app/admin/accounts/": {
       id: "/_app/admin/accounts/"
       path: "/accounts"
@@ -592,9 +612,10 @@ interface AppRouteChildren {
   AppMeRoute: typeof AppMeRoute
   AppPlansRoute: typeof AppPlansRoute
   AppPricingRoute: typeof AppPricingRoute
-  AppSettingsRoute: typeof AppSettingsRoute
   AppUsageRoute: typeof AppUsageRoute
   AppIndexRoute: typeof AppIndexRoute
+  AppSettingsNotificationsRoute: typeof AppSettingsNotificationsRoute
+  AppSettingsIndexRoute: typeof AppSettingsIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -604,9 +625,10 @@ const AppRouteChildren: AppRouteChildren = {
   AppMeRoute: AppMeRoute,
   AppPlansRoute: AppPlansRoute,
   AppPricingRoute: AppPricingRoute,
-  AppSettingsRoute: AppSettingsRoute,
   AppUsageRoute: AppUsageRoute,
   AppIndexRoute: AppIndexRoute,
+  AppSettingsNotificationsRoute: AppSettingsNotificationsRoute,
+  AppSettingsIndexRoute: AppSettingsIndexRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

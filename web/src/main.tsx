@@ -8,6 +8,7 @@ import { routeTree } from "./routeTree.gen";
 import { ApiError, setUnauthorizedHandler } from "./api/client";
 import { applyTheme, getTheme, watchSystemTheme } from "./lib/theme";
 import { RouteError, RoutePending, NotFound } from "./components/RouteStates";
+import { captureInstallPrompt, registerServiceWorker } from "./lib/pwa";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -48,6 +49,8 @@ setUnauthorizedHandler(() => {
 
 applyTheme(getTheme());
 watchSystemTheme();
+captureInstallPrompt();
+registerServiceWorker();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

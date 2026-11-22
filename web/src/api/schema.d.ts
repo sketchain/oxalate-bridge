@@ -70,6 +70,107 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/locale": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Language of push notifications (the panel sends it when the user switches language). */
+        put: operations["setMyLocale"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/push/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPushConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/push/subscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listPushSubscriptions"];
+        put?: never;
+        /** Register this browser (PushSubscription.toJSON()); an endpoint already registered moves to the caller. */
+        post: operations["createPushSubscription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/push/subscriptions/{pushSubscriptionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pushSubscriptionId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deletePushSubscription"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/push/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue a test notification to every device of the caller (no dedup, preferences ignored). */
+        post: operations["sendTestPush"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/prefs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getNotificationPrefs"];
+        put: operations["updateNotificationPrefs"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me/availability": {
         parameters: {
             query?: never;
@@ -1218,6 +1319,40 @@ export interface paths {
         patch: operations["adminUpdateAnnouncement"];
         trace?: never;
     };
+    "/admin/admin-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["adminListAdminTokens"];
+        put?: never;
+        post: operations["adminCreateAdminToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/admin-tokens/{tokenId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tokenId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["adminRevokeAdminToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/events": {
         parameters: {
             query?: never;
@@ -1227,7 +1362,7 @@ export interface paths {
         };
         /**
          * Server-sent events across replicas.
-         * @description `text/event-stream`. Event names: `account_status` (data:
+         * @description `text/event-stream`. Available to read-scope admin tokens. Event names: `account_status` (data:
          *     `AccountStatusEvent`) and `request_settled` (data: `RequestSettledEvent`).
          *     A comment line is sent every 15 s.
          */
@@ -1296,8 +1431,14 @@ export interface components {
             balance_micro: number;
             max_concurrency: number;
             rpm?: number | null;
+            locale: components["schemas"]["Locale"];
             /** Format: date-time */
             created_at: string;
+        };
+        /** @enum {string} */
+        Locale: "zh-CN" | "en";
+        LocaleUpdate: {
+            locale: components["schemas"]["Locale"];
         };
         /**
          * @description What counts toward the key quota and windows: all = every billed charge (plan quota and balance), balance = only charges of the standard / force tiers.
@@ -2381,6 +2522,14 @@ export interface components {
             public_query_key_per_minute: number;
             /** @description GET /v1/bridge/status (relay domain) per key per minute (default 60). */
             status_key_per_minute: number;
+            /** @description Requests per admin API token per minute (default 120). */
+            admin_token_per_minute: number;
+            /** @description Settlement stream backlog (entries) that, held for 5 minutes, sends stream_backlog_high (default 1000). */
+            stream_backlog_threshold: number;
+            /** @description Web Push contact (mailto: or https:); empty = BRIDGE_VAPID_SUBJECT or a placeholder. */
+            vapid_subject: string;
+            /** @description The contact actually used. */
+            readonly vapid_subject_effective: string;
         };
         /** @description Any subset of Settings. */
         SettingsPatch: {
@@ -2414,6 +2563,9 @@ export interface components {
             public_query_ip_per_minute?: number;
             public_query_key_per_minute?: number;
             status_key_per_minute?: number;
+            admin_token_per_minute?: number;
+            stream_backlog_threshold?: number;
+            vapid_subject?: string;
         };
         AuditLog: {
             /** Format: uuid */
@@ -2428,8 +2580,123 @@ export interface components {
                 [key: string]: unknown;
             };
             ip: string;
+            /**
+             * Format: uuid
+             * @description Set when the write was made with an admin API token (operator_id is its creator).
+             */
+            token_id?: string | null;
+            token_name?: string | null;
             /** Format: date-time */
             created_at: string;
+        };
+        /**
+         * @description read = GET / HEAD admin endpoints (SSE included); write = every admin operation except managing tokens, roles and admin passwords.
+         * @enum {string}
+         */
+        AdminTokenScope: "read" | "write";
+        AdminToken: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @description Display form (start and end of the token). */
+            prefix: string;
+            scope: components["schemas"]["AdminTokenScope"];
+            /** @enum {string} */
+            status: "active" | "expired" | "revoked";
+            /** Format: uuid */
+            created_by: string;
+            created_by_username: string;
+            /** Format: date-time */
+            expires_at: string | null;
+            /** @description CIDR prefixes; null = any address. */
+            ip_allowlist: string[] | null;
+            /** Format: date-time */
+            last_used_at: string | null;
+            last_used_ip: string;
+            /** Format: date-time */
+            revoked_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        AdminTokenList: {
+            items: components["schemas"]["AdminToken"][];
+        };
+        AdminTokenCreate: {
+            name: string;
+            scope: components["schemas"]["AdminTokenScope"];
+            /**
+             * Format: date-time
+             * @description Must be in the future; null = never.
+             */
+            expires_at?: string | null;
+            /** @description IP addresses or CIDR prefixes; empty or null = any address. */
+            ip_allowlist?: string[] | null;
+        };
+        AdminTokenCreated: {
+            token: components["schemas"]["AdminToken"];
+            /** @description The full token (oba-…). Shown only once. */
+            secret: string;
+        };
+        PushConfig: {
+            /** @description VAPID public key (base64url */
+            public_key: string;
+        };
+        PushSubscriptionCreate: {
+            endpoint: string;
+            keys: {
+                p256dh: string;
+                auth: string;
+            };
+        };
+        PushDevice: {
+            /** Format: uuid */
+            id: string;
+            /** @description Lets the browser recognize its own entry. */
+            endpoint: string;
+            /** @description Guessed from the User-Agent at registration, e.g. "iPhone · Safari". */
+            device_label: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            last_success_at: string | null;
+            failures: number;
+        };
+        PushDeviceList: {
+            items: components["schemas"]["PushDevice"][];
+        };
+        PushTestResult: {
+            devices: number;
+        };
+        /**
+         * @description Admin events: account_auth_error, account_stale, subscription_pending,
+         *     reconcile_mismatch, stream_backlog_high (on by default), account_full,
+         *     safeguard_event (off by default). User events: balance_low,
+         *     plan_expiring, auto_renew_failed (on by default), key_exhausted (off).
+         * @enum {string}
+         */
+        NotificationEvent: "account_auth_error" | "account_stale" | "subscription_pending" | "reconcile_mismatch" | "stream_backlog_high" | "account_full" | "safeguard_event" | "balance_low" | "plan_expiring" | "auto_renew_failed" | "key_exhausted";
+        NotificationPref: {
+            event: components["schemas"]["NotificationEvent"];
+            /** @enum {string} */
+            group: "admin" | "user";
+            enabled: boolean;
+            default_enabled: boolean;
+        };
+        NotificationPrefs: {
+            items: components["schemas"]["NotificationPref"][];
+            /**
+             * Format: int64
+             * @description balance_low fires when the balance falls below this (default $5).
+             */
+            balance_threshold_micro: number;
+        };
+        NotificationPrefsUpdate: {
+            items?: {
+                event: components["schemas"]["NotificationEvent"];
+                enabled: boolean;
+            }[];
+            /** Format: int64 */
+            balance_threshold_micro?: number;
         };
         AuditLogPage: {
             items: components["schemas"]["AuditLog"][];
@@ -3048,6 +3315,184 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    setMyLocale: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocaleUpdate"];
+            };
+        };
+        responses: {
+            /** @description Saved. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getPushConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description VAPID public key for PushManager.subscribe. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushConfig"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listPushSubscriptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description My devices, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushDeviceList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createPushSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushSubscriptionCreate"];
+            };
+        };
+        responses: {
+            /** @description The device. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushDevice"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deletePushSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pushSubscriptionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    sendTestPush: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Number of devices the notification was queued for. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushTestResult"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getNotificationPrefs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every event the caller can receive with its switch. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPrefs"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    updateNotificationPrefs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationPrefsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Preferences after the change. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPrefs"];
+                };
             };
             default: components["responses"]["Error"];
         };
@@ -4974,6 +5419,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Announcement"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminListAdminTokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every admin token (revoked ones included), newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTokenList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminCreateAdminToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminTokenCreate"];
+            };
+        };
+        responses: {
+            /** @description The token; `secret` is returned only here. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTokenCreated"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminRevokeAdminToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tokenId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The revoked token. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminToken"];
                 };
             };
             default: components["responses"]["Error"];
