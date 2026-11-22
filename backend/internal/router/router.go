@@ -26,6 +26,10 @@ type Rejection struct {
 	Tier    string `json:"tier"`
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// Window and RecoversAt are set for key_balance_quota_exhausted caused
+	// by a window.
+	Window     string     `json:"window,omitempty"`
+	RecoversAt *time.Time `json:"recovers_at,omitempty"`
 }
 
 func reject(tier, code, msg string) *Rejection {

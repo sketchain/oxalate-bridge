@@ -784,8 +784,13 @@
       "auto_renew_lead_hours": "自动续费提前量",
       "cooldown_5xx_seconds": "5xx 冷却时长",
       "cooldown_429_default_seconds": "429 默认冷却时长",
-      "price_url": "价格表地址"
-    }
+      "price_url": "价格表地址",
+      "public_query_ip_per_minute": "凭 key 查询 · 每个 IP",
+      "public_query_key_per_minute": "凭 key 查询 · 每个 key",
+      "status_key_per_minute": "状态栏接口 · 每个 key"
+    },
+    "publicRates": "公开接口限频",
+    "publicRatesNote": "单位：次 / 分钟，范围 1–10000。保存后所有副本立即生效。"
   },
   "reason": {
     "disabled": "管理员已停用",
@@ -809,7 +814,8 @@
     "ip_not_allowed": "来源 IP 不在 Key 的白名单内（403）",
     "model_not_allowed": "模型不在 Key 的白名单内（403）",
     "key_quota_exhausted": "Key 总额度已用完（429）",
-    "key_window_exhausted": "Key 时间窗口限额已用完（429）"
+    "key_window_exhausted": "Key 时间窗口限额已用完（429）",
+    "key_balance_quota_exhausted": "Key 余额口径额度已用完：普通 / 强制档不放行，Plan 档仍可用（429 时逐档列出）"
   },
   "keyStatus": {
     "active": "正常",
@@ -871,7 +877,13 @@
     "dailyRange": "统计天数",
     "days": "{{n}} 天",
     "editLimits": "编辑限额",
-    "adminTitle": "{{name}} 的限额与访问控制"
+    "adminTitle": "{{name}} 的限额与访问控制",
+    "exhausted": {
+      "key_quota_exhausted": "总额度已用完，这个 Key 的所有请求都会被拒绝（429）。",
+      "key_window_exhausted": "{{window}}已用完，这个 Key 的所有请求都会被拒绝（429）。",
+      "key_balance_quota_exhausted": "仅余额口径的总额度已用完：普通 / 强制档不再放行，Plan 仍可用。",
+      "key_balance_window_exhausted": "仅余额口径的{{window}}已用完：普通 / 强制档暂不放行，Plan 仍可用。"
+    }
   },
   "redeem": {
     "title": "兑换码",

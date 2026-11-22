@@ -2,7 +2,7 @@
 
 自建的 Claude API 中转站：用户与 API key、token plan、余额、计费和路由全部由本项目管理，上游是多个 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)（CPA）v8 实例。每个 CPA 实例只挂一个 Claude 订阅账号（Pro / Max 5x / Max 20x），额度估算来自 CPA 上的 [cpa-quota](https://github.com/sketchain/cpa-quota) 插件。中转站只服务 Claude Messages 协议，只接受 Claude 订阅的上游账号。
 
-本仓库目前是第五轮（v0.4.0）：在第四轮的基础上补齐了完整中转站常用的功能——API key 的额度 / 滑动窗口 / 过期 / 模型与 IP 白名单、免登录的凭 key 查询页、Claude Code 状态栏接口、按 key 用量、兑换码、公告和模型价格页。只装了 Docker 也能用一条命令跑起完整演示（见「只用 Docker 体验」）。界面截图见 [docs/screenshots](docs/screenshots)（例如 [查询页](docs/screenshots/query-light.png)、[key 详情抽屉](docs/screenshots/user-key-drawer-light.png)、[兑换码管理](docs/screenshots/admin-redeem-light.png)、[价格页](docs/screenshots/user-pricing-light.png)）。
+本仓库目前是 v0.4.1（第六轮小修正：「仅余额」口径的 key 额度用完后不再拦 Plan 档；公开接口限频可在运行时设置里调）。第五轮（v0.4.0）在第四轮的基础上补齐了完整中转站常用的功能——API key 的额度 / 滑动窗口 / 过期 / 模型与 IP 白名单、免登录的凭 key 查询页、Claude Code 状态栏接口、按 key 用量、兑换码、公告和模型价格页。只装了 Docker 也能用一条命令跑起完整演示（见「只用 Docker 体验」）。界面截图见 [docs/screenshots](docs/screenshots)（例如 [查询页](docs/screenshots/query-light.png)、[key 详情抽屉](docs/screenshots/user-key-drawer-light.png)、[兑换码管理](docs/screenshots/admin-redeem-light.png)、[价格页](docs/screenshots/user-pricing-light.png)）。
 
 ## 仓库结构
 
@@ -83,17 +83,22 @@ Redis 中每个钱包（用户余额，或某订阅某一期的额度）由三�
 
 重置（`POST /keys/{id}/reset-usage`、`POST /admin/keys/{id}/reset-usage`）把总额度的已用归零、版本 +1，经 outbox 同步到 Redis；时间窗口本来就是滑动的，不受影响。重置前已结算但还没落库的那几笔（通常 1–2 秒内）落库时会被过滤掉，在此之前查询页可能短暂显示一点已用。
 
-检查顺序：鉴权 → 过期 → IP → 模型白名单 → key 额度与窗口 → 逐档尝试。`quota_scope = balance` 的 key 额度用完时整个 key 都会被拒绝（包括 Plan 档），因为 key 级别的拒绝发生在逐档尝试之前。
+检查顺序：鉴权 → 过期 → IP → 模型白名单 → key 额度与窗口 → 逐档尝试。两种口径额度用完后的行为不同：
+
+- `quota_scope = all`（全部计入）：总额度或任何一个窗口用完，整个 key 拒绝（`key_quota_exhausted` / `key_window_exhausted`，429），不往下一档切。
+- `quota_scope = balance`（仅余额）：总额度或某个窗口用完，只把 standard 和 force 从这次请求的档位链里去掉，当作「这一档不放行」，原因码 `key_balance_quota_exhausted`（窗口导致时附 `window` 和 `recovers_at`）；plan 档照常尝试。所有档都不放行时按原规则返回 429，`error.rejections` 逐档列出原因。预扣也一样：plan 档的预扣不受 key 额度和窗口约束，standard / force 的预扣额仍以 key 剩余额度和窗口剩余额度为上限。
+
+`KeyLimitStatus.exhausted`（key 详情、查询页、状态栏接口都有）说明哪一项用完了：`code`、`window`、`recovers_at`，以及 `plan_available`（仅余额口径时为 true，查询页提示「Plan 仍可用」）。
 
 ### 凭 key 查询（不用登录）
 
 - 页面：`/query`（登录页有入口）。用密码框输入 key，只存在页面内存里，不写 localStorage，页面上不回显完整 key。
-- 接口：`GET /api/v1/public/key-usage`，key 只能放在 `Authorization: Bearer` 或 `x-api-key` 请求头里（URL 参数一律忽略）。按 IP 和按 key 各 30 次/分钟。key 无效或已删除时统一 401；已停用或已过期的 key 仍返回信息并带状态。
+- 接口：`GET /api/v1/public/key-usage`，key 只能放在 `Authorization: Bearer` 或 `x-api-key` 请求头里（URL 参数一律忽略）。按 IP 和按 key 各 30 次/分钟（默认值，管理端「系统设置 → 公开接口限频」可改，保存后所有副本立即生效）。key 无效或已删除时统一 401；已停用或已过期的 key 仍返回信息并带状态。
 - 返回 key 名称、前缀、状态、过期时间、额度口径、总额度与已用、三个窗口的限额与已用（窗口用完时带预计恢复时间）、模型白名单和最近 50 条调用（用户视角，不含上游成本）。`allow_owner_query` 为 true 时另外返回账户可用余额、各 Plan 订阅的 5h / 本期可用（口径同 `/me/availability`）和普通 / 强制调用的可用额度；为 false 时 `account` 字段完全不出现。
 
 ### 在 Claude Code 状态栏显示余额
 
-转发域名下有 `GET /v1/bridge/status`：鉴权方式和 `/v1/messages` 完全一样（`x-api-key` 或 `Authorization: Bearer`），**不计费、不写 request_logs**，单独限频（每个 key 60 次/分钟）。返回紧凑 JSON，字段同上面的查询接口，但不含调用日志：
+转发域名下有 `GET /v1/bridge/status`：鉴权方式和 `/v1/messages` 完全一样（`x-api-key` 或 `Authorization: Bearer`），**不计费、不写 request_logs**，单独限频（每个 key 默认 60 次/分钟，同样在「公开接口限频」里改）。返回紧凑 JSON，字段同上面的查询接口，但不含调用日志：
 
 ```json
 {
@@ -155,7 +160,8 @@ jq -r '
     (if (.account.plans // []) | map(select(.period_available_micro != null)) | length > 0
        then "Plan 本期 \(.account.plans | map(.period_available_micro // 0) | add | usd)" else empty end),
     (if .limits.quota_remaining_micro != null then "Key 剩 \(.limits.quota_remaining_micro | usd)" else empty end),
-    (.limits.windows[] | select(.remaining_micro != null and .remaining_micro <= 0) | "\(.window) 已用完"),
+    (if .limits.exhausted.plan_available then "Key 余额额度用完（Plan 仍可用）"
+     elif .limits.exhausted then "Key 额度用完" else empty end),
     (if .key.status != "active" then "Key \(.key.status)" else empty end)
   ] | if length == 0 then "oxalate 正常" else join(" · ") end
 ' "$cache" 2>/dev/null || echo "oxalate: 解析失败"
@@ -266,6 +272,8 @@ Stream 消费者（consumer group，多副本可同时消费）每批一个 PG �
 | `upstream_idle_timeout_seconds` | 300 | 上游空闲超时（无总超时） |
 | `auto_renew_lead_hours` | 24 | 自动续费提前量 |
 | `cooldown_5xx_seconds` / `cooldown_429_default_seconds` | 30 / 60 | 冷却时长 |
+| `public_query_ip_per_minute` / `public_query_key_per_minute` | 30 / 30 | 凭 key 查询接口按 IP / 按 key 的每分钟次数（1–10000） |
+| `status_key_per_minute` | 60 | 状态栏接口 `/v1/bridge/status` 每个 key 的每分钟次数（1–10000） |
 
 ## 只用 Docker 体验（演示环境）
 
