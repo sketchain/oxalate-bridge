@@ -2130,7 +2130,7 @@ type PushConfig struct {
 type PushDevice struct {
 	CreatedAt time.Time `json:"created_at"`
 
-	// DeviceLabel Guessed from the User-Agent at registration
+	// DeviceLabel Guessed from the User-Agent at registration, e.g. "iPhone · Safari".
 	DeviceLabel string `json:"device_label"`
 
 	// Endpoint Lets the browser recognize its own entry.
