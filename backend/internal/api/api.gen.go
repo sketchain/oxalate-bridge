@@ -184,6 +184,48 @@ func (e DurationUnit) Valid() bool {
 	}
 }
 
+// Defines values for KeyExhaustionCode.
+const (
+	KeyBalanceQuotaExhausted KeyExhaustionCode = "key_balance_quota_exhausted"
+	KeyQuotaExhausted        KeyExhaustionCode = "key_quota_exhausted"
+	KeyWindowExhausted       KeyExhaustionCode = "key_window_exhausted"
+)
+
+// Valid indicates whether the value is a known member of the KeyExhaustionCode enum.
+func (e KeyExhaustionCode) Valid() bool {
+	switch e {
+	case KeyBalanceQuotaExhausted:
+		return true
+	case KeyQuotaExhausted:
+		return true
+	case KeyWindowExhausted:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for KeyExhaustionWindow.
+const (
+	KeyExhaustionWindowN1d KeyExhaustionWindow = "1d"
+	KeyExhaustionWindowN5h KeyExhaustionWindow = "5h"
+	KeyExhaustionWindowN7d KeyExhaustionWindow = "7d"
+)
+
+// Valid indicates whether the value is a known member of the KeyExhaustionWindow enum.
+func (e KeyExhaustionWindow) Valid() bool {
+	switch e {
+	case KeyExhaustionWindowN1d:
+		return true
+	case KeyExhaustionWindowN5h:
+		return true
+	case KeyExhaustionWindowN7d:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for KeyStatusValue.
 const (
 	KeyStatusValueActive   KeyStatusValue = "active"
@@ -1353,8 +1395,33 @@ type KeyDailyUsage struct {
 	Timezone string             `json:"timezone"`
 }
 
+// KeyExhaustion Present when the total quota or a window of the key is used up (the
+// quota is reported before the windows). With `quota_scope = all` the
+// whole key is refused; with `balance` only the standard and force tiers
+// are, and `plan_available` is true.
+type KeyExhaustion struct {
+	Code    KeyExhaustionCode `json:"code"`
+	Message string            `json:"message"`
+
+	// PlanAvailable True when requests on the plan tier are still allowed (balance scope).
+	PlanAvailable bool                         `json:"plan_available"`
+	RecoversAt    nullable.Nullable[time.Time] `json:"recovers_at,omitempty"`
+	Window        *KeyExhaustionWindow         `json:"window,omitempty"`
+}
+
+// KeyExhaustionCode defines model for KeyExhaustion.Code.
+type KeyExhaustionCode string
+
+// KeyExhaustionWindow defines model for KeyExhaustion.Window.
+type KeyExhaustionWindow string
+
 // KeyLimitStatus defines model for KeyLimitStatus.
 type KeyLimitStatus struct {
+	// Exhausted Present when the total quota or a window of the key is used up (the
+	// quota is reported before the windows). With `quota_scope = all` the
+	// whole key is refused; with `balance` only the standard and force tiers
+	// are, and `plan_available` is true.
+	Exhausted           *KeyExhaustion           `json:"exhausted,omitempty"`
 	QuotaHeldMicro      int64                    `json:"quota_held_micro"`
 	QuotaLimitMicro     nullable.Nullable[int64] `json:"quota_limit_micro,omitempty"`
 	QuotaRemainingMicro nullable.Nullable[int64] `json:"quota_remaining_micro,omitempty"`
@@ -2030,19 +2097,28 @@ type Settings struct {
 	MaxRetries                int   `json:"max_retries"`
 
 	// ModelMultipliers Normalized model name -> multiplier (default 1).
-	ModelMultipliers           map[string]float64 `json:"model_multipliers"`
-	ModelsPollMinutes          int                `json:"models_poll_minutes"`
-	PriceRefreshHours          int                `json:"price_refresh_hours"`
-	PriceUrl                   string             `json:"price_url"`
-	QuotaPollSeconds           int                `json:"quota_poll_seconds"`
-	StaleAfterSeconds          int                `json:"stale_after_seconds"`
-	StandardMinHeadroomMicro   int64              `json:"standard_min_headroom_micro"`
-	StickyTtl1hSeconds         int                `json:"sticky_ttl_1h_seconds"`
-	StickyTtlSeconds           int                `json:"sticky_ttl_seconds"`
-	TierMultipliers            TierMultipliers    `json:"tier_multipliers"`
-	UpstreamIdleTimeoutSeconds int                `json:"upstream_idle_timeout_seconds"`
-	Watermark5hPercent         float64            `json:"watermark_5h_percent"`
-	WatermarkPenalty           float64            `json:"watermark_penalty"`
+	ModelMultipliers  map[string]float64 `json:"model_multipliers"`
+	ModelsPollMinutes int                `json:"models_poll_minutes"`
+	PriceRefreshHours int                `json:"price_refresh_hours"`
+	PriceUrl          string             `json:"price_url"`
+
+	// PublicQueryIpPerMinute GET /public/key-usage per client IP per minute (default 30).
+	PublicQueryIpPerMinute int `json:"public_query_ip_per_minute"`
+
+	// PublicQueryKeyPerMinute GET /public/key-usage per key per minute (default 30).
+	PublicQueryKeyPerMinute  int   `json:"public_query_key_per_minute"`
+	QuotaPollSeconds         int   `json:"quota_poll_seconds"`
+	StaleAfterSeconds        int   `json:"stale_after_seconds"`
+	StandardMinHeadroomMicro int64 `json:"standard_min_headroom_micro"`
+
+	// StatusKeyPerMinute GET /v1/bridge/status (relay domain) per key per minute (default 60).
+	StatusKeyPerMinute         int             `json:"status_key_per_minute"`
+	StickyTtl1hSeconds         int             `json:"sticky_ttl_1h_seconds"`
+	StickyTtlSeconds           int             `json:"sticky_ttl_seconds"`
+	TierMultipliers            TierMultipliers `json:"tier_multipliers"`
+	UpstreamIdleTimeoutSeconds int             `json:"upstream_idle_timeout_seconds"`
+	Watermark5hPercent         float64         `json:"watermark_5h_percent"`
+	WatermarkPenalty           float64         `json:"watermark_penalty"`
 }
 
 // SettingsPatch Any subset of Settings.
@@ -2058,9 +2134,12 @@ type SettingsPatch struct {
 	ModelsPollMinutes          *int                `json:"models_poll_minutes,omitempty"`
 	PriceRefreshHours          *int                `json:"price_refresh_hours,omitempty"`
 	PriceUrl                   *string             `json:"price_url,omitempty"`
+	PublicQueryIpPerMinute     *int                `json:"public_query_ip_per_minute,omitempty"`
+	PublicQueryKeyPerMinute    *int                `json:"public_query_key_per_minute,omitempty"`
 	QuotaPollSeconds           *int                `json:"quota_poll_seconds,omitempty"`
 	StaleAfterSeconds          *int                `json:"stale_after_seconds,omitempty"`
 	StandardMinHeadroomMicro   *int64              `json:"standard_min_headroom_micro,omitempty"`
+	StatusKeyPerMinute         *int                `json:"status_key_per_minute,omitempty"`
 	StickyTtl1hSeconds         *int                `json:"sticky_ttl_1h_seconds,omitempty"`
 	StickyTtlSeconds           *int                `json:"sticky_ttl_seconds,omitempty"`
 	TierMultipliers            *TierMultipliers    `json:"tier_multipliers,omitempty"`

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: oxalate-bridge panel API
-  version: 0.4.0
+  version: 0.4.1
   description: |
     Panel API of oxalate-bridge. This file is the single source of truth: the
     backend server code is generated from it with oapi-codegen (chi strict
@@ -26,15 +26,23 @@ info:
     The relay endpoints (`/v1/messages`, `/v1/messages/count_tokens`,
     `GET /v1/models`; Claude Messages protocol only) are not part of this API.
     `GET /v1/bridge/status` (relay domain, API key auth exactly as /v1/messages,
-    not billed or logged, rate limited separately) returns a `KeyStatus`.
+    not billed or logged, rate limited separately per key by the `status_key_per_minute` setting, default 60) returns a `KeyStatus`.
 
     Relay rejections caused by the key itself are Anthropic-shaped errors and never
     fall through to the next tier: `key_expired` (403, permission_error),
     `ip_not_allowed` (403, permission_error), `model_not_allowed` (403,
-    permission_error), `key_quota_exhausted` (429, rate_limit_error) and
-    `key_window_exhausted` (429, rate_limit_error; `window` and `recovers_at` say
-    which window and when it is expected to allow requests again). The code is in
-    `error.code` and is also the request log's `error_type`.
+    permission_error), and, for keys with `quota_scope = all`,
+    `key_quota_exhausted` (429, rate_limit_error) and `key_window_exhausted`
+    (429, rate_limit_error; `window` and `recovers_at` say which window and when
+    it is expected to allow requests again). The code is in `error.code` and is
+    also the request log's `error_type`.
+
+    For keys with `quota_scope = balance` an exhausted total quota or window only
+    takes the standard and force tiers out of the request's tier chain; the plan
+    tier is still tried. Those tiers are reported with the code
+    `key_balance_quota_exhausted` (plus `window` and `recovers_at` when a window
+    caused it). When no tier admits the request the answer is the usual 429
+    (rate_limit_error) whose `error.rejections` lists every tier with its code.
 servers:
   - url: /api/v1
 security:
@@ -331,7 +339,7 @@ paths:
       summary: Usage of the API key in the request headers (no login).
       description: |
         The key is read from `Authorization: Bearer` or `x-api-key` only (never from the URL).
-        Rate limited per client IP and per key. An unknown or deleted key is a uniform 401;
+        Rate limited per client IP and per key (`public_query_ip_per_minute` / `public_query_key_per_minute` in the runtime settings, default 30 each; changes apply immediately). An unknown or deleted key is a uniform 401;
         a disabled or expired key still answers with its status. `account` is present only
         when the key allows owner queries.
       responses:
@@ -2466,7 +2474,7 @@ components:
         force: { type: number, format: double, minimum: 0 }
     Settings:
       type: object
-      required: [default_user_concurrency, watermark_5h_percent, watermark_penalty, standard_min_headroom_micro, sticky_ttl_seconds, sticky_ttl_1h_seconds, tier_multipliers, model_multipliers, hold_cap_micro, hold_default_max_tokens, max_retries, quota_poll_seconds, stale_after_seconds, models_poll_minutes, price_url, price_refresh_hours, upstream_idle_timeout_seconds, auto_renew_lead_hours, cooldown_5xx_seconds, cooldown_429_default_seconds]
+      required: [default_user_concurrency, watermark_5h_percent, watermark_penalty, standard_min_headroom_micro, sticky_ttl_seconds, sticky_ttl_1h_seconds, tier_multipliers, model_multipliers, hold_cap_micro, hold_default_max_tokens, max_retries, quota_poll_seconds, stale_after_seconds, models_poll_minutes, price_url, price_refresh_hours, upstream_idle_timeout_seconds, auto_renew_lead_hours, cooldown_5xx_seconds, cooldown_429_default_seconds, public_query_ip_per_minute, public_query_key_per_minute, status_key_per_minute]
       properties:
         default_user_concurrency: { type: integer }
         watermark_5h_percent: { type: number, format: double }
@@ -2491,6 +2499,9 @@ components:
         auto_renew_lead_hours: { type: integer }
         cooldown_5xx_seconds: { type: integer }
         cooldown_429_default_seconds: { type: integer }
+        public_query_ip_per_minute: { type: integer, minimum: 1, maximum: 10000, description: GET /public/key-usage per client IP per minute (default 30). }
+        public_query_key_per_minute: { type: integer, minimum: 1, maximum: 10000, description: GET /public/key-usage per key per minute (default 30). }
+        status_key_per_minute: { type: integer, minimum: 1, maximum: 10000, description: GET /v1/bridge/status (relay domain) per key per minute (default 60). }
     SettingsPatch:
       type: object
       description: Any subset of Settings.
@@ -2517,6 +2528,9 @@ components:
         auto_renew_lead_hours: { type: integer }
         cooldown_5xx_seconds: { type: integer }
         cooldown_429_default_seconds: { type: integer }
+        public_query_ip_per_minute: { type: integer, minimum: 1, maximum: 10000 }
+        public_query_key_per_minute: { type: integer, minimum: 1, maximum: 10000 }
+        status_key_per_minute: { type: integer, minimum: 1, maximum: 10000 }
 
     AuditLog:
       type: object
@@ -2715,6 +2729,21 @@ components:
         windows:
           type: array
           items: { $ref: '#/components/schemas/KeyWindowStatus' }
+        exhausted: { $ref: '#/components/schemas/KeyExhaustion' }
+    KeyExhaustion:
+      type: object
+      description: |
+        Present when the total quota or a window of the key is used up (the
+        quota is reported before the windows). With `quota_scope = all` the
+        whole key is refused; with `balance` only the standard and force tiers
+        are, and `plan_available` is true.
+      required: [code, plan_available, message]
+      properties:
+        code: { type: string, enum: [key_quota_exhausted, key_window_exhausted, key_balance_quota_exhausted] }
+        window: { type: string, enum: [5h, 1d, 7d] }
+        recovers_at: { type: string, format: date-time, nullable: true }
+        plan_available: { type: boolean, description: True when requests on the plan tier are still allowed (balance scope). }
+        message: { type: string }
     KeyStatusKey:
       type: object
       required: [name, prefix, status, quota_scope]
