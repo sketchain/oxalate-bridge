@@ -14,9 +14,12 @@ export function accountKind(a: Account): StatusKind {
   return a.runtime.display_status;
 }
 
-/** Assignable = the backend status is normal (penalized and full accounts still take subscriptions). */
+/**
+ * Assignable ("可分配") is decided by the backend (`runtime.assignable`): the
+ * account can take a new normal-call session right now. Never recomputed here.
+ */
 export function isAssignable(a: Account): boolean {
-  return a.runtime.status === "normal";
+  return a.runtime.assignable;
 }
 
 /** Needs attention: stale, cooldown or error. */

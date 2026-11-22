@@ -20,12 +20,15 @@ import { formatDateTime, formatInt, formatTokens, formatUSD } from "@/lib/format
 import { cacheHitRate } from "@/lib/availability";
 import { modelSeries, seriesFacts, tierSeries } from "@/lib/usage";
 import { cn } from "@/lib/utils";
+import { KeyCompare } from "@/components/KeyCompare";
+import { KEY_ERROR_TYPES } from "@/lib/constants";
 
 interface Search extends Partial<RangeValue> {
   key?: string;
   model?: string;
   tier?: Tier;
   gran?: "day" | "hour";
+  view?: "keys";
 }
 
 const TIERS: Tier[] = ["plan", "standard", "force"];
@@ -39,6 +42,7 @@ export const Route = createFileRoute("/_app/usage")({
     model: typeof s.model === "string" && s.model ? s.model : undefined,
     tier: TIERS.includes(s.tier as Tier) ? (s.tier as Tier) : undefined,
     gran: s.gran === "hour" ? "hour" : s.gran === "day" ? "day" : undefined,
+    view: s.view === "keys" ? "keys" : undefined,
   }),
   component: UsagePage,
 });
@@ -111,7 +115,33 @@ function UsagePage() {
 
   return (
     <>
-      <PageHeader code="OB-03" title={t("usage.title")} />
+      <PageHeader
+        code="OB-03"
+        title={t("usage.title")}
+        actions={
+          <div role="group" aria-label={t("usage.view")} className="flex border-2 border-ink">
+            {([undefined, "keys"] as const).map((v) => (
+              <button
+                key={v ?? "summary"}
+                type="button"
+                aria-pressed={search.view === v}
+                onClick={() => set({ view: v })}
+                className={cn("h-9 border-l border-ink px-3 text-[13px] font-semibold first:border-l-0", search.view === v ? "bg-yellow text-on-yellow" : "hover:bg-rule")}
+              >
+                {v === "keys" ? t("usage.compare.view") : t("usage.summaryView")}
+              </button>
+            ))}
+          </div>
+        }
+      />
+      {search.view === "keys" ? (
+        <div className="flex flex-col gap-6">
+          <div className="border-2 border-ink p-4">
+            <RangeFilter value={search} onChange={(v) => set({ range: v.range === "7d" ? undefined : v.range, from: v.from, to: v.to })} />
+          </div>
+          <KeyCompare from={fromIso} to={toIso} />
+        </div>
+      ) : (
       <div className="flex flex-col gap-6">
         <div className="grid gap-4 border-2 border-ink p-4 md:grid-cols-[auto_1fr_1fr_1fr] md:items-end">
           <RangeFilter value={search} onChange={(v) => set({ range: v.range === "7d" ? undefined : v.range, from: v.from, to: v.to })} />
@@ -233,6 +263,7 @@ function UsagePage() {
           />
         </Section>
       </div>
+      )}
 
       <Dialog.Root open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
         {open ? (
@@ -256,7 +287,10 @@ function LogDetail({ log, keyName }: { log: Log; keyName: string }) {
     [t("usage.stream"), log.stream ? t("common.yes") : t("common.no")],
     [t("usage.status"), <StatusCode code={log.status_code} />],
   ];
-  if (log.error_type) rows.push([t("usage.errorType"), log.error_type]);
+  if (log.error_type) {
+    const known = (KEY_ERROR_TYPES as readonly string[]).includes(log.error_type);
+    rows.push([t("usage.errorType"), known ? `${t(`relayError.${log.error_type}`)} · ${log.error_type}` : log.error_type]);
+  }
   const tokens: [string, number][] = [
     [t("usage.inputTokens"), log.input_tokens],
     [t("usage.cacheRead"), log.cache_read_tokens],

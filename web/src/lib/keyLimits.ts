@@ -80,7 +80,7 @@ export function draftToBody(d: LimitDraft): { body: LimitBody; errors: LimitErro
     if (v === "") return null;
     const m = parseUSD(v);
     if (!Number.isFinite(m) || m < 0) {
-      errors[field] = "validation.nonNegativeAmount";
+      errors[field] = "validation.amountNonNegative";
       return null;
     }
     return m;

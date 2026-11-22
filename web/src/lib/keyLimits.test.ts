@@ -19,7 +19,7 @@ describe("key limit drafts", () => {
   });
   it("reports bad amounts and IPs", () => {
     const { errors } = draftToBody({ ...draftFromKey(null), quota: "-1", l7d: "abc", ips: "300.1.1.1" });
-    expect(errors).toEqual({ quota: "validation.nonNegativeAmount", l7d: "validation.nonNegativeAmount", ips: "validation.ip" });
+    expect(errors).toEqual({ quota: "validation.amountNonNegative", l7d: "validation.amountNonNegative", ips: "validation.ip" });
   });
   it("round-trips a key", () => {
     const d = draftFromKey({ quota_limit_micro: 5_000_000, quota_scope: "balance", limit_5h_micro: 1_000_000, model_allowlist: ["a"], ip_allowlist: ["1.2.3.4/32"], allow_owner_query: true } as never);

@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { KeyRound, UserX, UserCheck, Wallet } from "lucide-react";
+import { KeyRound, RotateCcw, SlidersHorizontal, UserX, UserCheck, Wallet } from "lucide-react";
 import { api, unwrap, type Schemas } from "@/api/client";
 import { adminUsageQuery, keys, meQuery, subscriptionsInfinite, userKeysQuery, userQuery } from "@/api/queries";
 import { PageHeader } from "@/components/PageHeader";
@@ -13,6 +13,9 @@ import { Section } from "@/components/Section";
 import { StatStrip } from "@/components/StatStrip";
 import { TierStackedBars } from "@/components/Charts";
 import { TierChain } from "@/components/Tags";
+import { KeyLimitFields } from "@/components/KeyLimitFields";
+import { KeyStatusTag } from "@/components/KeyStatusTag";
+import { draftFromKey, draftToBody, type LimitDraft, type LimitErrors } from "@/lib/keyLimits";
 import { UserStatusTag } from "@/components/UserTags";
 import { EmptyState, ErrorBox } from "@/components/Feedback";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -296,7 +299,15 @@ function UserKeys({ userId }: { userId: string }) {
     },
     onSettled: () => qc.invalidateQueries({ queryKey: keys.userKeys(userId) }),
   });
+  const [editing, setEditing] = useState<Schemas["ApiKey"] | null>(null);
+  const [resetting, setResetting] = useState<Schemas["ApiKey"] | null>(null);
+  const reset = useApiMutation({
+    mutationFn: (id: string) => unwrap(api.POST("/admin/keys/{keyId}/reset-usage", { params: { path: { keyId: id } } })),
+    success: t("keyLimits.resetDone"),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.userKeys(userId) }),
+  });
   return (
+    <>
     <Section n={3} title={t("users.keys")} bodyClassName="p-0">
       {q.isPending ? (
         <Skeleton className="m-4 h-16" />
@@ -314,13 +325,72 @@ function UserKeys({ userId }: { userId: string }) {
                   {k.prefix} · {t("keys.lastUsed")} {formatDateTime(k.last_used_at)}
                 </div>
               </div>
+              <KeyStatusTag status={k.status} />
               <TierChain tiers={k.tiers} />
+              <span className="num text-[12px]">
+                {k.quota_limit_micro == null
+                  ? t("keyLimits.unlimited")
+                  : `${formatUSD(k.quota_scope === "balance" ? k.used_balance_micro : k.used_all_micro)} / ${formatUSD(k.quota_limit_micro)}`}
+              </span>
+              <Button variant="ghost" size="icon-sm" aria-label={t("keyLimits.editFor", { name: k.name || k.prefix })} onClick={() => setEditing(k)}>
+                <SlidersHorizontal aria-hidden />
+              </Button>
+              <Button variant="ghost" size="icon-sm" aria-label={t("keyLimits.resetFor", { name: k.name || k.prefix })} onClick={() => setResetting(k)}>
+                <RotateCcw aria-hidden />
+              </Button>
               <Switch checked={k.enabled} aria-label={t("keys.toggle", { name: k.name || k.prefix })} onCheckedChange={(v) => toggle.mutate({ id: k.id, enabled: v })} />
             </li>
           ))}
         </ul>
       )}
     </Section>
+    {editing ? <AdminKeyLimitsDialog k={editing} userId={userId} onClose={() => setEditing(null)} /> : null}
+    <ConfirmDialog
+      open={!!resetting}
+      onOpenChange={(o) => !o && setResetting(null)}
+      title={t("keyLimits.resetTitle")}
+      description={t("keyLimits.resetBody")}
+      confirmLabel={t("keyLimits.reset")}
+      onConfirm={() => reset.mutateAsync(resetting!.id)}
+    />
+    </>
+  );
+}
+
+/** Admin editor of a key's limits and access controls (audited). */
+function AdminKeyLimitsDialog({ k, userId, onClose }: { k: Schemas["ApiKey"]; userId: string; onClose: () => void }) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const [draft, setDraft] = useState<LimitDraft>(() => draftFromKey(k));
+  const [errors, setErrors] = useState<LimitErrors>({});
+  const save = useApiMutation({
+    mutationFn: (body: Schemas["ApiKeyUpdate"]) => unwrap(api.PATCH("/admin/keys/{keyId}", { params: { path: { keyId: k.id } }, body })),
+    success: t("keys.saved"),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.userKeys(userId) });
+      onClose();
+    },
+  });
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const { body, errors: errs } = draftToBody(draft);
+    setErrors(errs);
+    if (Object.keys(errs).length === 0) save.mutate(body);
+  };
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent title={t("keyLimits.adminTitle", { name: k.name || k.prefix })} wide>
+        <form onSubmit={submit} noValidate className="flex flex-col gap-5">
+          <KeyLimitFields draft={draft} onChange={setDraft} errors={errors} idPrefix="akl" />
+          <DialogFooter className="mt-0">
+            <Button onClick={onClose}>{t("common.cancel")}</Button>
+            <Button type="submit" variant="primary" disabled={save.isPending}>
+              {t("common.save")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

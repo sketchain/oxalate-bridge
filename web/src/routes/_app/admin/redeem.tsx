@@ -294,7 +294,7 @@ function BatchDialog({ onClose }: { onClose: () => void }) {
     const micro = parseUSD(amount);
     const n = Number(count);
     if (!Number.isFinite(micro) || micro <= 0) errs.amount = t("validation.positiveAmount");
-    if (!Number.isInteger(n) || n < 1 || n > 1000) errs.count = t("validation.range", { min: 1, max: 1000 });
+    if (!Number.isInteger(n) || n < 1 || n > 1000) errs.count = t("validation.between", { min: 1, max: 1000 });
     if (prefix && !/^[A-Za-z0-9]{1,8}$/.test(prefix)) errs.prefix = t("redeemAdmin.prefixRule");
     let expiresAt: string | null = null;
     if (expires) {

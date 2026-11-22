@@ -140,6 +140,13 @@ function AdminOverview() {
                     <div key={s.key} className={cn("h-full border-r border-ink last:border-r-0", s.cls)} style={{ width: `${((acc[s.key] as number) / acc.total) * 100}%` }} />
                   ))}
                 </div>
+                <p className="mt-3 flex flex-wrap items-baseline justify-between gap-2 border-2 border-ink px-3 py-2 text-[13px]" data-testid="assignable">
+                  <span className="font-semibold">{t("accounts.assignable")}</span>
+                  <span className="text-[12px] text-muted">{t("accounts.assignableNote")}</span>
+                  <span className="num text-[20px]">
+                    {acc.assignable} / {acc.total}
+                  </span>
+                </p>
                 <ul className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {SEGMENTS.map((s) => (
                     <li key={s.key} className="flex items-center justify-between gap-2 border border-ink px-2 py-1.5">
