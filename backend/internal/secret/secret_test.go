@@ -37,3 +37,22 @@ func TestAPIKey(t *testing.T) {
 		t.Fatalf("prefix %q", p)
 	}
 }
+
+func TestAdminToken(t *testing.T) {
+	seen := map[string]bool{}
+	for range 200 {
+		k := NewAdminToken()
+		if !strings.HasPrefix(k, "oba-") || len(k) != 4+43 {
+			t.Fatalf("token %q", k)
+		}
+		for _, c := range k[4:] {
+			if !strings.ContainsRune(keyAlphabet, c) {
+				t.Fatalf("token %q has %q", k, c)
+			}
+		}
+		if seen[k] {
+			t.Fatal("duplicate token")
+		}
+		seen[k] = true
+	}
+}

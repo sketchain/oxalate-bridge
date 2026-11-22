@@ -50,3 +50,15 @@ WHERE u.balance_micro <> COALESCE(l.total, 0);
 -- name: ListUsernames :many
 -- Usernames for display (deleted users included).
 SELECT id, username FROM users WHERE id = ANY(sqlc.arg('ids')::uuid[]);
+
+-- name: SetUserLocale :exec
+UPDATE users SET locale = $2, updated_at = now() WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: ListActiveAdmins :many
+SELECT id, locale FROM users WHERE role = 'admin' AND status = 'active' AND deleted_at IS NULL;
+
+-- name: ListActiveUsersForNotify :many
+-- Users that may receive balance notifications (those with a push device).
+SELECT u.id, u.role, u.locale, u.balance_micro, u.balance_version FROM users u
+WHERE u.status = 'active' AND u.deleted_at IS NULL
+  AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.user_id = u.id);

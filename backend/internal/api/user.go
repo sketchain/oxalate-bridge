@@ -51,7 +51,7 @@ func (s *Server) cookie(value string, maxAge int) string {
 
 func meOf(u sqlc.User) Me {
 	return Me{Id: u.ID, Username: u.Username, Role: Role(u.Role), Status: UserStatus(u.Status), BalanceMicro: u.BalanceMicro,
-		MaxConcurrency: int(u.MaxConcurrency), Rpm: nullInt32(u.Rpm), CreatedAt: u.CreatedAt}
+		MaxConcurrency: int(u.MaxConcurrency), Rpm: nullInt32(u.Rpm), Locale: Locale(u.Locale), CreatedAt: u.CreatedAt}
 }
 
 // Login implements POST /auth/login.

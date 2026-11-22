@@ -85,6 +85,45 @@ func (e AccountRuntimeStatus) Valid() bool {
 	}
 }
 
+// Defines values for AdminTokenStatus.
+const (
+	AdminTokenStatusActive  AdminTokenStatus = "active"
+	AdminTokenStatusExpired AdminTokenStatus = "expired"
+	AdminTokenStatusRevoked AdminTokenStatus = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the AdminTokenStatus enum.
+func (e AdminTokenStatus) Valid() bool {
+	switch e {
+	case AdminTokenStatusActive:
+		return true
+	case AdminTokenStatusExpired:
+		return true
+	case AdminTokenStatusRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminTokenScope.
+const (
+	Read  AdminTokenScope = "read"
+	Write AdminTokenScope = "write"
+)
+
+// Valid indicates whether the value is a known member of the AdminTokenScope enum.
+func (e AdminTokenScope) Valid() bool {
+	switch e {
+	case Read:
+		return true
+	case Write:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AnnouncementLevel.
 const (
 	Info    AnnouncementLevel = "info"
@@ -301,6 +340,24 @@ func (e LedgerType) Valid() bool {
 	}
 }
 
+// Defines values for Locale.
+const (
+	En   Locale = "en"
+	ZhCN Locale = "zh-CN"
+)
+
+// Valid indicates whether the value is a known member of the Locale enum.
+func (e Locale) Valid() bool {
+	switch e {
+	case En:
+		return true
+	case ZhCN:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MyUsageSummaryGranularity.
 const (
 	MyUsageSummaryGranularityDay  MyUsageSummaryGranularity = "day"
@@ -313,6 +370,69 @@ func (e MyUsageSummaryGranularity) Valid() bool {
 	case MyUsageSummaryGranularityDay:
 		return true
 	case MyUsageSummaryGranularityHour:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NotificationEvent.
+const (
+	NotificationEventAccountAuthError    NotificationEvent = "account_auth_error"
+	NotificationEventAccountFull         NotificationEvent = "account_full"
+	NotificationEventAccountStale        NotificationEvent = "account_stale"
+	NotificationEventAutoRenewFailed     NotificationEvent = "auto_renew_failed"
+	NotificationEventBalanceLow          NotificationEvent = "balance_low"
+	NotificationEventKeyExhausted        NotificationEvent = "key_exhausted"
+	NotificationEventPlanExpiring        NotificationEvent = "plan_expiring"
+	NotificationEventReconcileMismatch   NotificationEvent = "reconcile_mismatch"
+	NotificationEventSafeguardEvent      NotificationEvent = "safeguard_event"
+	NotificationEventStreamBacklogHigh   NotificationEvent = "stream_backlog_high"
+	NotificationEventSubscriptionPending NotificationEvent = "subscription_pending"
+)
+
+// Valid indicates whether the value is a known member of the NotificationEvent enum.
+func (e NotificationEvent) Valid() bool {
+	switch e {
+	case NotificationEventAccountAuthError:
+		return true
+	case NotificationEventAccountFull:
+		return true
+	case NotificationEventAccountStale:
+		return true
+	case NotificationEventAutoRenewFailed:
+		return true
+	case NotificationEventBalanceLow:
+		return true
+	case NotificationEventKeyExhausted:
+		return true
+	case NotificationEventPlanExpiring:
+		return true
+	case NotificationEventReconcileMismatch:
+		return true
+	case NotificationEventSafeguardEvent:
+		return true
+	case NotificationEventStreamBacklogHigh:
+		return true
+	case NotificationEventSubscriptionPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NotificationPrefGroup.
+const (
+	NotificationPrefGroupAdmin NotificationPrefGroup = "admin"
+	NotificationPrefGroupUser  NotificationPrefGroup = "user"
+)
+
+// Valid indicates whether the value is a known member of the NotificationPrefGroup enum.
+func (e NotificationPrefGroup) Valid() bool {
+	switch e {
+	case NotificationPrefGroupAdmin:
+		return true
+	case NotificationPrefGroupUser:
 		return true
 	default:
 		return false
@@ -462,16 +582,16 @@ func (e RedeemCodeStatus) Valid() bool {
 
 // Defines values for Role.
 const (
-	Admin Role = "admin"
-	User  Role = "user"
+	RoleAdmin Role = "admin"
+	RoleUser  Role = "user"
 )
 
 // Valid indicates whether the value is a known member of the Role enum.
 func (e Role) Valid() bool {
 	switch e {
-	case Admin:
+	case RoleAdmin:
 		return true
-	case User:
+	case RoleUser:
 		return true
 	default:
 		return false
@@ -839,6 +959,60 @@ type AdminOverview struct {
 	Today    OverviewToday `json:"today"`
 }
 
+// AdminToken defines model for AdminToken.
+type AdminToken struct {
+	CreatedAt         time.Time                    `json:"created_at"`
+	CreatedBy         openapi_types.UUID           `json:"created_by"`
+	CreatedByUsername string                       `json:"created_by_username"`
+	ExpiresAt         nullable.Nullable[time.Time] `json:"expires_at"`
+	Id                openapi_types.UUID           `json:"id"`
+
+	// IpAllowlist CIDR prefixes; null = any address.
+	IpAllowlist nullable.Nullable[[]string]  `json:"ip_allowlist"`
+	LastUsedAt  nullable.Nullable[time.Time] `json:"last_used_at"`
+	LastUsedIp  string                       `json:"last_used_ip"`
+	Name        string                       `json:"name"`
+
+	// Prefix Display form (start and end of the token).
+	Prefix    string                       `json:"prefix"`
+	RevokedAt nullable.Nullable[time.Time] `json:"revoked_at"`
+
+	// Scope read = GET / HEAD admin endpoints (SSE included); write = every admin operation except managing tokens, roles and admin passwords.
+	Scope  AdminTokenScope  `json:"scope"`
+	Status AdminTokenStatus `json:"status"`
+}
+
+// AdminTokenStatus defines model for AdminToken.Status.
+type AdminTokenStatus string
+
+// AdminTokenCreate defines model for AdminTokenCreate.
+type AdminTokenCreate struct {
+	// ExpiresAt Must be in the future; null = never.
+	ExpiresAt nullable.Nullable[time.Time] `json:"expires_at,omitempty"`
+
+	// IpAllowlist IP addresses or CIDR prefixes; empty or null = any address.
+	IpAllowlist nullable.Nullable[[]string] `json:"ip_allowlist,omitempty"`
+	Name        string                      `json:"name"`
+
+	// Scope read = GET / HEAD admin endpoints (SSE included); write = every admin operation except managing tokens, roles and admin passwords.
+	Scope AdminTokenScope `json:"scope"`
+}
+
+// AdminTokenCreated defines model for AdminTokenCreated.
+type AdminTokenCreated struct {
+	// Secret The full token (oba-…). Shown only once.
+	Secret string     `json:"secret"`
+	Token  AdminToken `json:"token"`
+}
+
+// AdminTokenList defines model for AdminTokenList.
+type AdminTokenList struct {
+	Items []AdminToken `json:"items"`
+}
+
+// AdminTokenScope read = GET / HEAD admin endpoints (SSE included); write = every admin operation except managing tokens, roles and admin passwords.
+type AdminTokenScope string
+
 // AdminUser defines model for AdminUser.
 type AdminUser struct {
 	BalanceMicro   int64                  `json:"balance_micro"`
@@ -1117,6 +1291,10 @@ type AuditLog struct {
 	OperatorId nullable.Nullable[openapi_types.UUID] `json:"operator_id,omitempty"`
 	TargetId   string                                `json:"target_id"`
 	TargetType string                                `json:"target_type"`
+
+	// TokenId Set when the write was made with an admin API token (operator_id is its creator).
+	TokenId   nullable.Nullable[openapi_types.UUID] `json:"token_id,omitempty"`
+	TokenName nullable.Nullable[string]             `json:"token_name,omitempty"`
 }
 
 // AuditLogPage defines model for AuditLogPage.
@@ -1540,6 +1718,14 @@ type LedgerPage struct {
 // LedgerType defines model for LedgerType.
 type LedgerType string
 
+// Locale defines model for Locale.
+type Locale string
+
+// LocaleUpdate defines model for LocaleUpdate.
+type LocaleUpdate struct {
+	Locale Locale `json:"locale"`
+}
+
 // LoginRequest defines model for LoginRequest.
 type LoginRequest struct {
 	Password string `json:"password"`
@@ -1551,6 +1737,7 @@ type Me struct {
 	BalanceMicro   int64                  `json:"balance_micro"`
 	CreatedAt      time.Time              `json:"created_at"`
 	Id             openapi_types.UUID     `json:"id"`
+	Locale         Locale                 `json:"locale"`
 	MaxConcurrency int                    `json:"max_concurrency"`
 	Role           Role                   `json:"role"`
 	Rpm            nullable.Nullable[int] `json:"rpm,omitempty"`
@@ -1675,6 +1862,49 @@ type MyUsageSummary struct {
 
 // MyUsageSummaryGranularity defines model for MyUsageSummary.Granularity.
 type MyUsageSummaryGranularity string
+
+// NotificationEvent Admin events: account_auth_error, account_stale, subscription_pending,
+// reconcile_mismatch, stream_backlog_high (on by default), account_full,
+// safeguard_event (off by default). User events: balance_low,
+// plan_expiring, auto_renew_failed (on by default), key_exhausted (off).
+type NotificationEvent string
+
+// NotificationPref defines model for NotificationPref.
+type NotificationPref struct {
+	DefaultEnabled bool `json:"default_enabled"`
+	Enabled        bool `json:"enabled"`
+
+	// Event Admin events: account_auth_error, account_stale, subscription_pending,
+	// reconcile_mismatch, stream_backlog_high (on by default), account_full,
+	// safeguard_event (off by default). User events: balance_low,
+	// plan_expiring, auto_renew_failed (on by default), key_exhausted (off).
+	Event NotificationEvent     `json:"event"`
+	Group NotificationPrefGroup `json:"group"`
+}
+
+// NotificationPrefGroup defines model for NotificationPref.Group.
+type NotificationPrefGroup string
+
+// NotificationPrefs defines model for NotificationPrefs.
+type NotificationPrefs struct {
+	// BalanceThresholdMicro balance_low fires when the balance falls below this (default $5).
+	BalanceThresholdMicro int64              `json:"balance_threshold_micro"`
+	Items                 []NotificationPref `json:"items"`
+}
+
+// NotificationPrefsUpdate defines model for NotificationPrefsUpdate.
+type NotificationPrefsUpdate struct {
+	BalanceThresholdMicro *int64 `json:"balance_threshold_micro,omitempty"`
+	Items                 *[]struct {
+		Enabled bool `json:"enabled"`
+
+		// Event Admin events: account_auth_error, account_stale, subscription_pending,
+		// reconcile_mismatch, stream_backlog_high (on by default), account_full,
+		// safeguard_event (off by default). User events: balance_low,
+		// plan_expiring, auto_renew_failed (on by default), key_exhausted (off).
+		Event NotificationEvent `json:"event"`
+	} `json:"items,omitempty"`
+}
 
 // OverviewAccounts Accounts counted by `display_status` (each account in exactly one bucket) and the pooled figures.
 type OverviewAccounts struct {
@@ -1890,6 +2120,45 @@ type PurchaseRequest struct {
 	AutoRenew *bool `json:"auto_renew,omitempty"`
 }
 
+// PushConfig defines model for PushConfig.
+type PushConfig struct {
+	// PublicKey VAPID public key (base64url
+	PublicKey string `json:"public_key"`
+}
+
+// PushDevice defines model for PushDevice.
+type PushDevice struct {
+	CreatedAt time.Time `json:"created_at"`
+
+	// DeviceLabel Guessed from the User-Agent at registration
+	DeviceLabel string `json:"device_label"`
+
+	// Endpoint Lets the browser recognize its own entry.
+	Endpoint      string                       `json:"endpoint"`
+	Failures      int                          `json:"failures"`
+	Id            openapi_types.UUID           `json:"id"`
+	LastSuccessAt nullable.Nullable[time.Time] `json:"last_success_at"`
+}
+
+// PushDeviceList defines model for PushDeviceList.
+type PushDeviceList struct {
+	Items []PushDevice `json:"items"`
+}
+
+// PushSubscriptionCreate defines model for PushSubscriptionCreate.
+type PushSubscriptionCreate struct {
+	Endpoint string `json:"endpoint"`
+	Keys     struct {
+		Auth   string `json:"auth"`
+		P256dh string `json:"p256dh"`
+	} `json:"keys"`
+}
+
+// PushTestResult defines model for PushTestResult.
+type PushTestResult struct {
+	Devices int `json:"devices"`
+}
+
 // QuotaPoint defines model for QuotaPoint.
 type QuotaPoint struct {
 	At          time.Time                    `json:"at"`
@@ -2088,6 +2357,8 @@ type SafeguardEventPage struct {
 
 // Settings defines model for Settings.
 type Settings struct {
+	// AdminTokenPerMinute Requests per admin API token per minute (default 120).
+	AdminTokenPerMinute       int   `json:"admin_token_per_minute"`
 	AutoRenewLeadHours        int   `json:"auto_renew_lead_hours"`
 	Cooldown429DefaultSeconds int   `json:"cooldown_429_default_seconds"`
 	Cooldown5xxSeconds        int   `json:"cooldown_5xx_seconds"`
@@ -2112,17 +2383,27 @@ type Settings struct {
 	StandardMinHeadroomMicro int64 `json:"standard_min_headroom_micro"`
 
 	// StatusKeyPerMinute GET /v1/bridge/status (relay domain) per key per minute (default 60).
-	StatusKeyPerMinute         int             `json:"status_key_per_minute"`
-	StickyTtl1hSeconds         int             `json:"sticky_ttl_1h_seconds"`
-	StickyTtlSeconds           int             `json:"sticky_ttl_seconds"`
+	StatusKeyPerMinute int `json:"status_key_per_minute"`
+	StickyTtl1hSeconds int `json:"sticky_ttl_1h_seconds"`
+	StickyTtlSeconds   int `json:"sticky_ttl_seconds"`
+
+	// StreamBacklogThreshold Settlement stream backlog (entries) that, held for 5 minutes, sends stream_backlog_high (default 1000).
+	StreamBacklogThreshold     int             `json:"stream_backlog_threshold"`
 	TierMultipliers            TierMultipliers `json:"tier_multipliers"`
 	UpstreamIdleTimeoutSeconds int             `json:"upstream_idle_timeout_seconds"`
-	Watermark5hPercent         float64         `json:"watermark_5h_percent"`
-	WatermarkPenalty           float64         `json:"watermark_penalty"`
+
+	// VapidSubject Web Push contact (mailto: or https:); empty = BRIDGE_VAPID_SUBJECT or a placeholder.
+	VapidSubject string `json:"vapid_subject"`
+
+	// VapidSubjectEffective The contact actually used.
+	VapidSubjectEffective *string `json:"vapid_subject_effective,omitempty"`
+	Watermark5hPercent    float64 `json:"watermark_5h_percent"`
+	WatermarkPenalty      float64 `json:"watermark_penalty"`
 }
 
 // SettingsPatch Any subset of Settings.
 type SettingsPatch struct {
+	AdminTokenPerMinute        *int                `json:"admin_token_per_minute,omitempty"`
 	AutoRenewLeadHours         *int                `json:"auto_renew_lead_hours,omitempty"`
 	Cooldown429DefaultSeconds  *int                `json:"cooldown_429_default_seconds,omitempty"`
 	Cooldown5xxSeconds         *int                `json:"cooldown_5xx_seconds,omitempty"`
@@ -2142,8 +2423,10 @@ type SettingsPatch struct {
 	StatusKeyPerMinute         *int                `json:"status_key_per_minute,omitempty"`
 	StickyTtl1hSeconds         *int                `json:"sticky_ttl_1h_seconds,omitempty"`
 	StickyTtlSeconds           *int                `json:"sticky_ttl_seconds,omitempty"`
+	StreamBacklogThreshold     *int                `json:"stream_backlog_threshold,omitempty"`
 	TierMultipliers            *TierMultipliers    `json:"tier_multipliers,omitempty"`
 	UpstreamIdleTimeoutSeconds *int                `json:"upstream_idle_timeout_seconds,omitempty"`
+	VapidSubject               *string             `json:"vapid_subject,omitempty"`
 	Watermark5hPercent         *float64            `json:"watermark_5h_percent,omitempty"`
 	WatermarkPenalty           *float64            `json:"watermark_penalty,omitempty"`
 }
@@ -2498,6 +2781,9 @@ type AdminUpdateAccountJSONRequestBody = AccountUpdate
 // AdminSetAccountEnabledJSONRequestBody defines body for AdminSetAccountEnabled for application/json ContentType.
 type AdminSetAccountEnabledJSONRequestBody = EnabledRequest
 
+// AdminCreateAdminTokenJSONRequestBody defines body for AdminCreateAdminToken for application/json ContentType.
+type AdminCreateAdminTokenJSONRequestBody = AdminTokenCreate
+
 // AdminCreateAnnouncementJSONRequestBody defines body for AdminCreateAnnouncement for application/json ContentType.
 type AdminCreateAnnouncementJSONRequestBody = AnnouncementInput
 
@@ -2555,11 +2841,20 @@ type CreateKeyJSONRequestBody = ApiKeyCreate
 // UpdateKeyJSONRequestBody defines body for UpdateKey for application/json ContentType.
 type UpdateKeyJSONRequestBody = ApiKeyUpdate
 
+// SetMyLocaleJSONRequestBody defines body for SetMyLocale for application/json ContentType.
+type SetMyLocaleJSONRequestBody = LocaleUpdate
+
 // ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
 type ChangePasswordJSONRequestBody = ChangePasswordRequest
 
+// UpdateNotificationPrefsJSONRequestBody defines body for UpdateNotificationPrefs for application/json ContentType.
+type UpdateNotificationPrefsJSONRequestBody = NotificationPrefsUpdate
+
 // PurchasePlanJSONRequestBody defines body for PurchasePlan for application/json ContentType.
 type PurchasePlanJSONRequestBody = PurchaseRequest
+
+// CreatePushSubscriptionJSONRequestBody defines body for CreatePushSubscription for application/json ContentType.
+type CreatePushSubscriptionJSONRequestBody = PushSubscriptionCreate
 
 // SetAutoRenewJSONRequestBody defines body for SetAutoRenew for application/json ContentType.
 type SetAutoRenewJSONRequestBody = AutoRenewRequest
@@ -2602,6 +2897,15 @@ type ServerInterface interface {
 	// AdminTestAccount Call /quota and /v1/models now; a full pass clears the error state and cooldown.
 	// (POST /admin/accounts/{accountId}/test)
 	AdminTestAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
+
+	// (GET /admin/admin-tokens)
+	AdminListAdminTokens(w http.ResponseWriter, r *http.Request)
+
+	// (POST /admin/admin-tokens)
+	AdminCreateAdminToken(w http.ResponseWriter, r *http.Request)
+
+	// (POST /admin/admin-tokens/{tokenId}/revoke)
+	AdminRevokeAdminToken(w http.ResponseWriter, r *http.Request, tokenId openapi_types.UUID)
 
 	// (GET /admin/announcements)
 	AdminListAnnouncements(w http.ResponseWriter, r *http.Request)
@@ -2782,12 +3086,21 @@ type ServerInterface interface {
 	// GetMyAvailability Estimated usable amount for the caller (normal / force calls and own plans).
 	// (GET /me/availability)
 	GetMyAvailability(w http.ResponseWriter, r *http.Request)
+	// SetMyLocale Language of push notifications (the panel sends it when the user switches language).
+	// (PUT /me/locale)
+	SetMyLocale(w http.ResponseWriter, r *http.Request)
 
 	// (POST /me/password)
 	ChangePassword(w http.ResponseWriter, r *http.Request)
 
 	// (GET /models)
 	ListModels(w http.ResponseWriter, r *http.Request)
+
+	// (GET /notifications/prefs)
+	GetNotificationPrefs(w http.ResponseWriter, r *http.Request)
+
+	// (PUT /notifications/prefs)
+	UpdateNotificationPrefs(w http.ResponseWriter, r *http.Request)
 
 	// (GET /plans)
 	ListPlansOnSale(w http.ResponseWriter, r *http.Request)
@@ -2800,6 +3113,21 @@ type ServerInterface interface {
 	// GetPublicKeyUsage Usage of the API key in the request headers (no login).
 	// (GET /public/key-usage)
 	GetPublicKeyUsage(w http.ResponseWriter, r *http.Request)
+
+	// (GET /push/config)
+	GetPushConfig(w http.ResponseWriter, r *http.Request)
+
+	// (GET /push/subscriptions)
+	ListPushSubscriptions(w http.ResponseWriter, r *http.Request)
+	// CreatePushSubscription Register this browser (PushSubscription.toJSON()); an endpoint already registered moves to the caller.
+	// (POST /push/subscriptions)
+	CreatePushSubscription(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /push/subscriptions/{pushSubscriptionId})
+	DeletePushSubscription(w http.ResponseWriter, r *http.Request, pushSubscriptionId openapi_types.UUID)
+	// SendTestPush Queue a test notification to every device of the caller (no dedup, preferences ignored).
+	// (POST /push/test)
+	SendTestPush(w http.ResponseWriter, r *http.Request)
 
 	// (GET /subscriptions)
 	ListMySubscriptions(w http.ResponseWriter, r *http.Request)
@@ -2891,6 +3219,21 @@ func (_ Unimplemented) AdminGetAccountQuotaSeries(w http.ResponseWriter, r *http
 // AdminTestAccount Call /quota and /v1/models now; a full pass clears the error state and cooldown.
 // (POST /admin/accounts/{accountId}/test)
 func (_ Unimplemented) AdminTestAccount(w http.ResponseWriter, r *http.Request, accountId AccountId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /admin/admin-tokens)
+func (_ Unimplemented) AdminListAdminTokens(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /admin/admin-tokens)
+func (_ Unimplemented) AdminCreateAdminToken(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /admin/admin-tokens/{tokenId}/revoke)
+func (_ Unimplemented) AdminRevokeAdminToken(w http.ResponseWriter, r *http.Request, tokenId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3214,6 +3557,12 @@ func (_ Unimplemented) GetMyAvailability(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// SetMyLocale Language of push notifications (the panel sends it when the user switches language).
+// (PUT /me/locale)
+func (_ Unimplemented) SetMyLocale(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (POST /me/password)
 func (_ Unimplemented) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -3221,6 +3570,16 @@ func (_ Unimplemented) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
 // (GET /models)
 func (_ Unimplemented) ListModels(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /notifications/prefs)
+func (_ Unimplemented) GetNotificationPrefs(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PUT /notifications/prefs)
+func (_ Unimplemented) UpdateNotificationPrefs(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3244,6 +3603,33 @@ func (_ Unimplemented) GetPricing(w http.ResponseWriter, r *http.Request) {
 // GetPublicKeyUsage Usage of the API key in the request headers (no login).
 // (GET /public/key-usage)
 func (_ Unimplemented) GetPublicKeyUsage(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /push/config)
+func (_ Unimplemented) GetPushConfig(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /push/subscriptions)
+func (_ Unimplemented) ListPushSubscriptions(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreatePushSubscription Register this browser (PushSubscription.toJSON()); an endpoint already registered moves to the caller.
+// (POST /push/subscriptions)
+func (_ Unimplemented) CreatePushSubscription(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /push/subscriptions/{pushSubscriptionId})
+func (_ Unimplemented) DeletePushSubscription(w http.ResponseWriter, r *http.Request, pushSubscriptionId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// SendTestPush Queue a test notification to every device of the caller (no dedup, preferences ignored).
+// (POST /push/test)
+func (_ Unimplemented) SendTestPush(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3654,6 +4040,60 @@ func (siw *ServerInterfaceWrapper) AdminTestAccount(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminTestAccount(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminListAdminTokens operation middleware
+func (siw *ServerInterfaceWrapper) AdminListAdminTokens(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminListAdminTokens(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminCreateAdminToken operation middleware
+func (siw *ServerInterfaceWrapper) AdminCreateAdminToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminCreateAdminToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminRevokeAdminToken operation middleware
+func (siw *ServerInterfaceWrapper) AdminRevokeAdminToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tokenId" -------------
+	var tokenId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tokenId", chi.URLParam(r, "tokenId"), &tokenId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tokenId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminRevokeAdminToken(w, r, tokenId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5526,6 +5966,20 @@ func (siw *ServerInterfaceWrapper) GetMyAvailability(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// SetMyLocale operation middleware
+func (siw *ServerInterfaceWrapper) SetMyLocale(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetMyLocale(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ChangePassword operation middleware
 func (siw *ServerInterfaceWrapper) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
@@ -5545,6 +5999,34 @@ func (siw *ServerInterfaceWrapper) ListModels(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListModels(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetNotificationPrefs operation middleware
+func (siw *ServerInterfaceWrapper) GetNotificationPrefs(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetNotificationPrefs(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateNotificationPrefs operation middleware
+func (siw *ServerInterfaceWrapper) UpdateNotificationPrefs(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateNotificationPrefs(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5613,6 +6095,88 @@ func (siw *ServerInterfaceWrapper) GetPublicKeyUsage(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetPublicKeyUsage(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPushConfig operation middleware
+func (siw *ServerInterfaceWrapper) GetPushConfig(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPushConfig(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListPushSubscriptions operation middleware
+func (siw *ServerInterfaceWrapper) ListPushSubscriptions(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPushSubscriptions(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePushSubscription operation middleware
+func (siw *ServerInterfaceWrapper) CreatePushSubscription(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePushSubscription(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePushSubscription operation middleware
+func (siw *ServerInterfaceWrapper) DeletePushSubscription(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "pushSubscriptionId" -------------
+	var pushSubscriptionId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "pushSubscriptionId", chi.URLParam(r, "pushSubscriptionId"), &pushSubscriptionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "pushSubscriptionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePushSubscription(w, r, pushSubscriptionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SendTestPush operation middleware
+func (siw *ServerInterfaceWrapper) SendTestPush(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SendTestPush(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6043,6 +6607,30 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/me/password", wrapper.ChangePassword)
 	})
 	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/me/locale", wrapper.SetMyLocale)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/push/config", wrapper.GetPushConfig)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/push/subscriptions", wrapper.ListPushSubscriptions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/push/subscriptions", wrapper.CreatePushSubscription)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/push/subscriptions/{pushSubscriptionId}", wrapper.DeletePushSubscription)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/push/test", wrapper.SendTestPush)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/notifications/prefs", wrapper.GetNotificationPrefs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/notifications/prefs", wrapper.UpdateNotificationPrefs)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/me/availability", wrapper.GetMyAvailability)
 	})
 	r.Group(func(r chi.Router) {
@@ -6278,6 +6866,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/admin/announcements/{announcementId}", wrapper.AdminUpdateAnnouncement)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/admin-tokens", wrapper.AdminListAdminTokens)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/admin-tokens", wrapper.AdminCreateAdminToken)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/admin-tokens/{tokenId}/revoke", wrapper.AdminRevokeAdminToken)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/admin/events", wrapper.AdminEvents)
@@ -6743,6 +7340,122 @@ type AdminTestAccountdefaultJSONResponse struct {
 }
 
 func (response AdminTestAccountdefaultJSONResponse) VisitAdminTestAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminListAdminTokensRequestObject struct {
+}
+
+type AdminListAdminTokensResponseObject interface {
+	VisitAdminListAdminTokensResponse(w http.ResponseWriter) error
+}
+
+type AdminListAdminTokens200JSONResponse AdminTokenList
+
+func (response AdminListAdminTokens200JSONResponse) VisitAdminListAdminTokensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminListAdminTokensdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminListAdminTokensdefaultJSONResponse) VisitAdminListAdminTokensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminCreateAdminTokenRequestObject struct {
+	Body *AdminCreateAdminTokenJSONRequestBody
+}
+
+type AdminCreateAdminTokenResponseObject interface {
+	VisitAdminCreateAdminTokenResponse(w http.ResponseWriter) error
+}
+
+type AdminCreateAdminToken201JSONResponse AdminTokenCreated
+
+func (response AdminCreateAdminToken201JSONResponse) VisitAdminCreateAdminTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminCreateAdminTokendefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminCreateAdminTokendefaultJSONResponse) VisitAdminCreateAdminTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminRevokeAdminTokenRequestObject struct {
+	TokenId openapi_types.UUID `json:"tokenId"`
+}
+
+type AdminRevokeAdminTokenResponseObject interface {
+	VisitAdminRevokeAdminTokenResponse(w http.ResponseWriter) error
+}
+
+type AdminRevokeAdminToken200JSONResponse AdminToken
+
+func (response AdminRevokeAdminToken200JSONResponse) VisitAdminRevokeAdminTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminRevokeAdminTokendefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminRevokeAdminTokendefaultJSONResponse) VisitAdminRevokeAdminTokenResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -9125,6 +9838,39 @@ func (response GetMyAvailabilitydefaultJSONResponse) VisitGetMyAvailabilityRespo
 	return err
 }
 
+type SetMyLocaleRequestObject struct {
+	Body *SetMyLocaleJSONRequestBody
+}
+
+type SetMyLocaleResponseObject interface {
+	VisitSetMyLocaleResponse(w http.ResponseWriter) error
+}
+
+type SetMyLocale204Response struct {
+}
+
+func (response SetMyLocale204Response) VisitSetMyLocaleResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type SetMyLocaledefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SetMyLocaledefaultJSONResponse) VisitSetMyLocaleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ChangePasswordRequestObject struct {
 	Body *ChangePasswordJSONRequestBody
 }
@@ -9185,6 +9931,83 @@ type ListModelsdefaultJSONResponse struct {
 }
 
 func (response ListModelsdefaultJSONResponse) VisitListModelsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetNotificationPrefsRequestObject struct {
+}
+
+type GetNotificationPrefsResponseObject interface {
+	VisitGetNotificationPrefsResponse(w http.ResponseWriter) error
+}
+
+type GetNotificationPrefs200JSONResponse NotificationPrefs
+
+func (response GetNotificationPrefs200JSONResponse) VisitGetNotificationPrefsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetNotificationPrefsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetNotificationPrefsdefaultJSONResponse) VisitGetNotificationPrefsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateNotificationPrefsRequestObject struct {
+	Body *UpdateNotificationPrefsJSONRequestBody
+}
+
+type UpdateNotificationPrefsResponseObject interface {
+	VisitUpdateNotificationPrefsResponse(w http.ResponseWriter) error
+}
+
+type UpdateNotificationPrefs200JSONResponse NotificationPrefs
+
+func (response UpdateNotificationPrefs200JSONResponse) VisitUpdateNotificationPrefsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateNotificationPrefsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response UpdateNotificationPrefsdefaultJSONResponse) VisitUpdateNotificationPrefsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -9339,6 +10162,192 @@ type GetPublicKeyUsagedefaultJSONResponse struct {
 }
 
 func (response GetPublicKeyUsagedefaultJSONResponse) VisitGetPublicKeyUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPushConfigRequestObject struct {
+}
+
+type GetPushConfigResponseObject interface {
+	VisitGetPushConfigResponse(w http.ResponseWriter) error
+}
+
+type GetPushConfig200JSONResponse PushConfig
+
+func (response GetPushConfig200JSONResponse) VisitGetPushConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPushConfigdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetPushConfigdefaultJSONResponse) VisitGetPushConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPushSubscriptionsRequestObject struct {
+}
+
+type ListPushSubscriptionsResponseObject interface {
+	VisitListPushSubscriptionsResponse(w http.ResponseWriter) error
+}
+
+type ListPushSubscriptions200JSONResponse PushDeviceList
+
+func (response ListPushSubscriptions200JSONResponse) VisitListPushSubscriptionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPushSubscriptionsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListPushSubscriptionsdefaultJSONResponse) VisitListPushSubscriptionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePushSubscriptionRequestObject struct {
+	Body *CreatePushSubscriptionJSONRequestBody
+}
+
+type CreatePushSubscriptionResponseObject interface {
+	VisitCreatePushSubscriptionResponse(w http.ResponseWriter) error
+}
+
+type CreatePushSubscription201JSONResponse PushDevice
+
+func (response CreatePushSubscription201JSONResponse) VisitCreatePushSubscriptionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePushSubscriptiondefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreatePushSubscriptiondefaultJSONResponse) VisitCreatePushSubscriptionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePushSubscriptionRequestObject struct {
+	PushSubscriptionId openapi_types.UUID `json:"pushSubscriptionId"`
+}
+
+type DeletePushSubscriptionResponseObject interface {
+	VisitDeletePushSubscriptionResponse(w http.ResponseWriter) error
+}
+
+type DeletePushSubscription204Response struct {
+}
+
+func (response DeletePushSubscription204Response) VisitDeletePushSubscriptionResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeletePushSubscriptiondefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeletePushSubscriptiondefaultJSONResponse) VisitDeletePushSubscriptionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SendTestPushRequestObject struct {
+}
+
+type SendTestPushResponseObject interface {
+	VisitSendTestPushResponse(w http.ResponseWriter) error
+}
+
+type SendTestPush200JSONResponse PushTestResult
+
+func (response SendTestPush200JSONResponse) VisitSendTestPushResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SendTestPushdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SendTestPushdefaultJSONResponse) VisitSendTestPushResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -9623,6 +10632,15 @@ type StrictServerInterface interface {
 	// (POST /admin/accounts/{accountId}/test)
 	AdminTestAccount(ctx context.Context, request AdminTestAccountRequestObject) (AdminTestAccountResponseObject, error)
 
+	// (GET /admin/admin-tokens)
+	AdminListAdminTokens(ctx context.Context, request AdminListAdminTokensRequestObject) (AdminListAdminTokensResponseObject, error)
+
+	// (POST /admin/admin-tokens)
+	AdminCreateAdminToken(ctx context.Context, request AdminCreateAdminTokenRequestObject) (AdminCreateAdminTokenResponseObject, error)
+
+	// (POST /admin/admin-tokens/{tokenId}/revoke)
+	AdminRevokeAdminToken(ctx context.Context, request AdminRevokeAdminTokenRequestObject) (AdminRevokeAdminTokenResponseObject, error)
+
 	// (GET /admin/announcements)
 	AdminListAnnouncements(ctx context.Context, request AdminListAnnouncementsRequestObject) (AdminListAnnouncementsResponseObject, error)
 
@@ -9802,12 +10820,21 @@ type StrictServerInterface interface {
 	// GetMyAvailability Estimated usable amount for the caller (normal / force calls and own plans).
 	// (GET /me/availability)
 	GetMyAvailability(ctx context.Context, request GetMyAvailabilityRequestObject) (GetMyAvailabilityResponseObject, error)
+	// SetMyLocale Language of push notifications (the panel sends it when the user switches language).
+	// (PUT /me/locale)
+	SetMyLocale(ctx context.Context, request SetMyLocaleRequestObject) (SetMyLocaleResponseObject, error)
 
 	// (POST /me/password)
 	ChangePassword(ctx context.Context, request ChangePasswordRequestObject) (ChangePasswordResponseObject, error)
 
 	// (GET /models)
 	ListModels(ctx context.Context, request ListModelsRequestObject) (ListModelsResponseObject, error)
+
+	// (GET /notifications/prefs)
+	GetNotificationPrefs(ctx context.Context, request GetNotificationPrefsRequestObject) (GetNotificationPrefsResponseObject, error)
+
+	// (PUT /notifications/prefs)
+	UpdateNotificationPrefs(ctx context.Context, request UpdateNotificationPrefsRequestObject) (UpdateNotificationPrefsResponseObject, error)
 
 	// (GET /plans)
 	ListPlansOnSale(ctx context.Context, request ListPlansOnSaleRequestObject) (ListPlansOnSaleResponseObject, error)
@@ -9820,6 +10847,21 @@ type StrictServerInterface interface {
 	// GetPublicKeyUsage Usage of the API key in the request headers (no login).
 	// (GET /public/key-usage)
 	GetPublicKeyUsage(ctx context.Context, request GetPublicKeyUsageRequestObject) (GetPublicKeyUsageResponseObject, error)
+
+	// (GET /push/config)
+	GetPushConfig(ctx context.Context, request GetPushConfigRequestObject) (GetPushConfigResponseObject, error)
+
+	// (GET /push/subscriptions)
+	ListPushSubscriptions(ctx context.Context, request ListPushSubscriptionsRequestObject) (ListPushSubscriptionsResponseObject, error)
+	// CreatePushSubscription Register this browser (PushSubscription.toJSON()); an endpoint already registered moves to the caller.
+	// (POST /push/subscriptions)
+	CreatePushSubscription(ctx context.Context, request CreatePushSubscriptionRequestObject) (CreatePushSubscriptionResponseObject, error)
+
+	// (DELETE /push/subscriptions/{pushSubscriptionId})
+	DeletePushSubscription(ctx context.Context, request DeletePushSubscriptionRequestObject) (DeletePushSubscriptionResponseObject, error)
+	// SendTestPush Queue a test notification to every device of the caller (no dedup, preferences ignored).
+	// (POST /push/test)
+	SendTestPush(ctx context.Context, request SendTestPushRequestObject) (SendTestPushResponseObject, error)
 
 	// (GET /subscriptions)
 	ListMySubscriptions(ctx context.Context, request ListMySubscriptionsRequestObject) (ListMySubscriptionsResponseObject, error)
@@ -10209,6 +11251,87 @@ func (sh *strictHandler) AdminTestAccount(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AdminTestAccountResponseObject); ok {
 		if err := validResponse.VisitAdminTestAccountResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminListAdminTokens operation middleware
+func (sh *strictHandler) AdminListAdminTokens(w http.ResponseWriter, r *http.Request) {
+	var request AdminListAdminTokensRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminListAdminTokens(ctx, request.(AdminListAdminTokensRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminListAdminTokens")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminListAdminTokensResponseObject); ok {
+		if err := validResponse.VisitAdminListAdminTokensResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminCreateAdminToken operation middleware
+func (sh *strictHandler) AdminCreateAdminToken(w http.ResponseWriter, r *http.Request) {
+	var request AdminCreateAdminTokenRequestObject
+
+	var body AdminCreateAdminTokenJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminCreateAdminToken(ctx, request.(AdminCreateAdminTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminCreateAdminToken")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminCreateAdminTokenResponseObject); ok {
+		if err := validResponse.VisitAdminCreateAdminTokenResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminRevokeAdminToken operation middleware
+func (sh *strictHandler) AdminRevokeAdminToken(w http.ResponseWriter, r *http.Request, tokenId openapi_types.UUID) {
+	var request AdminRevokeAdminTokenRequestObject
+
+	request.TokenId = tokenId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminRevokeAdminToken(ctx, request.(AdminRevokeAdminTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminRevokeAdminToken")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminRevokeAdminTokenResponseObject); ok {
+		if err := validResponse.VisitAdminRevokeAdminTokenResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -11868,6 +12991,37 @@ func (sh *strictHandler) GetMyAvailability(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// SetMyLocale operation middleware
+func (sh *strictHandler) SetMyLocale(w http.ResponseWriter, r *http.Request) {
+	var request SetMyLocaleRequestObject
+
+	var body SetMyLocaleJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetMyLocale(ctx, request.(SetMyLocaleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetMyLocale")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetMyLocaleResponseObject); ok {
+		if err := validResponse.VisitSetMyLocaleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ChangePassword operation middleware
 func (sh *strictHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	var request ChangePasswordRequestObject
@@ -11916,6 +13070,61 @@ func (sh *strictHandler) ListModels(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListModelsResponseObject); ok {
 		if err := validResponse.VisitListModelsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetNotificationPrefs operation middleware
+func (sh *strictHandler) GetNotificationPrefs(w http.ResponseWriter, r *http.Request) {
+	var request GetNotificationPrefsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetNotificationPrefs(ctx, request.(GetNotificationPrefsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetNotificationPrefs")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetNotificationPrefsResponseObject); ok {
+		if err := validResponse.VisitGetNotificationPrefsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateNotificationPrefs operation middleware
+func (sh *strictHandler) UpdateNotificationPrefs(w http.ResponseWriter, r *http.Request) {
+	var request UpdateNotificationPrefsRequestObject
+
+	var body UpdateNotificationPrefsJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateNotificationPrefs(ctx, request.(UpdateNotificationPrefsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateNotificationPrefs")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateNotificationPrefsResponseObject); ok {
+		if err := validResponse.VisitUpdateNotificationPrefsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -12024,6 +13233,135 @@ func (sh *strictHandler) GetPublicKeyUsage(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetPublicKeyUsageResponseObject); ok {
 		if err := validResponse.VisitGetPublicKeyUsageResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetPushConfig operation middleware
+func (sh *strictHandler) GetPushConfig(w http.ResponseWriter, r *http.Request) {
+	var request GetPushConfigRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPushConfig(ctx, request.(GetPushConfigRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPushConfig")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPushConfigResponseObject); ok {
+		if err := validResponse.VisitGetPushConfigResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListPushSubscriptions operation middleware
+func (sh *strictHandler) ListPushSubscriptions(w http.ResponseWriter, r *http.Request) {
+	var request ListPushSubscriptionsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPushSubscriptions(ctx, request.(ListPushSubscriptionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPushSubscriptions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListPushSubscriptionsResponseObject); ok {
+		if err := validResponse.VisitListPushSubscriptionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreatePushSubscription operation middleware
+func (sh *strictHandler) CreatePushSubscription(w http.ResponseWriter, r *http.Request) {
+	var request CreatePushSubscriptionRequestObject
+
+	var body CreatePushSubscriptionJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreatePushSubscription(ctx, request.(CreatePushSubscriptionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreatePushSubscription")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreatePushSubscriptionResponseObject); ok {
+		if err := validResponse.VisitCreatePushSubscriptionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeletePushSubscription operation middleware
+func (sh *strictHandler) DeletePushSubscription(w http.ResponseWriter, r *http.Request, pushSubscriptionId openapi_types.UUID) {
+	var request DeletePushSubscriptionRequestObject
+
+	request.PushSubscriptionId = pushSubscriptionId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeletePushSubscription(ctx, request.(DeletePushSubscriptionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeletePushSubscription")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeletePushSubscriptionResponseObject); ok {
+		if err := validResponse.VisitDeletePushSubscriptionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SendTestPush operation middleware
+func (sh *strictHandler) SendTestPush(w http.ResponseWriter, r *http.Request) {
+	var request SendTestPushRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SendTestPush(ctx, request.(SendTestPushRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SendTestPush")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SendTestPushResponseObject); ok {
+		if err := validResponse.VisitSendTestPushResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

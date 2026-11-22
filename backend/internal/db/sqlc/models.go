@@ -34,6 +34,21 @@ type Account struct {
 	DeletedAt          *time.Time
 }
 
+type AdminToken struct {
+	ID          uuid.UUID
+	Name        string
+	TokenHash   []byte
+	TokenPrefix string
+	Scope       string
+	CreatedBy   uuid.UUID
+	ExpiresAt   *time.Time
+	IpAllowlist []string
+	LastUsedAt  *time.Time
+	LastUsedIp  string
+	RevokedAt   *time.Time
+	CreatedAt   time.Time
+}
+
 type Announcement struct {
 	ID        uuid.UUID
 	Title     string
@@ -94,6 +109,8 @@ type AuditLog struct {
 	Diff       json.RawMessage
 	Ip         string
 	CreatedAt  time.Time
+	TokenID    *uuid.UUID
+	TokenName  string
 }
 
 type LedgerEntry struct {
@@ -108,6 +125,14 @@ type LedgerEntry struct {
 	Note              string
 	OperatorID        *uuid.UUID
 	CreatedAt         time.Time
+}
+
+type NotificationPref struct {
+	UserID         uuid.UUID
+	Event          string
+	Enabled        bool
+	ThresholdMicro *int64
+	UpdatedAt      time.Time
 }
 
 type Outbox struct {
@@ -175,6 +200,18 @@ type PriceTable struct {
 	Body      []byte
 	Models    int32
 	FetchedAt time.Time
+}
+
+type PushSubscription struct {
+	ID            uuid.UUID
+	UserID        uuid.UUID
+	Endpoint      string
+	P256dh        string
+	Auth          string
+	DeviceLabel   string
+	CreatedAt     time.Time
+	LastSuccessAt *time.Time
+	Failures      int32
 }
 
 type ReconcileRun struct {
@@ -295,4 +332,5 @@ type User struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	DeletedAt      *time.Time
+	Locale         string
 }

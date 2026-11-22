@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: oxalate-bridge panel API
-  version: 0.4.1
+  version: 0.5.0
   description: |
     Panel API of oxalate-bridge. This file is the single source of truth: the
     backend server code is generated from it with oapi-codegen (chi strict
@@ -14,6 +14,20 @@ info:
     - Errors are `{"error":{"code","message"}}` with a fixed `code` string.
     - Authentication is a session cookie (`bridge_session`, HttpOnly,
       SameSite=Lax) set by `POST /auth/login`.
+    - `/admin/*` also accepts an admin API token: `Authorization: Bearer oba-…`
+      (scheme `adminToken`). Tokens are created by an admin in the panel; the
+      full token is shown once. Token requests skip the `X-Requested-With`
+      check. Each admin operation carries `x-admin-token-scope`: `read`
+      (GET / HEAD, including the SSE stream: read and write tokens), `write`
+      (write tokens only) or `none` (session only: managing admin tokens).
+      Changing a user's role, creating an admin user and setting an admin's
+      password are refused for every token (`admin_token_forbidden`, 403).
+      Token errors: `admin_token_invalid`, `admin_token_expired`,
+      `admin_token_revoked` (401), `admin_token_ip_denied`,
+      `admin_token_read_only`, `admin_token_forbidden` (403),
+      `admin_token_rate_limited` (429, per token, `admin_token_per_minute`
+      setting, default 120). Writes made with a token are audited with the
+      token's id and name; `operator_id` is its creator.
     - Every non-GET request must carry the header `X-Requested-With`
       (any value, e.g. `XMLHttpRequest`) or it is rejected with
       `csrf_header_missing` (403).
@@ -59,6 +73,7 @@ tags:
   - name: admin-plans
   - name: admin-subscriptions
   - name: admin-system
+  - name: notifications
 
 paths:
   /auth/login:
@@ -116,6 +131,108 @@ paths:
             schema: { $ref: '#/components/schemas/ChangePasswordRequest' }
       responses:
         '204': { description: Password changed; other sessions stay valid until they expire. }
+        default: { $ref: '#/components/responses/Error' }
+
+  /me/locale:
+    put:
+      tags: [auth]
+      operationId: setMyLocale
+      summary: Language of push notifications (the panel sends it when the user switches language).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LocaleUpdate' }
+      responses:
+        '204': { description: Saved. }
+        default: { $ref: '#/components/responses/Error' }
+  /push/config:
+    get:
+      tags: [notifications]
+      operationId: getPushConfig
+      responses:
+        '200':
+          description: VAPID public key for PushManager.subscribe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PushConfig' }
+        default: { $ref: '#/components/responses/Error' }
+  /push/subscriptions:
+    get:
+      tags: [notifications]
+      operationId: listPushSubscriptions
+      responses:
+        '200':
+          description: My devices, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PushDeviceList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [notifications]
+      operationId: createPushSubscription
+      summary: Register this browser (PushSubscription.toJSON()); an endpoint already registered moves to the caller.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PushSubscriptionCreate' }
+      responses:
+        '201':
+          description: The device.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PushDevice' }
+        default: { $ref: '#/components/responses/Error' }
+  /push/subscriptions/{pushSubscriptionId}:
+    parameters:
+      - name: pushSubscriptionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [notifications]
+      operationId: deletePushSubscription
+      responses:
+        '204': { description: Removed. }
+        default: { $ref: '#/components/responses/Error' }
+  /push/test:
+    post:
+      tags: [notifications]
+      operationId: sendTestPush
+      summary: Queue a test notification to every device of the caller (no dedup, preferences ignored).
+      responses:
+        '200':
+          description: Number of devices the notification was queued for.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PushTestResult' }
+        default: { $ref: '#/components/responses/Error' }
+  /notifications/prefs:
+    get:
+      tags: [notifications]
+      operationId: getNotificationPrefs
+      responses:
+        '200':
+          description: Every event the caller can receive with its switch.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationPrefs' }
+        default: { $ref: '#/components/responses/Error' }
+    put:
+      tags: [notifications]
+      operationId: updateNotificationPrefs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationPrefsUpdate' }
+      responses:
+        '200':
+          description: Preferences after the change.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationPrefs' }
         default: { $ref: '#/components/responses/Error' }
 
   /me/availability:
@@ -486,6 +603,8 @@ paths:
 
   /admin/users:
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-users]
       operationId: adminListUsers
       parameters:
@@ -502,6 +621,8 @@ paths:
               schema: { $ref: '#/components/schemas/AdminUserPage' }
         default: { $ref: '#/components/responses/Error' }
     post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-users]
       operationId: adminCreateUser
       requestBody:
@@ -520,6 +641,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/UserId'
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-users]
       operationId: adminGetUser
       responses:
@@ -530,6 +653,8 @@ paths:
               schema: { $ref: '#/components/schemas/AdminUser' }
         default: { $ref: '#/components/responses/Error' }
     patch:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-users]
       operationId: adminUpdateUser
       requestBody:
@@ -545,6 +670,8 @@ paths:
               schema: { $ref: '#/components/schemas/AdminUser' }
         default: { $ref: '#/components/responses/Error' }
     delete:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-users]
       operationId: adminDeleteUser
       responses:
@@ -554,6 +681,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/UserId'
     post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-users]
       operationId: adminAdjustBalance
       summary: Top up (admin_topup, amount > 0) or adjust (admin_adjust, signed) a balance.
@@ -574,6 +703,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/UserId'
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-users]
       operationId: adminListUserKeys
       summary: The user's API keys (secrets are never returned here).
@@ -588,6 +719,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/KeyId'
     put:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-users]
       operationId: adminSetKeyEnabled
       summary: Enable or disable any user's key (takes effect on every replica at once).
@@ -608,6 +741,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/KeyId'
     patch:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-users]
       operationId: adminUpdateKey
       summary: Edit any user's key (limits included).
@@ -627,6 +762,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/KeyId'
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-users]
       operationId: adminGetKeyLimits
       responses:
@@ -640,6 +777,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/KeyId'
     post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-users]
       operationId: adminResetKeyUsage
       responses:
@@ -651,6 +790,8 @@ paths:
         default: { $ref: '#/components/responses/Error' }
   /admin/overview:
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-system]
       operationId: adminGetOverview
       summary: Everything the admin overview page shows, in one call.
@@ -669,6 +810,8 @@ paths:
 
   /admin/accounts/validate:
     post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-accounts]
       operationId: adminValidateAccount
       summary: Check a connection without saving anything (the import dialog's first step).
@@ -691,6 +834,8 @@ paths:
 
   /admin/accounts:
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-accounts]
       operationId: adminListAccounts
       responses:
@@ -701,6 +846,8 @@ paths:
               schema: { $ref: '#/components/schemas/AccountList' }
         default: { $ref: '#/components/responses/Error' }
     post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-accounts]
       operationId: adminCreateAccount
       summary: Import an account. /quota and /v1/models must both succeed before it is saved.
@@ -724,6 +871,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/AccountId'
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-accounts]
       operationId: adminGetAccount
       responses:
@@ -734,6 +883,8 @@ paths:
               schema: { $ref: '#/components/schemas/Account' }
         default: { $ref: '#/components/responses/Error' }
     patch:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-accounts]
       operationId: adminUpdateAccount
       summary: Edit an account. The edited connection is validated like an import; saving clears the error state.
@@ -750,6 +901,8 @@ paths:
               schema: { $ref: '#/components/schemas/Account' }
         default: { $ref: '#/components/responses/Error' }
     delete:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-accounts]
       operationId: adminDeleteAccount
       summary: Delete an account (soft delete).
@@ -764,6 +917,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/AccountId'
     put:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-accounts]
       operationId: adminSetAccountEnabled
       summary: Enable or disable; enabling also clears the error state.
@@ -783,6 +938,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/AccountId'
     post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-accounts]
       operationId: adminTestAccount
       summary: Call /quota and /v1/models now; a full pass clears the error state and cooldown.
@@ -798,6 +955,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/AccountId'
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-accounts]
       operationId: adminGetAccountEstimate
       summary: The account's row of the cpa-quota `estimates` table (read only).
@@ -817,6 +976,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/AccountId'
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-accounts]
       operationId: adminGetAccountKTrend
       summary: Rows of the cpa-quota `k_trend_daily` table for the account (read only).
@@ -836,6 +997,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/AccountId'
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-accounts]
       operationId: adminGetAccountQuotaSeries
       summary: Reported utilization of one window over time (cpa-quota `quota_report_windows`, read only).
@@ -868,6 +1031,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/AccountId'
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-accounts]
       operationId: adminGetAccountCostCompare
       summary: Upstream cost per time bucket as seen by cpa-quota and by this bridge.
@@ -893,6 +1058,8 @@ paths:
 
   /admin/plans:
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-plans]
       operationId: adminListPlans
       responses:
@@ -903,6 +1070,8 @@ paths:
               schema: { $ref: '#/components/schemas/PlanList' }
         default: { $ref: '#/components/responses/Error' }
     post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-plans]
       operationId: adminCreatePlan
       requestBody:
@@ -921,6 +1090,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/PlanId'
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-plans]
       operationId: adminGetPlan
       responses:
@@ -931,6 +1102,8 @@ paths:
               schema: { $ref: '#/components/schemas/Plan' }
         default: { $ref: '#/components/responses/Error' }
     put:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-plans]
       operationId: adminUpdatePlan
       summary: Replace a plan. Existing subscriptions keep the terms they were bought with.
@@ -947,6 +1120,8 @@ paths:
               schema: { $ref: '#/components/schemas/Plan' }
         default: { $ref: '#/components/responses/Error' }
     delete:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-plans]
       operationId: adminDeletePlan
       responses:
@@ -955,6 +1130,8 @@ paths:
 
   /admin/subscriptions:
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-subscriptions]
       operationId: adminListSubscriptions
       parameters:
@@ -973,6 +1150,8 @@ paths:
               schema: { $ref: '#/components/schemas/SubscriptionPage' }
         default: { $ref: '#/components/responses/Error' }
     post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-subscriptions]
       operationId: adminGrantSubscription
       summary: Open an active subscription for a user directly on an account, optionally charging the price.
@@ -1003,6 +1182,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/SubscriptionId'
     post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-subscriptions]
       operationId: adminAssignSubscription
       summary: Activate a pending subscription on an account (warns, never blocks, on overcommit).
@@ -1027,6 +1208,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/SubscriptionId'
     post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-subscriptions]
       operationId: adminRebindSubscription
       summary: Move an active or pending subscription to another account (warns, never blocks, on overcommit).
@@ -1051,6 +1234,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/SubscriptionId'
     post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-subscriptions]
       operationId: adminCancelSubscription
       requestBody:
@@ -1068,6 +1253,8 @@ paths:
 
   /admin/settings:
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-system]
       operationId: adminGetSettings
       responses:
@@ -1078,6 +1265,8 @@ paths:
               schema: { $ref: '#/components/schemas/Settings' }
         default: { $ref: '#/components/responses/Error' }
     patch:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-system]
       operationId: adminUpdateSettings
       summary: Change some settings; every replica applies them immediately.
@@ -1095,6 +1284,8 @@ paths:
         default: { $ref: '#/components/responses/Error' }
   /admin/request-logs:
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-system]
       operationId: adminListRequestLogs
       parameters:
@@ -1120,6 +1311,8 @@ paths:
         default: { $ref: '#/components/responses/Error' }
   /admin/usage/summary:
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-system]
       operationId: adminGetUsageSummary
       parameters:
@@ -1138,6 +1331,8 @@ paths:
         default: { $ref: '#/components/responses/Error' }
   /admin/ledger:
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-system]
       operationId: adminListLedger
       parameters:
@@ -1154,6 +1349,8 @@ paths:
         default: { $ref: '#/components/responses/Error' }
   /admin/audit-logs:
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-system]
       operationId: adminListAuditLogs
       parameters:
@@ -1174,6 +1371,8 @@ paths:
         default: { $ref: '#/components/responses/Error' }
   /admin/safeguard-events:
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-system]
       operationId: adminListSafeguardEvents
       parameters:
@@ -1189,6 +1388,8 @@ paths:
         default: { $ref: '#/components/responses/Error' }
   /admin/prices:
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-system]
       operationId: adminGetPrices
       responses:
@@ -1200,6 +1401,8 @@ paths:
         default: { $ref: '#/components/responses/Error' }
   /admin/prices/refresh:
     post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-system]
       operationId: adminRefreshPrices
       responses:
@@ -1211,6 +1414,8 @@ paths:
         default: { $ref: '#/components/responses/Error' }
   /admin/reconcile:
     post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-system]
       operationId: adminRunReconcile
       summary: Run the ledger / balance / charge reconciliation now.
@@ -1223,6 +1428,8 @@ paths:
         default: { $ref: '#/components/responses/Error' }
   /admin/redeem-batches:
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-system]
       operationId: adminListRedeemBatches
       parameters:
@@ -1236,6 +1443,8 @@ paths:
               schema: { $ref: '#/components/schemas/RedeemBatchPage' }
         default: { $ref: '#/components/responses/Error' }
     post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-system]
       operationId: adminCreateRedeemBatch
       requestBody:
@@ -1257,6 +1466,8 @@ paths:
         required: true
         schema: { type: string, format: uuid }
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-system]
       operationId: adminExportRedeemBatch
       summary: CSV of every code of a batch, original text included (audited).
@@ -1269,6 +1480,8 @@ paths:
         default: { $ref: '#/components/responses/Error' }
   /admin/redeem-codes:
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-system]
       operationId: adminListRedeemCodes
       parameters:
@@ -1294,6 +1507,8 @@ paths:
         required: true
         schema: { type: string, format: uuid }
     post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-system]
       operationId: adminVoidRedeemCode
       responses:
@@ -1305,6 +1520,8 @@ paths:
         default: { $ref: '#/components/responses/Error' }
   /admin/announcements:
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-system]
       operationId: adminListAnnouncements
       responses:
@@ -1315,6 +1532,8 @@ paths:
               schema: { $ref: '#/components/schemas/AnnouncementList' }
         default: { $ref: '#/components/responses/Error' }
     post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-system]
       operationId: adminCreateAnnouncement
       requestBody:
@@ -1333,6 +1552,8 @@ paths:
     parameters:
       - $ref: '#/components/parameters/AnnouncementId'
     patch:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-system]
       operationId: adminUpdateAnnouncement
       requestBody:
@@ -1348,18 +1569,70 @@ paths:
               schema: { $ref: '#/components/schemas/Announcement' }
         default: { $ref: '#/components/responses/Error' }
     delete:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
       tags: [admin-system]
       operationId: adminDeleteAnnouncement
       responses:
         '204': { description: Deleted. }
         default: { $ref: '#/components/responses/Error' }
+  /admin/admin-tokens:
+    get:
+      security: [{ cookieAuth: [] }]
+      x-admin-token-scope: none
+      tags: [admin-system]
+      operationId: adminListAdminTokens
+      responses:
+        '200':
+          description: Every admin token (revoked ones included), newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminTokenList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      security: [{ cookieAuth: [] }]
+      x-admin-token-scope: none
+      tags: [admin-system]
+      operationId: adminCreateAdminToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminTokenCreate' }
+      responses:
+        '201':
+          description: The token; `secret` is returned only here.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminTokenCreated' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/admin-tokens/{tokenId}/revoke:
+    parameters:
+      - name: tokenId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      security: [{ cookieAuth: [] }]
+      x-admin-token-scope: none
+      tags: [admin-system]
+      operationId: adminRevokeAdminToken
+      responses:
+        '200':
+          description: The revoked token.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminToken' }
+        default: { $ref: '#/components/responses/Error' }
   /admin/events:
     get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
       tags: [admin-system]
       operationId: adminEvents
       summary: Server-sent events across replicas.
       description: |
-        `text/event-stream`. Event names: `account_status` (data:
+        `text/event-stream`. Available to read-scope admin tokens. Event names: `account_status` (data:
         `AccountStatusEvent`) and `request_settled` (data: `RequestSettledEvent`).
         A comment line is sent every 15 s.
       responses:
@@ -1376,6 +1649,11 @@ components:
       type: apiKey
       in: cookie
       name: bridge_session
+    adminToken:
+      type: http
+      scheme: bearer
+      bearerFormat: oba-
+      description: Admin API token (`oba-` + 43 base62 characters), `/admin/*` only; see `x-admin-token-scope` on each operation.
 
   responses:
     Error:
@@ -1540,7 +1818,7 @@ components:
         new_password: { type: string, minLength: 8, maxLength: 256 }
     Me:
       type: object
-      required: [id, username, role, status, balance_micro, max_concurrency, created_at]
+      required: [id, username, role, status, balance_micro, max_concurrency, locale, created_at]
       properties:
         id: { type: string, format: uuid }
         username: { type: string }
@@ -1549,7 +1827,16 @@ components:
         balance_micro: { type: integer, format: int64 }
         max_concurrency: { type: integer }
         rpm: { type: integer, nullable: true }
+        locale: { $ref: '#/components/schemas/Locale' }
         created_at: { type: string, format: date-time }
+    Locale:
+      type: string
+      enum: [zh-CN, en]
+    LocaleUpdate:
+      type: object
+      required: [locale]
+      properties:
+        locale: { $ref: '#/components/schemas/Locale' }
 
     QuotaScope:
       type: string
@@ -2474,7 +2761,7 @@ components:
         force: { type: number, format: double, minimum: 0 }
     Settings:
       type: object
-      required: [default_user_concurrency, watermark_5h_percent, watermark_penalty, standard_min_headroom_micro, sticky_ttl_seconds, sticky_ttl_1h_seconds, tier_multipliers, model_multipliers, hold_cap_micro, hold_default_max_tokens, max_retries, quota_poll_seconds, stale_after_seconds, models_poll_minutes, price_url, price_refresh_hours, upstream_idle_timeout_seconds, auto_renew_lead_hours, cooldown_5xx_seconds, cooldown_429_default_seconds, public_query_ip_per_minute, public_query_key_per_minute, status_key_per_minute]
+      required: [default_user_concurrency, watermark_5h_percent, watermark_penalty, standard_min_headroom_micro, sticky_ttl_seconds, sticky_ttl_1h_seconds, tier_multipliers, model_multipliers, hold_cap_micro, hold_default_max_tokens, max_retries, quota_poll_seconds, stale_after_seconds, models_poll_minutes, price_url, price_refresh_hours, upstream_idle_timeout_seconds, auto_renew_lead_hours, cooldown_5xx_seconds, cooldown_429_default_seconds, public_query_ip_per_minute, public_query_key_per_minute, status_key_per_minute, admin_token_per_minute, stream_backlog_threshold, vapid_subject, vapid_subject_effective]
       properties:
         default_user_concurrency: { type: integer }
         watermark_5h_percent: { type: number, format: double }
@@ -2502,6 +2789,10 @@ components:
         public_query_ip_per_minute: { type: integer, minimum: 1, maximum: 10000, description: GET /public/key-usage per client IP per minute (default 30). }
         public_query_key_per_minute: { type: integer, minimum: 1, maximum: 10000, description: GET /public/key-usage per key per minute (default 30). }
         status_key_per_minute: { type: integer, minimum: 1, maximum: 10000, description: GET /v1/bridge/status (relay domain) per key per minute (default 60). }
+        admin_token_per_minute: { type: integer, minimum: 1, maximum: 10000, description: Requests per admin API token per minute (default 120). }
+        stream_backlog_threshold: { type: integer, minimum: 1, description: 'Settlement stream backlog (entries) that, held for 5 minutes, sends stream_backlog_high (default 1000).' }
+        vapid_subject: { type: string, description: 'Web Push contact (mailto: or https:); empty = BRIDGE_VAPID_SUBJECT or a placeholder.' }
+        vapid_subject_effective: { type: string, readOnly: true, description: The contact actually used. }
     SettingsPatch:
       type: object
       description: Any subset of Settings.
@@ -2531,6 +2822,9 @@ components:
         public_query_ip_per_minute: { type: integer, minimum: 1, maximum: 10000 }
         public_query_key_per_minute: { type: integer, minimum: 1, maximum: 10000 }
         status_key_per_minute: { type: integer, minimum: 1, maximum: 10000 }
+        admin_token_per_minute: { type: integer, minimum: 1, maximum: 10000 }
+        stream_backlog_threshold: { type: integer, minimum: 1 }
+        vapid_subject: { type: string }
 
     AuditLog:
       type: object
@@ -2546,7 +2840,135 @@ components:
           description: '{"before": ..., "after": ...} with secrets removed.'
           additionalProperties: true
         ip: { type: string }
+        token_id: { type: string, format: uuid, nullable: true, description: Set when the write was made with an admin API token (operator_id is its creator). }
+        token_name: { type: string, nullable: true }
         created_at: { type: string, format: date-time }
+    AdminTokenScope:
+      type: string
+      description: read = GET / HEAD admin endpoints (SSE included); write = every admin operation except managing tokens, roles and admin passwords.
+      enum: [read, write]
+    AdminToken:
+      type: object
+      required: [id, name, prefix, scope, status, created_by, created_by_username, expires_at, ip_allowlist, last_used_at, last_used_ip, revoked_at, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        prefix: { type: string, description: Display form (start and end of the token). }
+        scope: { $ref: '#/components/schemas/AdminTokenScope' }
+        status: { type: string, enum: [active, expired, revoked] }
+        created_by: { type: string, format: uuid }
+        created_by_username: { type: string }
+        expires_at: { type: string, format: date-time, nullable: true }
+        ip_allowlist:
+          type: array
+          nullable: true
+          items: { type: string }
+          description: CIDR prefixes; null = any address.
+        last_used_at: { type: string, format: date-time, nullable: true }
+        last_used_ip: { type: string }
+        revoked_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+    AdminTokenList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminToken' }
+    AdminTokenCreate:
+      type: object
+      required: [name, scope]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        scope: { $ref: '#/components/schemas/AdminTokenScope' }
+        expires_at: { type: string, format: date-time, nullable: true, description: Must be in the future; null = never. }
+        ip_allowlist:
+          type: array
+          nullable: true
+          maxItems: 64
+          items: { type: string }
+          description: IP addresses or CIDR prefixes; empty or null = any address.
+    AdminTokenCreated:
+      type: object
+      required: [token, secret]
+      properties:
+        token: { $ref: '#/components/schemas/AdminToken' }
+        secret: { type: string, description: 'The full token (oba-…). Shown only once.' }
+
+    PushConfig:
+      type: object
+      required: [public_key]
+      properties:
+        public_key: { type: string, description: VAPID public key (base64url, uncompressed P-256 point). }
+    PushSubscriptionCreate:
+      type: object
+      required: [endpoint, keys]
+      properties:
+        endpoint: { type: string, minLength: 1, maxLength: 2048 }
+        keys:
+          type: object
+          required: [p256dh, auth]
+          properties:
+            p256dh: { type: string, minLength: 1, maxLength: 256 }
+            auth: { type: string, minLength: 1, maxLength: 256 }
+    PushDevice:
+      type: object
+      required: [id, endpoint, device_label, created_at, last_success_at, failures]
+      properties:
+        id: { type: string, format: uuid }
+        endpoint: { type: string, description: Lets the browser recognize its own entry. }
+        device_label: { type: string, description: 'Guessed from the User-Agent at registration, e.g. "iPhone · Safari".' }
+        created_at: { type: string, format: date-time }
+        last_success_at: { type: string, format: date-time, nullable: true }
+        failures: { type: integer }
+    PushDeviceList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PushDevice' }
+    PushTestResult:
+      type: object
+      required: [devices]
+      properties:
+        devices: { type: integer }
+    NotificationEvent:
+      type: string
+      description: |
+        Admin events: account_auth_error, account_stale, subscription_pending,
+        reconcile_mismatch, stream_backlog_high (on by default), account_full,
+        safeguard_event (off by default). User events: balance_low,
+        plan_expiring, auto_renew_failed (on by default), key_exhausted (off).
+      enum: [account_auth_error, account_stale, subscription_pending, reconcile_mismatch, stream_backlog_high, account_full, safeguard_event, balance_low, plan_expiring, auto_renew_failed, key_exhausted]
+    NotificationPref:
+      type: object
+      required: [event, group, enabled, default_enabled]
+      properties:
+        event: { $ref: '#/components/schemas/NotificationEvent' }
+        group: { type: string, enum: [admin, user] }
+        enabled: { type: boolean }
+        default_enabled: { type: boolean }
+    NotificationPrefs:
+      type: object
+      required: [items, balance_threshold_micro]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/NotificationPref' }
+        balance_threshold_micro: { type: integer, format: int64, description: balance_low fires when the balance falls below this (default $5). }
+    NotificationPrefsUpdate:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [event, enabled]
+            properties:
+              event: { $ref: '#/components/schemas/NotificationEvent' }
+              enabled: { type: boolean }
+        balance_threshold_micro: { type: integer, format: int64, minimum: 0 }
     AuditLogPage:
       type: object
       required: [items]

@@ -31,8 +31,21 @@ func Handler() http.Handler {
 	if err != nil {
 		panic(err)
 	}
+	return handlerFS(sub, Built())
+}
+
+// noCache are files that must be revalidated on every load: the app shell,
+// the service worker (so a new version is picked up at once) and the web
+// app manifest.
+var noCache = map[string]string{
+	"index.html":           "text/html; charset=utf-8",
+	"sw.js":                "text/javascript; charset=utf-8",
+	"manifest.webmanifest": "application/manifest+json",
+	"offline.html":         "text/html; charset=utf-8",
+}
+
+func handlerFS(sub fs.FS, built bool) http.Handler {
 	files := http.FileServer(http.FS(sub))
-	built := Built()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -53,8 +66,19 @@ func Handler() http.Handler {
 			w.Header().Set("Cache-Control", "no-cache")
 			r = r.Clone(r.Context())
 			r.URL.Path = "/"
+		} else if ct, ok := noCache[p]; ok {
+			w.Header().Set("Content-Type", ct)
+			w.Header().Set("Cache-Control", "no-cache")
+			if p == "sw.js" {
+				w.Header().Set("Service-Worker-Allowed", "/")
+			}
 		} else if strings.HasPrefix(p, "assets/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
+		if p == "index.html" {
+			// FileServer redirects /index.html to /; serve it directly.
+			r = r.Clone(r.Context())
+			r.URL.Path = "/"
 		}
 		files.ServeHTTP(w, r)
 	})

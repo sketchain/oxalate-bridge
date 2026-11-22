@@ -57,6 +57,9 @@ type Proxy struct {
 	ClientIP  func(*http.Request) string
 	// OnAccountError reloads routing after an account is marked error.
 	OnAccountError func()
+	// OnKeyExhausted runs (in its own goroutine) when a key is refused
+	// because its total quota or a window is used up (notifications).
+	OnKeyExhausted func(ctx context.Context, keyID uuid.UUID, code, window string, recoversAt *time.Time)
 	Now            func() time.Time
 	// Meter enforces key quotas and windows.
 	Meter *keymeter.Meter
@@ -345,6 +348,9 @@ func (c *call) balanceTierRejection(tier string) *router.Rejection {
 // rejectKey answers a key-level refusal (never falls through to a tier).
 func (c *call) rejectKey(w http.ResponseWriter, rej *keymeter.Rejection) {
 	metrics.Rejections.WithLabelValues("", rej.Code).Inc()
+	if c.p.OnKeyExhausted != nil && (rej.Code == keymeter.CodeQuotaExhausted || rej.Code == keymeter.CodeWindowExhausted) {
+		go c.p.OnKeyExhausted(context.Background(), c.auth.KeyID, rej.Code, rej.Window, rej.RecoversAt)
+	}
 	writeErrorWith(w, rej.Status, rej.Type, rej.Message, rej.Extra())
 	c.settleRejected(rej.Status, rej.Code)
 }
