@@ -36,6 +36,11 @@ type Service struct {
 	Cat      *router.Catalog
 	Settings *settings.Store
 	Now      func() time.Time
+	// OnPending runs after a purchase created a subscription waiting for
+	// an account (notifications).
+	OnPending func(ctx context.Context, sub sqlc.PlanSubscription)
+	// OnRenewFailed runs after an automatic renewal failed.
+	OnRenewFailed func(ctx context.Context, subID uuid.UUID, insufficient bool)
 }
 
 func (s *Service) now() time.Time {
@@ -113,6 +118,9 @@ func (s *Service) Purchase(ctx context.Context, user, planID uuid.UUID, autoRene
 		}
 		return tx.RoutingChanged(ctx)
 	})
+	if err == nil && s.OnPending != nil {
+		go s.OnPending(context.WithoutCancel(ctx), sub)
+	}
 	return sub, err
 }
 
@@ -517,6 +525,9 @@ func (s *Service) AutoRenewDue(ctx context.Context, lead time.Duration) (renewed
 		if _, err := s.Renew(ctx, nil, id); err != nil {
 			// Insufficient balance: retried on later runs until it expires.
 			failed++
+			if s.OnRenewFailed != nil {
+				s.OnRenewFailed(ctx, id, errors.Is(err, ErrInsufficient))
+			}
 			continue
 		}
 		renewed++

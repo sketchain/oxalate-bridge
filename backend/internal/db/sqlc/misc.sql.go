@@ -87,9 +87,20 @@ func (q *Queries) GetPriceTable(ctx context.Context) (PriceTable, error) {
 	return i, err
 }
 
+const getSetting = `-- name: GetSetting :one
+SELECT value FROM settings WHERE key = $1
+`
+
+func (q *Queries) GetSetting(ctx context.Context, key string) (json.RawMessage, error) {
+	row := q.db.QueryRow(ctx, getSetting, key)
+	var value json.RawMessage
+	err := row.Scan(&value)
+	return value, err
+}
+
 const insertAuditLog = `-- name: InsertAuditLog :exec
-INSERT INTO audit_logs (id, operator_id, action, target_type, target_id, diff, ip)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO audit_logs (id, operator_id, action, target_type, target_id, diff, ip, token_id, token_name)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 `
 
 type InsertAuditLogParams struct {
@@ -100,6 +111,8 @@ type InsertAuditLogParams struct {
 	TargetID   string
 	Diff       json.RawMessage
 	Ip         string
+	TokenID    *uuid.UUID
+	TokenName  string
 }
 
 func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) error {
@@ -111,6 +124,8 @@ func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) 
 		arg.TargetID,
 		arg.Diff,
 		arg.Ip,
+		arg.TokenID,
+		arg.TokenName,
 	)
 	return err
 }
@@ -190,6 +205,20 @@ func (q *Queries) InsertSafeguardEvent(ctx context.Context, arg InsertSafeguardE
 	return err
 }
 
+const insertSettingIfAbsent = `-- name: InsertSettingIfAbsent :exec
+INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING
+`
+
+type InsertSettingIfAbsentParams struct {
+	Key   string
+	Value json.RawMessage
+}
+
+func (q *Queries) InsertSettingIfAbsent(ctx context.Context, arg InsertSettingIfAbsentParams) error {
+	_, err := q.db.Exec(ctx, insertSettingIfAbsent, arg.Key, arg.Value)
+	return err
+}
+
 const lastReconcileRun = `-- name: LastReconcileRun :one
 SELECT id, started_at, finished_at, ok, balance_mismatches, charge_diff_micro, detail FROM reconcile_runs ORDER BY started_at DESC LIMIT 1
 `
@@ -210,7 +239,7 @@ func (q *Queries) LastReconcileRun(ctx context.Context) (ReconcileRun, error) {
 }
 
 const listAuditLogs = `-- name: ListAuditLogs :many
-SELECT id, operator_id, action, target_type, target_id, diff, ip, created_at FROM audit_logs
+SELECT id, operator_id, action, target_type, target_id, diff, ip, created_at, token_id, token_name FROM audit_logs
 WHERE ($2::uuid IS NULL OR operator_id = $2::uuid)
   AND ($3::text IS NULL OR target_type = $3::text)
   AND ($4::timestamptz IS NULL OR (created_at, id) < ($4::timestamptz, $5::uuid))
@@ -250,6 +279,8 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 			&i.Diff,
 			&i.Ip,
 			&i.CreatedAt,
+			&i.TokenID,
+			&i.TokenName,
 		); err != nil {
 			return nil, err
 		}

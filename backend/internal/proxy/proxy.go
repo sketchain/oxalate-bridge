@@ -57,6 +57,9 @@ type Proxy struct {
 	ClientIP  func(*http.Request) string
 	// OnAccountError reloads routing after an account is marked error.
 	OnAccountError func()
+	// OnKeyExhausted runs (in its own goroutine) when a key is refused
+	// because its total quota or a window is used up (notifications).
+	OnKeyExhausted func(ctx context.Context, keyID uuid.UUID, code, window string, recoversAt *time.Time)
 	Now            func() time.Time
 	// Meter enforces key quotas and windows.
 	Meter *keymeter.Meter
@@ -229,6 +232,9 @@ type call struct {
 	keyHeld    bool
 	// keyRej is a key-level refusal met while holding: no further tier is tried.
 	keyRej *keymeter.Rejection
+	// balanceRej is an exhausted quota or window of a balance-scope key:
+	// standard and force are refused, the plan tier is still tried.
+	balanceRej *keymeter.Rejection
 }
 
 // admission is an admitted tier with its account candidates.
@@ -280,7 +286,9 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusServiceUnavailable, "api_error", "key limit state unavailable")
 			return
 		}
-		if rej != nil {
+		if rej.TierOnly() {
+			c.balanceRej = rej
+		} else if rej != nil {
 			c.rejectKey(w, rej)
 			return
 		}
@@ -301,6 +309,9 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 		if c.keyRej != nil {
 			return nil, &router.Rejection{Tier: tier, Code: c.keyRej.Code, Message: c.keyRej.Message}
 		}
+		if c.balanceRej != nil && c.auth.Counts(tier) {
+			return nil, c.balanceTierRejection(tier)
+		}
 		return c.admitTier(ctx, tier)
 	})
 	if c.keyRej != nil {
@@ -320,9 +331,26 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 	c.serve(w, adm)
 }
 
+// balanceTierRejection renders c.balanceRej as the rejection of one tier.
+func (c *call) balanceTierRejection(tier string) *router.Rejection {
+	r := c.balanceRej
+	msg := "key 余额口径的总额度已用完（Plan 档仍可用）"
+	if r.Window != "" {
+		msg = "key 余额口径的 " + r.Window + " 窗口限额已用完"
+		if r.RecoversAt != nil {
+			msg += "，预计 " + r.RecoversAt.UTC().Format(time.RFC3339) + " 恢复"
+		}
+		msg += "（Plan 档仍可用）"
+	}
+	return &router.Rejection{Tier: tier, Code: r.Code, Message: msg, Window: r.Window, RecoversAt: r.RecoversAt}
+}
+
 // rejectKey answers a key-level refusal (never falls through to a tier).
 func (c *call) rejectKey(w http.ResponseWriter, rej *keymeter.Rejection) {
 	metrics.Rejections.WithLabelValues("", rej.Code).Inc()
+	if c.p.OnKeyExhausted != nil && (rej.Code == keymeter.CodeQuotaExhausted || rej.Code == keymeter.CodeWindowExhausted) {
+		go c.p.OnKeyExhausted(context.Background(), c.auth.KeyID, rej.Code, rej.Window, rej.RecoversAt)
+	}
 	writeErrorWith(w, rej.Status, rej.Type, rej.Message, rej.Extra())
 	c.settleRejected(rej.Status, rej.Code)
 }
@@ -507,7 +535,8 @@ func (c *call) periodBase(t *router.PlanTarget) baseFunc {
 
 // hold reserves the request's estimated charge on a wallet and, when the
 // tier counts toward the key's limits, on the key's quota and windows. A
-// refusal by the key sets c.keyRej (no further tier is tried).
+// refusal by the key sets c.keyRej (no further tier is tried), or
+// c.balanceRej for a balance-scope key (only standard and force are refused).
 func (c *call) hold(ctx context.Context, tier string, w rstate.Wallet, tierMult, modelMult float64, base baseFunc) (bool, error) {
 	maxTok := c.set.HoldDefaultMaxTokens
 	if c.ri.hasMax && c.ri.maxTokens > 0 && c.ri.maxTokens < maxTok {
@@ -544,7 +573,11 @@ func (c *call) hold(ctx context.Context, tier string, w rstate.Wallet, tierMult,
 			c.holdWallet, c.held, c.keyHeld = w, true, kh != nil
 			c.mu.Unlock()
 		} else if res.Reason != rstate.HoldWallet && kh != nil {
-			c.keyRej = c.p.Meter.HoldRejection(ctx, c.auth, res.Reason, now)
+			if rej := c.p.Meter.HoldRejection(ctx, c.auth, res.Reason, now); rej.TierOnly() {
+				c.balanceRej = rej
+			} else {
+				c.keyRej = rej
+			}
 		}
 		return res.OK, nil
 	}
@@ -609,6 +642,9 @@ func (c *call) admitTier(ctx context.Context, tier string) (*admission, *router.
 				if err != nil {
 					c.p.Log.Error("balance hold", "err", err)
 					return nil, &router.Rejection{Tier: tier, Code: router.CodeStateUnavailable, Message: "余额状态暂不可用"}
+				}
+				if c.balanceRej != nil {
+					return nil, c.balanceTierRejection(tier)
 				}
 				return nil, &router.Rejection{Tier: tier, Code: router.CodeInsufficientFunds, Message: "余额不足"}
 			}

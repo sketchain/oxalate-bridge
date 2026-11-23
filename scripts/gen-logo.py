@@ -6,6 +6,10 @@
   web/public/favicon.svg                 32-unit favicon (Bold, tighter)
   web/public/favicon-32.png              32 × 32
   web/public/apple-touch-icon.png        180 × 180
+  web/public/icons/icon-192.png          PWA icon 192 × 192
+  web/public/icons/icon-512.png          PWA icon 512 × 512
+  web/public/icons/maskable-512.png      PWA maskable icon (formula inside the 80 % safe zone)
+  web/public/icons/badge-96.png          notification badge (white formula, transparent)
 
 The glyphs are outlines, so the mark renders identically everywhere
 (favicons cannot load web fonts). Subscripts 2 and 4 and the superscript 2−
@@ -133,13 +137,8 @@ class PolyPen(BasePen):
     _endPath = _closePath
 
 
-def png(layout, px, out):
-    ss = 8
-    k = px * ss / layout.size
-    W = px * ss
-    img = Image.new("RGBA", (W, W), INK)
-    d = ImageDraw.Draw(img)
-    d.rectangle([2 * k, 2 * k, W - 2 * k - 1, W - 2 * k - 1], fill=YELLOW)
+def formula_mask(layout, W, k, off):
+    """1-bit mask of the formula and the bar, the layout box scaled by k and shifted by off."""
     glyphs, (bx, by, bw, bh) = layout.glyphs()
     mask = Image.new("1", (W, W), 0)
     for g, x, y, sc in glyphs:
@@ -147,11 +146,42 @@ def png(layout, px, out):
         g.draw(TransformPen(pen, (sc, 0, 0, -sc, x, y)))
         for poly in pen.polys:  # even-odd: counters (O, 4) cut out
             m = Image.new("1", (W, W), 0)
-            ImageDraw.Draw(m).polygon(poly, fill=1)
+            ImageDraw.Draw(m).polygon([(px + off, py + off) for px, py in poly], fill=1)
             mask = ImageChops.logical_xor(mask, m)
-    img.paste(INK, mask=mask)
-    d.rectangle([bx * k, by * k, (bx + bw) * k - 1, (by + bh) * k - 1], fill=INK)
+    ImageDraw.Draw(mask).rectangle([bx * k + off, by * k + off, (bx + bw) * k + off - 1, (by + bh) * k + off - 1], fill=1)
+    return mask
+
+
+def png(layout, px, out):
+    ss = 8
+    k = px * ss / layout.size
+    W = px * ss
+    img = Image.new("RGBA", (W, W), INK)
+    d = ImageDraw.Draw(img)
+    d.rectangle([2 * k, 2 * k, W - 2 * k - 1, W - 2 * k - 1], fill=YELLOW)
+    img.paste(INK, mask=formula_mask(layout, W, k, 0))
     img.resize((px, px), Image.LANCZOS).convert("RGB").save(out, optimize=True)
+
+
+def png_maskable(layout, px, out):
+    """Full-bleed yellow with the formula (no border) in the central 80 % safe zone."""
+    ss = 8
+    W = px * ss
+    k = W * 0.72 / layout.size
+    img = Image.new("RGBA", (W, W), YELLOW)
+    img.paste(INK, mask=formula_mask(layout, W, k, (W - layout.size * k) / 2))
+    img.resize((px, px), Image.LANCZOS).convert("RGB").save(out, optimize=True)
+
+
+def png_badge(layout, px, out):
+    """White formula on transparent: Android draws notification badges from the alpha channel."""
+    ss = 8
+    W = px * ss
+    k = W * 1.0 / layout.size
+    mask = formula_mask(layout, W, k, (W - layout.size * k) / 2).convert("L")
+    img = Image.new("RGBA", (W, W), (255, 255, 255, 0))
+    img.putalpha(mask)
+    img.resize((px, px), Image.LANCZOS).save(out, optimize=True)
 
 
 # In-app mark: 36-unit design (2px border and 3px bar at the nominal 36px).
@@ -170,4 +200,10 @@ if __name__ == "__main__":
     (ROOT / "web/public/favicon.svg").write_text(ICON.svg())
     png(ICON, 32, ROOT / "web/public/favicon-32.png")
     png(APP, 180, ROOT / "web/public/apple-touch-icon.png")
+    icons = ROOT / "web/public/icons"
+    icons.mkdir(exist_ok=True)
+    png(APP, 192, icons / "icon-192.png")
+    png(APP, 512, icons / "icon-512.png")
+    png_maskable(APP, 512, icons / "maskable-512.png")
+    png_badge(ICON, 96, icons / "badge-96.png")
     print("logo assets written")

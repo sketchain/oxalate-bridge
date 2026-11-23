@@ -35,6 +35,7 @@ import (
 	"github.com/sketchain/oxalate-bridge/backend/internal/jobs"
 	"github.com/sketchain/oxalate-bridge/backend/internal/keymeter"
 	"github.com/sketchain/oxalate-bridge/backend/internal/metrics"
+	"github.com/sketchain/oxalate-bridge/backend/internal/notify"
 	"github.com/sketchain/oxalate-bridge/backend/internal/outbox"
 	"github.com/sketchain/oxalate-bridge/backend/internal/proxy"
 	"github.com/sketchain/oxalate-bridge/backend/internal/router"
@@ -60,6 +61,9 @@ type Options struct {
 	SkipPriceFetch bool
 	// InstanceID names this replica (leader lock, consumer name).
 	InstanceID string
+	// AllowAnyPushEndpoint accepts Web Push endpoints on any host and over
+	// http (tests with a fake push service).
+	AllowAnyPushEndpoint bool
 }
 
 // App is one bridge replica.
@@ -85,6 +89,7 @@ type App struct {
 	Proxy    *proxy.Proxy
 	API      *api.Server
 	CPA      *cpa.Client
+	Notify   *notify.Service
 
 	opts     Options
 	reloadDB chan struct{}
@@ -145,7 +150,13 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	a.Hub = events.NewHub(a.St, log)
 	a.Outbox = outbox.New(a.Store, a.St, a.Auth, log)
 	a.Store.Kick = a.Outbox.Kick
-	a.Subs = &subs.Service{Store: a.Store, St: a.St, Cat: a.Cat, Settings: a.Settings}
+	a.Notify = &notify.Service{Store: a.Store, St: a.St, Box: box, Settings: a.Settings, Log: log, Location: cfg.Location,
+		AllowAnyEndpoint: opts.AllowAnyPushEndpoint}
+	if err := a.Notify.EnsureVAPID(ctx); err != nil {
+		return nil, err
+	}
+	a.Subs = &subs.Service{Store: a.Store, St: a.St, Cat: a.Cat, Settings: a.Settings,
+		OnPending: a.Notify.SubscriptionPending, OnRenewFailed: a.Notify.AutoRenewFailed}
 	a.Consumer = &settle.Consumer{St: a.St, Store: a.Store, Log: log, Name: opts.InstanceID,
 		OnSettled: func(sums []settle.Summary) {
 			for _, s := range sums {
@@ -154,7 +165,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		}}
 	a.Avail = &avail.Service{Router: a.Router, St: a.St, Log: log}
 	a.Jobs = &jobs.Runner{St: a.St, Store: a.Store, Box: box, CPA: a.CPA, Cat: a.Cat, Router: a.Router, Settings: a.Settings,
-		Prices: a.Prices, Subs: a.Subs, Hub: a.Hub, Log: log, ID: opts.InstanceID, Avail: a.Avail}
+		Prices: a.Prices, Subs: a.Subs, Hub: a.Hub, Log: log, ID: opts.InstanceID, Avail: a.Avail, Notify: a.Notify}
 	a.Jobs.RefreshPricesFn = a.refreshPrices
 	transport := opts.Transport
 	if transport == nil {
@@ -162,11 +173,13 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	}
 	meter := &keymeter.Meter{St: a.St, Q: a.Store.Q}
 	a.Proxy = &proxy.Proxy{Auth: a.Auth, Router: a.Router, St: a.St, Settings: a.Settings, Prices: a.Prices, Store: a.Store,
-		Log: log, Transport: transport, ClientIP: a.ClientIP, OnAccountError: a.requestCatalogReload, Meter: meter}
+		Log: log, Transport: transport, ClientIP: a.ClientIP, OnAccountError: a.requestCatalogReload, Meter: meter,
+		OnKeyExhausted: a.Notify.KeyExhausted}
 	a.API = &api.Server{Store: a.Store, St: a.St, Box: box, Settings: a.Settings, Router: a.Router, Cat: a.Cat, Subs: a.Subs,
 		Prices: a.Prices, CPA: a.CPA, Hub: a.Hub, Auth: a.Auth, Log: log, CookieSecure: cfg.CookieSecure,
 		RefreshPrices: a.refreshPrices, Avail: a.Avail, Location: cfg.Location, CPAQuota: &cpaquota.Reader{Pool: pool, Schema: cfg.CPAQuotaSchema},
-		Meter: meter, ClientIPOf: a.ClientIP}
+		Meter: meter, ClientIPOf: a.ClientIP, VAPIDSubject: cfg.VAPIDSubject, Notify: a.Notify}
+	a.Notify.Subject = func() string { return a.API.VAPIDSubjectInEffect() }
 	a.Proxy.Status = func(ctx context.Context, info authcache.Info) (any, error) { return a.API.KeyStatusOf(ctx, info) }
 	a.Hub.OnInvalidate = a.Auth.DropL1
 	a.Hub.OnSettings = func() {
@@ -274,6 +287,7 @@ func (a *App) Start(ctx context.Context) {
 	run(a.Hub.Run)
 	run(func(ctx context.Context) { a.Cat.Run(ctx, a.reloadDB) })
 	run(a.Outbox.Run)
+	run(a.Notify.Run)
 	if !a.opts.DisableConsumer {
 		run(a.Consumer.Run)
 	}

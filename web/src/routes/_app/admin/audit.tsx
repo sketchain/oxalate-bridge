@@ -37,7 +37,19 @@ function AuditLogs() {
     col.accessor("created_at", { header: t("billing.time"), cell: (c) => <span className="num text-[12px]">{formatDateTime(c.getValue())}</span> }),
     col.accessor("action", { header: t("audit.action"), cell: (c) => <span className="num font-semibold">{c.getValue()}</span> }),
     col.display({ id: "target", header: t("audit.target"), cell: (c) => <span className="num text-[12px]">{c.row.original.target_type}{c.row.original.target_id ? `:${c.row.original.target_id.slice(0, 18)}` : ""}</span> }),
-    col.accessor("operator_id", { header: t("ledger.operator"), cell: (c) => <span className="num text-[12px]">{c.getValue() ? shortId(c.getValue()!) : "—"}</span> }),
+    col.accessor("operator_id", {
+      header: t("ledger.operator"),
+      cell: (c) => (
+        <span className="num text-[12px]">
+          {c.getValue() ? shortId(c.getValue()!) : "—"}
+          {c.row.original.token_id ? (
+            <span className="label-mono ml-1.5 border border-ink px-1 py-px" title={c.row.original.token_id}>
+              {t("audit.viaToken", { name: c.row.original.token_name ?? "" })}
+            </span>
+          ) : null}
+        </span>
+      ),
+    }),
     col.accessor("ip", { header: "IP", cell: (c) => <span className="num text-[12px] text-muted">{c.getValue() || "—"}</span> }),
   ];
   return (
@@ -97,6 +109,7 @@ function AuditLogs() {
                     [t("billing.time"), formatDateTime(open.created_at)],
                     [t("audit.target"), `${open.target_type} ${open.target_id}`],
                     [t("ledger.operator"), open.operator_id ?? "—"],
+                    [t("audit.token"), open.token_id ? `${open.token_name ?? ""} (${open.token_id})` : "—"],
                     ["IP", open.ip || "—"],
                   ] as const
                 ).map(([k, v]) => (

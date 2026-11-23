@@ -29,6 +29,10 @@ const (
 	CodeModelNotAllowed = "model_not_allowed"
 	CodeQuotaExhausted  = "key_quota_exhausted"
 	CodeWindowExhausted = "key_window_exhausted"
+	// CodeBalanceQuotaExhausted is the quota or a window of a balance-scope
+	// key running out: only the standard and force tiers are refused, the
+	// plan tier is still tried.
+	CodeBalanceQuotaExhausted = "key_balance_quota_exhausted"
 )
 
 // Rejection is a key-level refusal, rendered as an Anthropic error.
@@ -37,8 +41,39 @@ type Rejection struct {
 	Type       string // permission_error | rate_limit_error
 	Code       string
 	Message    string
-	Window     string     // key_window_exhausted only
-	RecoversAt *time.Time // key_window_exhausted only, when known
+	Window     string     // window rejections only
+	RecoversAt *time.Time // window rejections only, when known
+}
+
+// TierOnly reports whether the rejection refuses only the tiers that count
+// toward a balance-scope key (standard and force) instead of the whole key.
+func (r *Rejection) TierOnly() bool { return r != nil && r.Code == CodeBalanceQuotaExhausted }
+
+// QuotaRejection is the rejection of an exhausted total quota.
+func QuotaRejection(scope string) *Rejection {
+	if scope == "b" {
+		return &Rejection{Status: http.StatusTooManyRequests, Type: "rate_limit_error", Code: CodeBalanceQuotaExhausted,
+			Message: "API key balance quota exhausted; the plan tier is still available"}
+	}
+	return &Rejection{Status: http.StatusTooManyRequests, Type: "rate_limit_error", Code: CodeQuotaExhausted, Message: "API key quota exhausted"}
+}
+
+// WindowRejection is the rejection of an exhausted window i.
+func WindowRejection(scope string, i int, recovers *time.Time) *Rejection {
+	name := rstate.WindowSpans[i].Name
+	rej := &Rejection{Status: http.StatusTooManyRequests, Type: "rate_limit_error", Code: CodeWindowExhausted, Window: name, RecoversAt: recovers}
+	rej.Message = "API key " + name + " spending limit reached"
+	if scope == "b" {
+		rej.Code = CodeBalanceQuotaExhausted
+		rej.Message = "API key " + name + " balance spending limit reached"
+	}
+	if recovers != nil {
+		rej.Message += "; expected to recover at " + recovers.UTC().Format(time.RFC3339)
+	}
+	if scope == "b" {
+		rej.Message += "; the plan tier is still available"
+	}
+	return rej
 }
 
 // Extra is the extra members of the error object.
@@ -187,6 +222,8 @@ func NormalizeIPs(in []string) ([]string, error) {
 
 // CheckLimits applies the total quota and the windows of the key's scope.
 // Held amounts count, so concurrent requests cannot all pass the last cent.
+// For a balance-scope key the rejection is TierOnly: the caller keeps
+// trying the plan tier.
 func (m *Meter) CheckLimits(ctx context.Context, info authcache.Info, now time.Time) (*Rejection, error) {
 	lim := info.Limits()
 	if !lim.Any() {
@@ -197,36 +234,26 @@ func (m *Meter) CheckLimits(ctx context.Context, info authcache.Info, now time.T
 		return nil, err
 	}
 	if lim.Quota >= 0 && lim.Quota-u.Used(lim.Scope)-u.Held <= 0 {
-		return &Rejection{Status: http.StatusTooManyRequests, Type: "rate_limit_error", Code: CodeQuotaExhausted,
-			Message: "API key quota exhausted"}, nil
+		return QuotaRejection(lim.Scope), nil
 	}
 	for i, l := range lim.Windows {
 		if l < 0 || l-u.Window(lim.Scope, i)-u.Held > 0 {
 			continue
 		}
-		name := rstate.WindowSpans[i].Name
-		rej := &Rejection{Status: http.StatusTooManyRequests, Type: "rate_limit_error", Code: CodeWindowExhausted, Window: name,
-			RecoversAt: m.Recovery(ctx, info.KeyID, lim.Scope, i, l, now)}
-		rej.Message = "API key " + name + " spending limit reached"
-		if rej.RecoversAt != nil {
-			rej.Message += "; expected to recover at " + rej.RecoversAt.UTC().Format(time.RFC3339)
-		}
-		return rej, nil
+		return WindowRejection(lim.Scope, i, m.Recovery(ctx, info.KeyID, lim.Scope, i, l, now)), nil
 	}
 	return nil, nil
 }
 
 // HoldRejection maps a refused key hold to a rejection.
 func (m *Meter) HoldRejection(ctx context.Context, info authcache.Info, reason int, now time.Time) *Rejection {
+	lim := info.Limits()
 	switch reason {
 	case rstate.HoldKeyQuota:
-		return &Rejection{Status: http.StatusTooManyRequests, Type: "rate_limit_error", Code: CodeQuotaExhausted, Message: "API key quota exhausted"}
+		return QuotaRejection(lim.Scope)
 	case rstate.HoldKeyWindow5h, rstate.HoldKeyWindow1d, rstate.HoldKeyWindow7d:
 		i := reason - rstate.HoldKeyWindow5h
-		lim := info.Limits()
-		name := rstate.WindowSpans[i].Name
-		return &Rejection{Status: http.StatusTooManyRequests, Type: "rate_limit_error", Code: CodeWindowExhausted, Window: name,
-			Message: "API key " + name + " spending limit reached", RecoversAt: m.Recovery(ctx, info.KeyID, lim.Scope, i, lim.Windows[i], now)}
+		return WindowRejection(lim.Scope, i, m.Recovery(ctx, info.KeyID, lim.Scope, i, lim.Windows[i], now))
 	}
 	return nil
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/sketchain/oxalate-bridge/backend/internal/db/sqlc"
 	"github.com/sketchain/oxalate-bridge/backend/internal/events"
 	"github.com/sketchain/oxalate-bridge/backend/internal/metrics"
+	"github.com/sketchain/oxalate-bridge/backend/internal/notify"
 	"github.com/sketchain/oxalate-bridge/backend/internal/router"
 	"github.com/sketchain/oxalate-bridge/backend/internal/rstate"
 	"github.com/sketchain/oxalate-bridge/backend/internal/secret"
@@ -49,6 +50,8 @@ type Runner struct {
 	RefreshPricesFn func(context.Context) error
 	// Avail is recomputed after every quota poll.
 	Avail *avail.Service
+	// Notify detects state changes and sends push notifications (nil = off).
+	Notify *notify.Service
 
 	leader atomic.Bool
 	mu     sync.Mutex
@@ -155,6 +158,7 @@ func (r *Runner) tasks(set settings.Values) []task {
 		{"reconcile", time.Hour, r.maybeReconcile},
 		{"stream", 30 * time.Second, r.StreamMaintenance},
 		{"headroom", 30 * time.Second, r.headroomMetrics},
+		{"notify", 30 * time.Second, r.notifyScan},
 	}
 }
 
@@ -338,7 +342,12 @@ func (r *Runner) maybeReconcile(ctx context.Context) error {
 	if err == nil && time.Since(last.StartedAt) < 24*time.Hour {
 		return nil
 	}
-	_, err = Reconcile(ctx, r.Store, r.Log)
+	res, err := Reconcile(ctx, r.Store, r.Log)
+	if err == nil && r.Notify != nil {
+		if nerr := r.Notify.ObserveReconcile(ctx, res.OK, len(res.BalanceMismatches), res.BilledTotal-res.ChargeTotal); nerr != nil {
+			r.Log.Warn("notify reconcile", "err", nerr)
+		}
+	}
 	return err
 }
 
@@ -408,6 +417,11 @@ func (r *Runner) StreamMaintenance(ctx context.Context) error {
 			continue
 		}
 		metrics.StreamLag.Set(float64(g.Lag + g.Pending))
+		if r.Notify != nil {
+			if err := r.Notify.ObserveBacklog(ctx, g.Lag+g.Pending, r.Settings.Get().StreamBacklogThreshold); err != nil {
+				r.Log.Warn("notify backlog", "err", err)
+			}
+		}
 		minID := g.LastDeliveredID
 		if g.Pending > 0 {
 			p, err := r.St.R.XPending(ctx, r.St.StreamKey(), settle.Group).Result()
@@ -438,4 +452,54 @@ func (r *Runner) headroomMetrics(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// ---- notifications ------------------------------------------------------------
+
+// notifyScan feeds the state-change detectors: accounts, balances, expiring
+// plans and safeguard events.
+func (r *Runner) notifyScan(ctx context.Context) error {
+	if r.Notify == nil {
+		return nil
+	}
+	obs, err := r.AccountObservations(ctx, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	var errs []error
+	errs = append(errs, r.Notify.ObserveAccounts(ctx, obs))
+	errs = append(errs, r.Notify.ObserveBalances(ctx))
+	errs = append(errs, r.Notify.ObservePlanExpiring(ctx))
+	errs = append(errs, r.Notify.ObserveSafeguard(ctx))
+	return errors.Join(errs...)
+}
+
+// AccountObservations is the notification view of every account. Disabled
+// accounts report no problem, so they re-arm while disabled.
+func (r *Runner) AccountObservations(ctx context.Context, now time.Time) ([]notify.AccountObs, error) {
+	rows, err := r.Store.Q.ListAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	staleAfter := time.Duration(r.Settings.Get().StaleAfterSeconds) * time.Second
+	out := make([]notify.AccountObs, 0, len(rows))
+	for _, a := range rows {
+		o := notify.AccountObs{ID: a.ID, Name: a.Name}
+		if a.Enabled {
+			o.AuthError, o.Reason = a.ErrorStatus, a.ErrorReason
+			if snap := r.Cat.Snapshot(a.ID); snap != nil && snap.HasData {
+				if snap.Stale(now, staleAfter) {
+					o.Stale, o.Age = true, now.Sub(snap.FetchedAt)
+				}
+				switch _, reason := cpa.HardExhausted(snap.Account, now); reason {
+				case "5h_exhausted":
+					o.Full = "5h"
+				case "week_exhausted":
+					o.Full = "week"
+				}
+			}
+		}
+		out = append(out, o)
+	}
+	return out, nil
 }

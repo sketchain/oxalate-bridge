@@ -1,11 +1,11 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { LogOut, Menu, Moon, Search, Sun } from "lucide-react";
 import { Dialog as D } from "radix-ui";
 import { api, unwrap, type Schemas } from "@/api/client";
-import { overviewQuery } from "@/api/queries";
+import { keys, overviewQuery } from "@/api/queries";
 import { adminNav, mobileTabs, userNav, type NavItem } from "@/lib/nav";
 import { getTheme, isDark, setTheme } from "@/lib/theme";
 import { APP_VERSION } from "@/lib/version";
@@ -98,6 +98,23 @@ export function AppShell({ me, children }: { me: Schemas["Me"]; children: ReactN
   useCommandPaletteHotkey(() => setPalette(true));
   const logout = useLogout();
   const overview = useQuery({ ...overviewQuery, enabled: admin });
+  const qc = useQueryClient();
+  const { i18n } = useTranslation();
+  const lang = i18n.language === "en" ? "en" : "zh-CN";
+  // Push notifications are written in the user's language: keep the
+  // server's copy in step with the panel language (switching it in the
+  // settings, or a browser that remembers another choice).
+  useEffect(() => {
+    if (me.locale === lang) return;
+    unwrap(api.PUT("/me/locale", { body: { locale: lang } }))
+      .then(() => qc.setQueryData<Schemas["Me"]>(keys.me, (old) => (old ? { ...old, locale: lang } : old)))
+      .catch(() => {});
+  }, [lang, me.locale, qc]);
+  // The phone tab bar is shown outside the admin pages; the PWA bars move up.
+  useEffect(() => {
+    document.documentElement.toggleAttribute("data-tabbar", !onAdmin);
+    return () => document.documentElement.removeAttribute("data-tabbar");
+  }, [onAdmin]);
   const pending = overview.data?.pending_assignment ?? 0;
 
   const groups = (onNavigate?: () => void) => (

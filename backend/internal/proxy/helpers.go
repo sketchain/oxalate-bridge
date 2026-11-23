@@ -22,10 +22,6 @@ func sqlcSetAccountError(id uuid.UUID, reason string) sqlc.SetAccountErrorParams
 	return sqlc.SetAccountErrorParams{ID: id, ErrorReason: reason}
 }
 
-// statusPerMinute bounds GET /v1/bridge/status per key (its own budget, not
-// the key's RPM: status lines refresh often and are never billed).
-const statusPerMinute = 60
-
 // ServeStatus implements GET /v1/bridge/status: the key's compact status.
 // It authenticates exactly like the relay endpoints but is neither billed
 // nor logged.
@@ -35,8 +31,11 @@ func (p *Proxy) ServeStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if !p.allowStatus(ctx, auth.KeyID) {
-		writeError(w, http.StatusTooManyRequests, "rate_limit_error", "status requests are limited to 60 per minute per key")
+	// Its own per-key budget (runtime setting), not the key's RPM: status
+	// lines refresh often and are never billed.
+	limit := p.Settings.Get().StatusKeyPerMinute
+	if !p.allowStatus(ctx, auth.KeyID, limit) {
+		writeError(w, http.StatusTooManyRequests, "rate_limit_error", "status requests are limited to "+strconv.Itoa(limit)+" per minute per key")
 		return
 	}
 	body, err := p.Status(ctx, auth)
@@ -50,7 +49,7 @@ func (p *Proxy) ServeStatus(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-func (p *Proxy) allowStatus(ctx context.Context, key uuid.UUID) bool {
+func (p *Proxy) allowStatus(ctx context.Context, key uuid.UUID, limit int) bool {
 	k := p.St.Key("rl", "status", key.String(), strconv.FormatInt(p.now().Unix()/60, 10))
 	pipe := p.St.R.TxPipeline()
 	n := pipe.Incr(ctx, k)
@@ -58,7 +57,7 @@ func (p *Proxy) allowStatus(ctx context.Context, key uuid.UUID) bool {
 	if _, err := pipe.Exec(ctx); err != nil {
 		return true
 	}
-	return n.Val() <= statusPerMinute
+	return n.Val() <= int64(limit)
 }
 
 // authenticateAny is authenticate that also accepts disabled and expired

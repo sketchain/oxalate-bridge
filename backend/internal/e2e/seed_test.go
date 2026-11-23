@@ -45,6 +45,13 @@ func TestSeedDemo(t *testing.T) {
 
 	admin := newClient(t, rep.URL())
 	admin.login("admin", "admin-password")
+	// Notification preferences are stored with their defaults (11 admin
+	// events + 4 per user for alice, bob and carol).
+	var prefs, thr int
+	testutil.Must(t, rep.App.Pool.QueryRow(ctx, "SELECT count(*), count(*) FILTER (WHERE threshold_micro = 20000000) FROM notification_prefs").Scan(&prefs, &thr))
+	if prefs != 11+3*4 || thr != 1 {
+		t.Fatalf("notification prefs %d (threshold rows %d)", prefs, thr)
+	}
 	if n := gjson.Get(rawGet(t, admin, "/admin/accounts"), "items.#").Int(); n != 4 {
 		t.Fatalf("accounts %d", n)
 	}

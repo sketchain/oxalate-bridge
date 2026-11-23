@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"math/rand/v2"
 	"net/http"
 	"net/http/cookiejar"
@@ -25,6 +26,7 @@ import (
 	"github.com/sketchain/oxalate-bridge/backend/internal/db"
 	"github.com/sketchain/oxalate-bridge/backend/internal/db/sqlc"
 	"github.com/sketchain/oxalate-bridge/backend/internal/jobs"
+	"github.com/sketchain/oxalate-bridge/backend/internal/notify"
 	"github.com/sketchain/oxalate-bridge/backend/internal/server"
 	"github.com/sketchain/oxalate-bridge/backend/internal/settle"
 	"github.com/sketchain/oxalate-bridge/backend/internal/store"
@@ -128,6 +130,7 @@ func (s *seeder) run(ctx context.Context) error {
 		{"cpa-quota demo schema", s.cpaQuota},
 		{"reconcile", s.reconcile},
 		{"stale account", s.staleAccount},
+		{"notification prefs", s.notificationPrefs},
 	}
 	for _, st := range steps {
 		if err := st.fn(ctx); err != nil {
@@ -627,4 +630,40 @@ func (s *seeder) announcement(context.Context) error {
 	return s.admin.call("POST", "/admin/announcements", map[string]any{"title": "欢迎使用 oxalate-bridge 演示站",
 		"body": "这是演示数据：账号、用量和兑换码都是假的。\n使用说明见 https://github.com/sketchain/oxalate-bridge", "level": "info",
 		"enabled": true}, nil)
+}
+
+// notificationPrefs stores every user's notification switches with their
+// defaults (so the rows exist and can be edited in the database); alice also
+// turns on key_exhausted and raises her balance threshold to $20, and carol
+// reads notifications in English.
+func (s *seeder) notificationPrefs(ctx context.Context) error {
+	clients := map[string]*client{"admin": s.admin}
+	maps.Copy(clients, s.clients)
+	for name, c := range clients {
+		var cur struct {
+			Items []struct {
+				Event          string `json:"event"`
+				DefaultEnabled bool   `json:"default_enabled"`
+			} `json:"items"`
+		}
+		if err := c.call("GET", "/notifications/prefs", nil, &cur); err != nil {
+			return err
+		}
+		items := make([]map[string]any, 0, len(cur.Items))
+		for _, it := range cur.Items {
+			on := it.DefaultEnabled
+			if name == "alice" && it.Event == notify.KeyExhausted {
+				on = true
+			}
+			items = append(items, map[string]any{"event": it.Event, "enabled": on})
+		}
+		body := map[string]any{"items": items, "balance_threshold_micro": notify.DefaultBalanceThreshold}
+		if name == "alice" {
+			body["balance_threshold_micro"] = 20_000_000
+		}
+		if err := c.call("PUT", "/notifications/prefs", body, nil); err != nil {
+			return err
+		}
+	}
+	return s.clients["carol"].call("PUT", "/me/locale", map[string]any{"locale": "en"}, nil)
 }

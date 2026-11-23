@@ -166,3 +166,10 @@
     outline-offset: 2px;
   }
 }
+
+/* PWA bars sit above the phone tab bar when the app shell shows one. */
+@media (max-width: 63.999rem) {
+  html[data-tabbar] .pwa-bar {
+    bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 8px);
+  }
+}

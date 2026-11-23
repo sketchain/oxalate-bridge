@@ -30,7 +30,14 @@ type Config struct {
 	// Location is the server time zone (BRIDGE_TIMEZONE, default
 	// Asia/Shanghai) used to cut days, e.g. "today" on the admin overview.
 	Location *time.Location
+	// VAPIDSubject is the default Web Push contact (BRIDGE_VAPID_SUBJECT,
+	// a mailto: or https: URL); the vapid_subject setting overrides it.
+	VAPIDSubject string
 }
+
+// DefaultVAPIDSubject is the placeholder Web Push contact used when neither
+// BRIDGE_VAPID_SUBJECT nor the vapid_subject setting is set.
+const DefaultVAPIDSubject = "mailto:admin@bridge.invalid"
 
 var identRe = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
 
@@ -57,6 +64,7 @@ func FromLookup(lookup func(string) (string, bool)) (Config, error) {
 		BootstrapAdminUsername: get("BRIDGE_BOOTSTRAP_ADMIN_USERNAME", ""),
 		BootstrapAdminPassword: get("BRIDGE_BOOTSTRAP_ADMIN_PASSWORD", ""),
 		CookieSecure:           get("BRIDGE_COOKIE_SECURE", "true") != "false",
+		VAPIDSubject:           get("BRIDGE_VAPID_SUBJECT", DefaultVAPIDSubject),
 	}
 	var errs []error
 	tz := get("BRIDGE_TIMEZONE", "Asia/Shanghai")

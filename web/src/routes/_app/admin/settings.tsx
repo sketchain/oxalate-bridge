@@ -9,6 +9,7 @@ import { Plus, RefreshCw, Scale, Trash2 } from "lucide-react";
 import { api, unwrap, type Schemas } from "@/api/client";
 import { keys, modelsQuery, overviewQuery, pricesQuery, settingsQuery } from "@/api/queries";
 import { PageHeader } from "@/components/PageHeader";
+import { AdminTokens } from "@/components/AdminTokens";
 import { Section } from "@/components/Section";
 import { ErrorBox } from "@/components/Feedback";
 import { Button } from "@/components/ui/button";
@@ -289,7 +290,7 @@ function PricesAndReconcile({ settings }: { settings: Settings }) {
   return (
     <div className="grid gap-6 xl:grid-cols-2">
       <Section
-        n={5}
+        n={6}
         title={t("adminSettings.prices")}
         aside={
           <Button size="sm" onClick={() => refresh.mutate()} disabled={refresh.isPending}>
@@ -327,7 +328,7 @@ function PricesAndReconcile({ settings }: { settings: Settings }) {
         </form>
       </Section>
       <Section
-        n={6}
+        n={7}
         title={t("adminOverview.reconcile")}
         aside={
           <Button size="sm" onClick={() => reconcile.mutate()} disabled={reconcile.isPending}>
@@ -416,9 +417,81 @@ function AdminSettings() {
               { key: "cooldown_429_default_seconds", kind: "duration", base: "s" },
             ]}
           />
+          <NumberGroup
+            n={5}
+            title={t("adminSettings.publicRates")}
+            settings={s}
+            note={t("adminSettings.publicRatesNote")}
+            specs={[
+              { key: "public_query_ip_per_minute", kind: "int", min: 1, max: 10000 },
+              { key: "public_query_key_per_minute", kind: "int", min: 1, max: 10000 },
+              { key: "status_key_per_minute", kind: "int", min: 1, max: 10000 },
+              { key: "admin_token_per_minute", kind: "int", min: 1, max: 10000 },
+            ]}
+          />
           <PricesAndReconcile settings={s} />
+          <Notifications settings={s} />
+          <AdminTokens n={9} />
         </div>
       )}
     </>
+  );
+}
+
+/** Push notification settings: the backlog threshold and the VAPID contact. */
+function Notifications({ settings }: { settings: Settings }) {
+  const { t } = useTranslation();
+  const save = useSave();
+  const schema = z.object({
+    backlog: z.string().refine((v) => /^\d+$/.test(v.trim()) && Number(v) >= 1, t("validation.between", { min: 1, max: "∞" })),
+    subject: z
+      .string()
+      .trim()
+      .refine((v) => v === "" || v.startsWith("mailto:") || v.startsWith("https://"), t("adminSettings.vapidInvalid")),
+  });
+  type V = z.infer<typeof schema>;
+  const form = useForm<V>({
+    resolver: zodResolver(schema),
+    values: { backlog: String(settings.stream_backlog_threshold), subject: settings.vapid_subject },
+  });
+  const errs = form.formState.errors;
+  return (
+    <Section n={8} title={t("adminSettings.notifications")}>
+      <form
+        noValidate
+        className="flex flex-col gap-4"
+        onSubmit={form.handleSubmit((v) => {
+          const patch: Schemas["SettingsPatch"] = {};
+          if (Number(v.backlog) !== settings.stream_backlog_threshold) patch.stream_backlog_threshold = Number(v.backlog);
+          if (v.subject.trim() !== settings.vapid_subject) patch.vapid_subject = v.subject.trim();
+          if (Object.keys(patch).length) save.mutate(patch);
+        })}
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field
+            label={t("adminSettings.f.stream_backlog_threshold")}
+            htmlFor="set-backlog"
+            hint={t("adminSettings.current", { value: String(settings.stream_backlog_threshold) })}
+            error={errs.backlog?.message}
+          >
+            <Input id="set-backlog" inputMode="numeric" className="num" aria-invalid={!!errs.backlog} {...form.register("backlog")} />
+          </Field>
+          <Field
+            label={t("adminSettings.f.vapid_subject")}
+            htmlFor="set-vapid"
+            hint={t("adminSettings.vapidEffective", { value: settings.vapid_subject_effective })}
+            error={errs.subject?.message}
+          >
+            <Input id="set-vapid" className="num" placeholder="mailto:ops@example.com" aria-invalid={!!errs.subject} {...form.register("subject")} />
+          </Field>
+        </div>
+        <p className="text-[12px] text-muted">{t("adminSettings.notificationsNote")}</p>
+        <div>
+          <Button type="submit" variant="primary" disabled={save.isPending || !form.formState.isDirty}>
+            {t("common.save")}
+          </Button>
+        </div>
+      </form>
+    </Section>
   );
 }

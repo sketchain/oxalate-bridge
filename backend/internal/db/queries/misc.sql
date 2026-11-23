@@ -11,8 +11,8 @@ ORDER BY created_at DESC, id DESC
 LIMIT $1;
 
 -- name: InsertAuditLog :exec
-INSERT INTO audit_logs (id, operator_id, action, target_type, target_id, diff, ip)
-VALUES ($1, $2, $3, $4, $5, $6, $7);
+INSERT INTO audit_logs (id, operator_id, action, target_type, target_id, diff, ip, token_id, token_name)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
 
 -- name: ListAuditLogs :many
 SELECT * FROM audit_logs
@@ -24,6 +24,12 @@ LIMIT $1;
 
 -- name: ListSettings :many
 SELECT * FROM settings;
+
+-- name: InsertSettingIfAbsent :exec
+INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING;
+
+-- name: GetSetting :one
+SELECT value FROM settings WHERE key = $1;
 
 -- name: UpsertSetting :exec
 INSERT INTO settings (key, value, updated_by) VALUES ($1, $2, $3)

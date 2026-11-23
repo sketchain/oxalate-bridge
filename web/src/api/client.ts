@@ -25,6 +25,14 @@ export const ERROR_CODES = [
   "redeem_code_void",
   "redeem_code_expired",
   "redeem_locked",
+  "admin_token_invalid",
+  "admin_token_expired",
+  "admin_token_revoked",
+  "admin_token_ip_denied",
+  "admin_token_read_only",
+  "admin_token_forbidden",
+  "admin_token_rate_limited",
+  "push_unavailable",
   "internal",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];

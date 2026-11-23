@@ -19,8 +19,17 @@ export function isDark(choice: ThemeChoice): boolean {
   return choice === "dark" || (choice === "system" && systemDark());
 }
 
+const THEME_COLORS = { light: "#ffffff", dark: "#0b0b0b" } as const;
+
 export function applyTheme(choice: ThemeChoice) {
-  document.documentElement.classList.toggle("dark", isDark(choice));
+  const dark = isDark(choice);
+  document.documentElement.classList.toggle("dark", dark);
+  // The browser / status bar colour: the two media-bound metas follow the
+  // system; an explicit choice overrides both.
+  document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((m) => {
+    const media = m.media.includes("dark") ? "dark" : "light";
+    m.content = choice === "system" ? THEME_COLORS[media] : THEME_COLORS[dark ? "dark" : "light"];
+  });
 }
 
 export function setTheme(choice: ThemeChoice) {

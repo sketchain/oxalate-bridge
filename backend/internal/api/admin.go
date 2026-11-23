@@ -15,6 +15,7 @@ import (
 	"github.com/oapi-codegen/nullable"
 
 	"github.com/sketchain/oxalate-bridge/backend/internal/billing"
+	"github.com/sketchain/oxalate-bridge/backend/internal/config"
 	"github.com/sketchain/oxalate-bridge/backend/internal/cpa"
 	"github.com/sketchain/oxalate-bridge/backend/internal/db/sqlc"
 	"github.com/sketchain/oxalate-bridge/backend/internal/jobs"
@@ -80,6 +81,9 @@ func (s *Server) AdminCreateUser(ctx context.Context, req AdminCreateUserRequest
 	if role != "user" && role != "admin" {
 		return nil, badRequest("unknown role")
 	}
+	if _, viaToken := currentToken(ctx); viaToken && role == "admin" {
+		return nil, errTokenForbidden("create admin users")
+	}
 	conc := int32(s.Settings.Get().DefaultUserConcurrency)
 	if b.MaxConcurrency != nil {
 		if *b.MaxConcurrency < 0 {
@@ -133,6 +137,14 @@ func (s *Server) AdminUpdateUser(ctx context.Context, req AdminUpdateUserRequest
 		status = string(*b.Status)
 		if status != "active" && status != "disabled" {
 			return nil, badRequest("unknown status")
+		}
+	}
+	if _, viaToken := currentToken(ctx); viaToken {
+		if role != before.Role {
+			return nil, errTokenForbidden("change user roles")
+		}
+		if b.Password != nil && before.Role == "admin" {
+			return nil, errTokenForbidden("set an admin's password")
 		}
 	}
 	if before.ID == currentUser(ctx).ID && (role != "admin" || status != "active") {
@@ -965,18 +977,37 @@ func (s *Server) AdminCancelSubscription(ctx context.Context, req AdminCancelSub
 
 // ---- settings ----------------------------------------------------------------------------
 
-func settingsOf(v settings.Values) (Settings, error) {
+func (s *Server) settingsOf(v settings.Values) (Settings, error) {
 	raw, err := json.Marshal(v)
 	if err != nil {
 		return Settings{}, err
 	}
 	var out Settings
-	return out, json.Unmarshal(raw, &out)
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return out, err
+	}
+	eff := s.vapidSubject(v)
+	out.VapidSubjectEffective = &eff
+	return out, nil
+}
+
+// VAPIDSubjectInEffect is the Web Push contact used now.
+func (s *Server) VAPIDSubjectInEffect() string { return s.vapidSubject(s.Settings.Get()) }
+
+// vapidSubject is the Web Push contact in effect.
+func (s *Server) vapidSubject(v settings.Values) string {
+	if v.VAPIDSubject != "" {
+		return v.VAPIDSubject
+	}
+	if s.VAPIDSubject != "" {
+		return s.VAPIDSubject
+	}
+	return config.DefaultVAPIDSubject
 }
 
 // AdminGetSettings implements GET /admin/settings.
 func (s *Server) AdminGetSettings(ctx context.Context, _ AdminGetSettingsRequestObject) (AdminGetSettingsResponseObject, error) {
-	out, err := settingsOf(s.Settings.Get())
+	out, err := s.settingsOf(s.Settings.Get())
 	if err != nil {
 		return nil, err
 	}
@@ -1027,8 +1058,8 @@ func (s *Server) AdminUpdateSettings(ctx context.Context, req AdminUpdateSetting
 		return nil, err
 	}
 	s.Settings.Set(next)
-	beforeOut, _ := settingsOf(before)
-	out, err := settingsOf(next)
+	beforeOut, _ := s.settingsOf(before)
+	out, err := s.settingsOf(next)
 	if err != nil {
 		return nil, err
 	}
@@ -1085,7 +1116,11 @@ func (s *Server) AdminListAuditLogs(ctx context.Context, req AdminListAuditLogsR
 		diff := map[string]any{}
 		_ = json.Unmarshal(r.Diff, &diff)
 		items[i] = AuditLog{Id: r.ID, OperatorId: nullUUID(r.OperatorID), Action: r.Action, TargetType: r.TargetType,
-			TargetId: r.TargetID, Diff: diff, Ip: r.Ip, CreatedAt: r.CreatedAt}
+			TargetId: r.TargetID, Diff: diff, Ip: r.Ip, CreatedAt: r.CreatedAt, TokenId: nullUUID(r.TokenID),
+			TokenName: nullable.NewNullNullable[string]()}
+		if r.TokenID != nil {
+			items[i].TokenName = nullable.NewNullableWithValue(r.TokenName)
+		}
 	}
 	page := AuditLogPage{Items: items, NextCursor: nullable.NewNullNullable[string]()}
 	if len(rows) > 0 {
@@ -1150,6 +1185,11 @@ func (s *Server) AdminRunReconcile(ctx context.Context, _ AdminRunReconcileReque
 	res, err := jobs.Reconcile(ctx, s.Store, s.Log)
 	if err != nil {
 		return nil, err
+	}
+	if s.Notify != nil {
+		if err := s.Notify.ObserveReconcile(context.WithoutCancel(ctx), res.OK, len(res.BalanceMismatches), res.BilledTotal-res.ChargeTotal); err != nil {
+			s.Log.Warn("notify reconcile", "err", err)
+		}
 	}
 	out := ReconcileResult{Ok: res.OK, BilledTotalMicro: res.BilledTotal, ApiChargeTotalMicro: res.ChargeTotal}
 	out.BalanceMismatches = make([]struct {

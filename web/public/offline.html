@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0b0b0b" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>当前离线 · Oxalate's Bridge</title>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("ob.theme");
+          var dark = t === "dark" || (t !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", dark);
+          if (localStorage.getItem("ob.lang") === "en") document.documentElement.lang = "en";
+        } catch (e) {}
+      })();
+    </script>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --ink: #0a0a0a;
+        --muted: #5e5e5e;
+        --rule: #e2e2e2;
+        --yellow: #f2c200;
+        --on-yellow: #0a0a0a;
+        color-scheme: light;
+      }
+      .dark {
+        --bg: #0b0b0b;
+        --ink: #f2f2f2;
+        --muted: #a3a3a3;
+        --rule: #333333;
+        color-scheme: dark;
+      }
+      * { box-sizing: border-box; border-radius: 0; }
+      html, body { margin: 0; }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font-family: "Archivo Variable", "Archivo", "PingFang SC", "HarmonyOS Sans SC", MiSans, "Noto Sans SC", system-ui, sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+        -webkit-font-smoothing: antialiased;
+      }
+      .mono { font-family: "IBM Plex Mono", ui-monospace, "PingFang SC", "Noto Sans SC", monospace; }
+      .card { width: 100%; max-width: 460px; border: 2px solid var(--ink); }
+      .band {
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        background: var(--yellow); color: var(--on-yellow); padding: 10px 16px;
+        font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600;
+      }
+      .band img { width: 28px; height: 28px; display: block; }
+      .body { padding: 20px 16px 18px; }
+      h1 { margin: 0; font-size: 40px; line-height: 1.05; font-weight: 800; font-stretch: 75%; letter-spacing: -0.01em; }
+      p { margin: 10px 0 0; color: var(--muted); }
+      dl { margin: 18px 0 0; border-top: 2px solid var(--ink); border-bottom: 2px solid var(--ink); font-size: 12px; }
+      dl div { display: grid; grid-template-columns: 96px 1fr; gap: 12px; padding: 7px 0; }
+      dl div + div { border-top: 1px solid var(--rule); }
+      dt { color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+      dd { margin: 0; }
+      button {
+        margin-top: 18px; height: 40px; padding: 0 18px; border: 2px solid var(--ink);
+        background: var(--ink); color: var(--bg); font: inherit; font-weight: 700; cursor: pointer;
+        display: inline-flex; align-items: center; gap: 8px;
+      }
+      button:hover { background: var(--yellow); color: var(--on-yellow); }
+      button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+      .en { display: none; }
+      html[lang="en"] .zh { display: none; }
+      html[lang="en"] .en { display: initial; }
+    </style>
+  </head>
+  <body>
+    <main class="card" role="main">
+      <div class="band mono">
+        <span>OB · OFFLINE · <span id="time"></span></span>
+        <img src="/favicon.svg" alt="" width="28" height="28" />
+      </div>
+      <div class="body">
+        <h1><span class="zh">当前离线</span><span class="en">You are offline</span></h1>
+        <p>
+          <span class="zh">网络连接已断开，面板需要联网才能读取余额、用量和账号数据。恢复网络后点击重试。</span>
+          <span class="en">The network is unavailable. The panel needs a connection to load balances, usage and accounts. Retry once you are back online.</span>
+        </p>
+        <dl class="mono">
+          <div><dt><span class="zh">状态</span><span class="en">Status</span></dt><dd id="state">NETWORK · DOWN</dd></div>
+          <div><dt><span class="zh">页面</span><span class="en">Page</span></dt><dd id="path"></dd></div>
+        </dl>
+        <button type="button" id="retry"><span class="zh">重试</span><span class="en">Retry</span></button>
+      </div>
+    </main>
+    <script>
+      (function () {
+        var d = new Date();
+        function pad(n) { return (n < 10 ? "0" : "") + n; }
+        document.getElementById("time").textContent = pad(d.getHours()) + ":" + pad(d.getMinutes());
+        document.getElementById("path").textContent = location.pathname + location.search;
+        document.getElementById("retry").addEventListener("click", function () { location.reload(); });
+        window.addEventListener("online", function () { document.getElementById("state").textContent = "NETWORK · UP"; });
+      })();
+    </script>
+  </body>
+</html>

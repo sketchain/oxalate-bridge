@@ -24,6 +24,7 @@ import (
 	"github.com/sketchain/oxalate-bridge/backend/internal/db/sqlc"
 	"github.com/sketchain/oxalate-bridge/backend/internal/events"
 	"github.com/sketchain/oxalate-bridge/backend/internal/keymeter"
+	"github.com/sketchain/oxalate-bridge/backend/internal/notify"
 	"github.com/sketchain/oxalate-bridge/backend/internal/router"
 	"github.com/sketchain/oxalate-bridge/backend/internal/rstate"
 	"github.com/sketchain/oxalate-bridge/backend/internal/secret"
@@ -49,6 +50,10 @@ type Server struct {
 	CookieSecure  bool
 	RefreshPrices func(context.Context) error
 	SessionTTL    time.Duration
+	// VAPIDSubject is the default Web Push contact (BRIDGE_VAPID_SUBJECT).
+	VAPIDSubject string
+	// Notify sends Web Push notifications.
+	Notify *notify.Service
 	// CPAQuota reads the cpa-quota plugin's tables (read only).
 	CPAQuota *cpaquota.Reader
 	// Avail serves the cached availability snapshot.
@@ -170,7 +175,13 @@ const (
 	ctxUser ctxKey = iota
 	ctxIP
 	ctxSession
+	ctxUA
 )
+
+func userAgent(ctx context.Context) string {
+	ua, _ := ctx.Value(ctxUA).(string)
+	return ua
+}
 
 // SessionUser is the authenticated panel user.
 type SessionUser struct {
@@ -209,6 +220,13 @@ func (s *Server) Middleware(prefix string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			path := strings.TrimPrefix(r.URL.Path, prefix)
+			r = r.WithContext(context.WithValue(r.Context(), ctxUA, r.UserAgent()))
+			if strings.HasPrefix(path, "/admin/") {
+				if tok, ok := bearerAdminToken(r); ok {
+					s.serveAdminToken(w, r, next, path, tok)
+					return
+				}
+			}
 			if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions &&
 				r.Header.Get("X-Requested-With") == "" {
 				WriteError(w, http.StatusForbidden, "csrf_header_missing", "X-Requested-With header required")
@@ -408,8 +426,15 @@ func (s *Server) audit(ctx context.Context, action, targetType, targetID string,
 	if op != uuid.Nil {
 		opPtr = &op
 	}
+	// Writes made with an admin token record the token; the operator is
+	// its creator.
+	var tokID *uuid.UUID
+	tokName := ""
+	if t, ok := currentToken(ctx); ok {
+		tokID, tokName = &t.ID, t.Name
+	}
 	if err := s.Store.Q.InsertAuditLog(ctx, sqlc.InsertAuditLogParams{ID: id, OperatorID: opPtr, Action: action,
-		TargetType: targetType, TargetID: targetID, Diff: diff, Ip: clientIP(ctx)}); err != nil {
+		TargetType: targetType, TargetID: targetID, Diff: diff, Ip: clientIP(ctx), TokenID: tokID, TokenName: tokName}); err != nil {
 		s.Log.Error("write audit log", "action", action, "err", err)
 	}
 }

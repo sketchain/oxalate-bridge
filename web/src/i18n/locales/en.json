@@ -22,7 +22,9 @@
     "save": "Save",
     "skipToContent": "Skip to content",
     "viewAll": "View all",
-    "yes": "Yes"
+    "yes": "Yes",
+    "copy": "Copy",
+    "copyFailed": "Copy failed; select the text and copy it by hand"
   },
   "nav": {
     "accounts": "Accounts",
@@ -120,7 +122,15 @@
     "redeem_code_used": "This code has already been used",
     "redeem_code_void": "This code has been voided",
     "redeem_code_expired": "This code has expired",
-    "redeem_locked": "Too many failed attempts; redemption is locked, try again in 15 minutes"
+    "redeem_locked": "Too many failed attempts; redemption is locked, try again in 15 minutes",
+    "admin_token_invalid": "Invalid admin API token",
+    "admin_token_expired": "The admin API token has expired",
+    "admin_token_revoked": "The admin API token has been revoked",
+    "admin_token_ip_denied": "This IP is not in the token's allowlist",
+    "admin_token_read_only": "A read-only token cannot make changes",
+    "admin_token_forbidden": "Admin API tokens cannot do this",
+    "admin_token_rate_limited": "Too many requests with this token; try again later",
+    "push_unavailable": "Push notifications are unavailable"
   },
   "errorsPage": {
     "forbiddenTitle": "No access",
@@ -399,7 +409,8 @@
     "themeSystem": "System",
     "themeLight": "Light",
     "themeDark": "Dark",
-    "rememberNote": "Saved in this browser."
+    "rememberNote": "Saved in this browser.",
+    "general": "General"
   },
   "me": {
     "balance": "Balance {{amount}}"
@@ -716,7 +727,9 @@
     "operatorId": "Operator ID",
     "targetType": "Target type",
     "diff": "Change",
-    "empty": "No entries"
+    "empty": "No entries",
+    "viaToken": "Token · {{name}}",
+    "token": "Token"
   },
   "safeguard": {
     "title": "Safeguard events",
@@ -784,8 +797,20 @@
       "auto_renew_lead_hours": "Auto-renew lead time",
       "cooldown_5xx_seconds": "Cooldown after 5xx",
       "cooldown_429_default_seconds": "Default cooldown after 429",
-      "price_url": "Price table URL"
-    }
+      "price_url": "Price table URL",
+      "public_query_ip_per_minute": "Key query · per IP",
+      "public_query_key_per_minute": "Key query · per key",
+      "status_key_per_minute": "Status line · per key",
+      "stream_backlog_threshold": "Settlement backlog threshold (entries)",
+      "vapid_subject": "VAPID contact",
+      "admin_token_per_minute": "Admin API token per minute"
+    },
+    "publicRates": "Public endpoint rate limits",
+    "publicRatesNote": "Requests per minute, 1–10000. Applies to every replica as soon as it is saved.",
+    "notifications": "Push notifications",
+    "notificationsNote": "stream_backlog_high is sent once the backlog stays above the threshold for 5 minutes. An empty VAPID contact falls back to BRIDGE_VAPID_SUBJECT.",
+    "vapidInvalid": "Must start with mailto: or https://",
+    "vapidEffective": "In effect: {{value}}"
   },
   "reason": {
     "disabled": "Disabled by an admin",
@@ -809,7 +834,8 @@
     "ip_not_allowed": "Client IP not in the key's allowlist (403)",
     "model_not_allowed": "Model not in the key's allowlist (403)",
     "key_quota_exhausted": "Key quota exhausted (429)",
-    "key_window_exhausted": "Key window limit reached (429)"
+    "key_window_exhausted": "Key window limit reached (429)",
+    "key_balance_quota_exhausted": "Key balance quota used up: standard / force refused, Plan still available (listed per tier in the 429)"
   },
   "keyStatus": {
     "active": "Active",
@@ -871,7 +897,13 @@
     "dailyRange": "Days",
     "days": "{{n}} d",
     "editLimits": "Edit limits",
-    "adminTitle": "Limits and access of {{name}}"
+    "adminTitle": "Limits and access of {{name}}",
+    "exhausted": {
+      "key_quota_exhausted": "The total quota is used up; every request with this key is refused (429).",
+      "key_window_exhausted": "The {{window}} is used up; every request with this key is refused (429).",
+      "key_balance_quota_exhausted": "The balance-only quota is used up: standard / force are no longer allowed, Plan is still available.",
+      "key_balance_window_exhausted": "The balance-only {{window}} is used up: standard / force are paused, Plan is still available."
+    }
   },
   "redeem": {
     "title": "Redeem code",
@@ -1004,5 +1036,146 @@
     "planPeriod": "Period available",
     "recent": "Latest 50 calls",
     "noRecent": "No calls yet"
+  },
+  "pwa": {
+    "updateAvailable": "A new version is available — click to refresh",
+    "iosTitle": "Add to Home Screen",
+    "iosStepShare": "In Safari tap Share",
+    "iosStepAdd": "Add to Home Screen to open full screen and get notifications",
+    "shareIcon": "Share icon",
+    "dismiss": "Dismiss",
+    "installTitle": "Install the app",
+    "installBody": "Installed, the panel opens in its own window, starts from the desktop or home screen and can receive push notifications.",
+    "installed": "Running as an installed app",
+    "installButton": "Install app",
+    "installIOS": "iPhone / iPad: in Safari tap Share → Add to Home Screen.",
+    "installUnavailable": "This browser offers no install prompt right now (already installed, or not supported). In Chrome / Edge use the install icon in the address bar."
+  },
+  "notifications": {
+    "title": "Notifications",
+    "thisDevice": "This device",
+    "sendTest": "Send test notification",
+    "permissionDenied": "Notification permission was not granted",
+    "enabled": "Push notifications enabled on this device",
+    "subscribeFailed": "The browser could not subscribe to push; try again later",
+    "disabled": "Push notifications turned off on this device",
+    "testNoDevices": "No device has push notifications enabled yet",
+    "testSent": "Test notification sent to {{count}} device(s)",
+    "state": {
+      "unsupported": "Not supported",
+      "needs-install": "Add to Home Screen first",
+      "no-worker": "Service worker not active",
+      "denied": "Permission denied",
+      "off": "Off",
+      "on": "On"
+    },
+    "stateHint": {
+      "unsupported": "This browser does not support Web Push.",
+      "needs-install": "On iOS only apps opened from the Home Screen can receive push: in Safari tap Share → Add to Home Screen, then open the panel from there and turn it on.",
+      "no-worker": "Push needs the service worker (not available in development or private mode); reload and try again.",
+      "denied": "Allow notifications for this site in the browser settings, then reload.",
+      "off": "Once on, the events switched on below are pushed to this device.",
+      "on": "This device receives the events switched on below."
+    },
+    "enable": "Turn on for this device",
+    "disable": "Turn off for this device",
+    "devices": "My devices",
+    "noDevices": "No device receives notifications yet.",
+    "current": "This device",
+    "failures": "{{count}} failure(s)",
+    "added": "Added {{at}}",
+    "lastSuccess": "Last delivered {{at}}",
+    "neverDelivered": "Not delivered yet",
+    "removeDevice": "Remove device {{name}}",
+    "deviceRemoved": "Device removed",
+    "threshold": "Balance alert threshold",
+    "thresholdHint": "Now {{value}}; one notification when the balance falls below it, re-armed once it is back above.",
+    "thresholdSaved": "Threshold saved",
+    "groupUser": "My account",
+    "groupAdmin": "Admin events",
+    "defaultOff": "Off by default",
+    "event": {
+      "account_auth_error": "Account auth error",
+      "account_stale": "Account data stale",
+      "subscription_pending": "New subscription to assign",
+      "reconcile_mismatch": "Reconcile mismatch",
+      "stream_backlog_high": "Settlement backlog high",
+      "account_full": "Account quota full",
+      "safeguard_event": "Safeguard block",
+      "balance_low": "Low balance",
+      "plan_expiring": "Plan expiring",
+      "auto_renew_failed": "Auto-renew failed",
+      "key_exhausted": "Key quota used up"
+    },
+    "eventHint": {
+      "account_auth_error": "The upstream answered 401/403 and the account left routing.",
+      "account_stale": "An account's quota data has not been updated for too long.",
+      "subscription_pending": "A user bought a plan that waits for an account.",
+      "reconcile_mismatch": "The daily reconcile found a balance or charge mismatch.",
+      "stream_backlog_high": "The settlement backlog stayed above the threshold for 5 minutes.",
+      "account_full": "An account's 5-hour or 7-day window is used up.",
+      "safeguard_event": "A request was blocked by the upstream safeguard.",
+      "balance_low": "Once when the balance falls from above the threshold to below it.",
+      "plan_expiring": "3 days before a subscription expires, once per renewal period.",
+      "auto_renew_failed": "An automatic renewal did not go through (e.g. insufficient balance).",
+      "key_exhausted": "A key's total quota or a window limit is used up."
+    }
+  },
+  "adminTokens": {
+    "title": "Admin API tokens",
+    "intro": "For scripts, monitoring and widgets calling /api/v1/admin/*: send Authorization: Bearer oba-…. Read tokens can only GET; no token can manage tokens, change roles or reset an admin's password.",
+    "create": "New token",
+    "createHint": "The full token is shown only once, right after it is created.",
+    "name": "Name",
+    "scope": "Scope",
+    "scopes": {
+      "read": "Read",
+      "write": "Write"
+    },
+    "scopeHint": {
+      "read": "GET / HEAD and the live event stream",
+      "write": "Every admin operation (except tokens, roles and admin passwords)"
+    },
+    "expiry": "Expires",
+    "expiryOption": {
+      "never": "Never",
+      "7d": "7 days",
+      "30d": "30 days",
+      "90d": "90 days",
+      "365d": "1 year",
+      "custom": "Custom"
+    },
+    "expiryCustom": "Custom expiry",
+    "expiryInvalid": "Pick a time in the future",
+    "ipAllowlist": "IP allowlist",
+    "ipHint": "IP addresses or CIDR prefixes, one per line; empty = any address.",
+    "createSubmit": "Create",
+    "createdTitle": "Token created",
+    "onceWarning": "Copy it now. Once closed, the full token cannot be shown again; if lost, revoke it and create a new one.",
+    "usage": "Usage",
+    "saved": "I have saved it — close",
+    "copiedShort": "Copied",
+    "status": {
+      "active": "Active",
+      "expired": "Expired",
+      "revoked": "Revoked"
+    },
+    "col": {
+      "name": "Name",
+      "prefix": "Prefix",
+      "scope": "Scope",
+      "expires": "Expires",
+      "lastUsed": "Last used",
+      "status": "Status"
+    },
+    "createdBy": "Created by {{user}} on {{at}}",
+    "never": "Never",
+    "neverUsed": "Never used",
+    "revoke": "Revoke",
+    "revokeNamed": "Revoke {{name}}",
+    "revokeTitle": "Revoke \"{{name}}\"?",
+    "revokeBody": "Requests with this token get 401 at once. This cannot be undone.",
+    "revoked": "Token revoked",
+    "empty": "No tokens yet."
   }
 }

@@ -103,6 +103,29 @@ func NewAPIKey() string {
 	return "sk-" + string(out)
 }
 
+// AdminTokenPrefix starts every admin API token.
+const AdminTokenPrefix = "oba-"
+
+// NewAdminToken returns "oba-" followed by 43 random base62 characters
+// (about 256 bits), drawn without modulo bias.
+func NewAdminToken() string {
+	const n = 43
+	out := make([]byte, 0, n)
+	buf := make([]byte, 64)
+	for len(out) < n {
+		if _, err := rand.Read(buf); err != nil {
+			panic(err)
+		}
+		for _, c := range buf {
+			// 248 = 4 × 62: rejecting larger bytes keeps the draw uniform.
+			if c < 248 && len(out) < n {
+				out = append(out, keyAlphabet[int(c)%len(keyAlphabet)])
+			}
+		}
+	}
+	return AdminTokenPrefix + string(out)
+}
+
 // KeyHash is the lookup hash of an API key.
 func KeyHash(key string) []byte {
 	sum := sha256.Sum256([]byte(key))

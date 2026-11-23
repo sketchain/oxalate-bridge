@@ -2,7 +2,7 @@
 
 自建的 Claude API 中转站：用户与 API key、token plan、余额、计费和路由全部由本项目管理，上游是多个 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)（CPA）v8 实例。每个 CPA 实例只挂一个 Claude 订阅账号（Pro / Max 5x / Max 20x），额度估算来自 CPA 上的 [cpa-quota](https://github.com/sketchain/cpa-quota) 插件。中转站只服务 Claude Messages 协议，只接受 Claude 订阅的上游账号。
 
-本仓库目前是第五轮（v0.4.0）：在第四轮的基础上补齐了完整中转站常用的功能——API key 的额度 / 滑动窗口 / 过期 / 模型与 IP 白名单、免登录的凭 key 查询页、Claude Code 状态栏接口、按 key 用量、兑换码、公告和模型价格页。只装了 Docker 也能用一条命令跑起完整演示（见「只用 Docker 体验」）。界面截图见 [docs/screenshots](docs/screenshots)（例如 [查询页](docs/screenshots/query-light.png)、[key 详情抽屉](docs/screenshots/user-key-drawer-light.png)、[兑换码管理](docs/screenshots/admin-redeem-light.png)、[价格页](docs/screenshots/user-pricing-light.png)）。
+本仓库目前是 v0.5.0（第七轮：管理 API token、PWA（可安装、离线页、新版本提示）、Web 推送通知）。第五、六轮（v0.4.x）补齐了完整中转站常用的功能——API key 的额度 / 滑动窗口 / 过期 / 模型与 IP 白名单、免登录的凭 key 查询页、Claude Code 状态栏接口、按 key 用量、兑换码、公告和模型价格页。只装了 Docker 也能用一条命令跑起完整演示（见「只用 Docker 体验」）。界面截图见 [docs/screenshots](docs/screenshots)（例如 [管理 API Token](docs/screenshots/admin-tokens-light.png)、[通知设置](docs/screenshots/user-notifications-light.png)、[离线页](docs/screenshots/offline-mobile.png)、[iOS 安装引导](docs/screenshots/ios-install-banner-mobile.png)、[查询页](docs/screenshots/query-light.png)）。待办见 [docs/TODO.md](docs/TODO.md)。
 
 ## 仓库结构
 
@@ -18,6 +18,7 @@ backend/                 Go 后端（单二进制）
   internal/settle        结算记录与 Stream 消费者（批量落库）
   internal/store         PG 事务、只增不改的 ledger、outbox
   internal/jobs          leader 选举与后台任务
+  internal/notify        Web 推送：VAPID、通知偏好、状态变化检测、去重与发送队列
   internal/pricing       从 cpa-quota 复制的计价包（口径完全一致）
   internal/cpaquota      只读查询 cpa-quota 的表（schema.sql 只是给 sqlc 用的表结构参考，不是迁移）
   internal/sessionid     会话标识提取（移植自 CPA ExtractSessionInfo）
@@ -31,11 +32,14 @@ web/                     前端面板：React 19 + Vite + TypeScript（strict）
                          shadcn/ui（源码在 src/components/ui，已按「试剂标签」规范改造）+ Tailwind 4，
                          react-hook-form + zod，Recharts，i18next（zh-CN 默认、en）
   src/api                openapi-typescript 生成的类型（schema.d.ts）、openapi-fetch 客户端、查询键与 hooks
+  sw/sw.js               Service worker 模板（构建时写入预缓存列表与版本号，输出为 /sw.js）
+  public/                manifest、离线页、图标
   e2e                    Playwright 冒烟测试与截图
 scripts/e2e.sh           构建 → fakecpa → seed-demo → bridge → Playwright
-scripts/gen-logo.py      由 IBM Plex Mono 生成 C₂O₄²⁻ logo 的路径与 favicon（开发用，产物已提交）
+scripts/gen-logo.py      由 IBM Plex Mono 生成 C₂O₄²⁻ logo 的路径、favicon 与 PWA 图标（开发用，产物已提交）
 docker-compose.demo.yml  只用 Docker 的演示环境（postgres、redis、fakecpa、seed、bridge）
 docs/screenshots         登录页与用户侧、管理侧主要页面的浅色 / 深色 / 手机截图
+docs/TODO.md             待办（Scriptable 小组件、转发错误文案语言、真实 CPA 联调、正式部署）
 ```
 
 ## 工作方式
@@ -83,17 +87,22 @@ Redis 中每个钱包（用户余额，或某订阅某一期的额度）由三�
 
 重置（`POST /keys/{id}/reset-usage`、`POST /admin/keys/{id}/reset-usage`）把总额度的已用归零、版本 +1，经 outbox 同步到 Redis；时间窗口本来就是滑动的，不受影响。重置前已结算但还没落库的那几笔（通常 1–2 秒内）落库时会被过滤掉，在此之前查询页可能短暂显示一点已用。
 
-检查顺序：鉴权 → 过期 → IP → 模型白名单 → key 额度与窗口 → 逐档尝试。`quota_scope = balance` 的 key 额度用完时整个 key 都会被拒绝（包括 Plan 档），因为 key 级别的拒绝发生在逐档尝试之前。
+检查顺序：鉴权 → 过期 → IP → 模型白名单 → key 额度与窗口 → 逐档尝试。两种口径额度用完后的行为不同：
+
+- `quota_scope = all`（全部计入）：总额度或任何一个窗口用完，整个 key 拒绝（`key_quota_exhausted` / `key_window_exhausted`，429），不往下一档切。
+- `quota_scope = balance`（仅余额）：总额度或某个窗口用完，只把 standard 和 force 从这次请求的档位链里去掉，当作「这一档不放行」，原因码 `key_balance_quota_exhausted`（窗口导致时附 `window` 和 `recovers_at`）；plan 档照常尝试。所有档都不放行时按原规则返回 429，`error.rejections` 逐档列出原因。预扣也一样：plan 档的预扣不受 key 额度和窗口约束，standard / force 的预扣额仍以 key 剩余额度和窗口剩余额度为上限。
+
+`KeyLimitStatus.exhausted`（key 详情、查询页、状态栏接口都有）说明哪一项用完了：`code`、`window`、`recovers_at`，以及 `plan_available`（仅余额口径时为 true，查询页提示「Plan 仍可用」）。
 
 ### 凭 key 查询（不用登录）
 
 - 页面：`/query`（登录页有入口）。用密码框输入 key，只存在页面内存里，不写 localStorage，页面上不回显完整 key。
-- 接口：`GET /api/v1/public/key-usage`，key 只能放在 `Authorization: Bearer` 或 `x-api-key` 请求头里（URL 参数一律忽略）。按 IP 和按 key 各 30 次/分钟。key 无效或已删除时统一 401；已停用或已过期的 key 仍返回信息并带状态。
+- 接口：`GET /api/v1/public/key-usage`，key 只能放在 `Authorization: Bearer` 或 `x-api-key` 请求头里（URL 参数一律忽略）。按 IP 和按 key 各 30 次/分钟（默认值，管理端「系统设置 → 公开接口限频」可改，保存后所有副本立即生效）。key 无效或已删除时统一 401；已停用或已过期的 key 仍返回信息并带状态。
 - 返回 key 名称、前缀、状态、过期时间、额度口径、总额度与已用、三个窗口的限额与已用（窗口用完时带预计恢复时间）、模型白名单和最近 50 条调用（用户视角，不含上游成本）。`allow_owner_query` 为 true 时另外返回账户可用余额、各 Plan 订阅的 5h / 本期可用（口径同 `/me/availability`）和普通 / 强制调用的可用额度；为 false 时 `account` 字段完全不出现。
 
 ### 在 Claude Code 状态栏显示余额
 
-转发域名下有 `GET /v1/bridge/status`：鉴权方式和 `/v1/messages` 完全一样（`x-api-key` 或 `Authorization: Bearer`），**不计费、不写 request_logs**，单独限频（每个 key 60 次/分钟）。返回紧凑 JSON，字段同上面的查询接口，但不含调用日志：
+转发域名下有 `GET /v1/bridge/status`：鉴权方式和 `/v1/messages` 完全一样（`x-api-key` 或 `Authorization: Bearer`），**不计费、不写 request_logs**，单独限频（每个 key 默认 60 次/分钟，同样在「公开接口限频」里改）。返回紧凑 JSON，字段同上面的查询接口，但不含调用日志：
 
 ```json
 {
@@ -155,7 +164,8 @@ jq -r '
     (if (.account.plans // []) | map(select(.period_available_micro != null)) | length > 0
        then "Plan 本期 \(.account.plans | map(.period_available_micro // 0) | add | usd)" else empty end),
     (if .limits.quota_remaining_micro != null then "Key 剩 \(.limits.quota_remaining_micro | usd)" else empty end),
-    (.limits.windows[] | select(.remaining_micro != null and .remaining_micro <= 0) | "\(.window) 已用完"),
+    (if .limits.exhausted.plan_available then "Key 余额额度用完（Plan 仍可用）"
+     elif .limits.exhausted then "Key 额度用完" else empty end),
     (if .key.status != "active" then "Key \(.key.status)" else empty end)
   ] | if length == 0 then "oxalate 正常" else join(" · ") end
 ' "$cache" 2>/dev/null || echo "oxalate: 解析失败"
@@ -169,6 +179,30 @@ jq -r '
 - 兑换码：管理端「兑换码」页生成批次（面额、数量 ≤ 1000、可选过期时间、前缀、备注），格式为 `前缀-XXXX-XXXX-XXXX-XXXX`（Crockford Base32，80 位随机）。库里只存 sha256（兑换时查找）和加密后的原文（按批次导出 CSV）。用户在「余额与账单」页兑换：一个事务里用条件更新保证一个码只能用一次，写一条 `redeem` 类型的 ledger（幂等键是兑换码 id），经 outbox 同步钱包。每个用户 10 次/分钟，连续失败 5 次锁定 15 分钟。生成、作废、导出都写审计日志。
 - 公告：管理端增删改查（标题、纯文本正文、级别普通 / 警告、生效起止时间、启用开关）。用户面板顶部显示当前生效的公告，正文只渲染换行和 http(s) 链接，不解析 HTML；关闭状态按用户记在服务端。
 - 模型与价格：`GET /api/v1/pricing` 列出所有启用账号可用模型的并集，每个模型三档各自的每百万 token 价格（输入、输出、缓存读、缓存写）= toll 倍率换算出的单价 × 档位倍率 × 模型倍率；没有定价的模型标 `priced: false`。用户侧和管理侧导航都有「模型与价格」。
+
+### 管理 API token
+
+给脚本、监控、小组件用的管理端 token，管理员在「系统设置 → 管理 API Token」里创建（名称、只读 / 读写、过期时间、IP 白名单）。格式 `oba-` + 43 位 base62，完整 token 只在创建成功时返回一次，库里只存 sha256（查找用）和显示用前缀。
+
+- `/api/v1/admin/*` 同时接受会话 Cookie 和 `Authorization: Bearer oba-…`；token 请求不需要 `X-Requested-With`。token 只能访问 `/admin/*`。
+- 只读：GET / HEAD（含 SSE 事件流 `/admin/events`）；读写：全部管理操作。两种都不能管理 token 本身（列出 / 创建 / 吊销），不能修改用户角色、创建管理员、设置管理员的密码（`admin_token_forbidden`）。`openapi.yaml` 每个管理接口都标了 `x-admin-token-scope`（read / write / none）。
+- 错误码：`admin_token_invalid` / `admin_token_expired` / `admin_token_revoked`（401），`admin_token_ip_denied` / `admin_token_read_only` / `admin_token_forbidden`（403），`admin_token_rate_limited`（429，按 token 每分钟 `admin_token_per_minute` 次，默认 120）。创建人不再是有效管理员时 token 失效。
+- 审计日志记录 `token_id`、`token_name`，`operator_id` 是 token 的创建人；最近使用时间和 IP 每个副本每分钟最多写一次。
+
+```bash
+curl -H "Authorization: Bearer oba-…" https://panel.example.com/api/v1/admin/overview
+```
+
+### PWA
+
+面板可以安装成应用（`manifest.webmanifest`：Oxalate's Bridge / Bridge，standalone，图标由 `scripts/gen-logo.py` 生成，含 maskable）。Service worker（`web/sw/sw.js`，构建时由 Vite 插件写入预缓存列表和版本号）只预缓存带 hash 的构建产物和应用外壳，`/api/*`、`/v1/*` 一律走网络；断网时导航到任何页面显示离线页；新版本进入 waiting 时底部出现「有新版本，点击刷新」。Go 服务端给 `/sw.js`、`manifest.webmanifest`、`index.html`、`offline.html` 返回正确的 Content-Type 和 `Cache-Control: no-cache`。iOS Safari 未从主屏幕打开时显示一次可关闭的「分享 → 添加到主屏幕」引导；Android / 桌面端在「设置」页显示「安装应用」按钮。
+
+### Web 推送通知
+
+- VAPID 密钥对首次启动时生成，存在 settings 表（私钥用 `BRIDGE_SECRET_KEY` 加密）；联系方式取运行时设置 `vapid_subject`，留空时用 `BRIDGE_VAPID_SUBJECT`，都没有时用占位的 `mailto:admin@bridge.invalid`。
+- 用户在「设置 → 通知」开启本设备（iOS 需先添加到主屏幕）、管理自己的设备、按事件开关、设置余额阈值、发送测试通知。订阅端点只接受已知推送服务（FCM、Mozilla、Apple、WNS）的 https 地址。推送服务返回 404 / 410 时自动删除订阅。
+- 事件只在状态变化时触发，上一次的状态存在 Redis（换 leader 不丢）：管理员默认开 `account_auth_error`、`account_stale`、`subscription_pending`、`reconcile_mismatch`、`stream_backlog_high`（积压超过 `stream_backlog_threshold` 并持续 5 分钟），默认关 `account_full`、`safeguard_event`；用户默认开 `balance_low`（余额从阈值以上跌到以下推一次，回到阈值以上才重新计）、`plan_expiring`（到期前 3 天，每个续费周期一次）、`auto_renew_failed`，默认关 `key_exhausted`。
+- 去重：同一用户、同一事件、同一对象 30 分钟内只推一次（Redis `SET NX EX`，多副本共享）。发送走 Redis 队列（每个副本一个 worker，Lua 原子取任务），失败按 10 s 起指数退避重试 5 次；消息 TTL 1 小时，账号异常类用 high urgency；文案按用户的 `locale`（面板切换语言时同步）选择中文或英文，点击通知聚焦已打开的窗口或打开对应页面。
 
 ### 落库
 
@@ -244,6 +278,7 @@ Stream 消费者（consumer group，多副本可同时消费）每批一个 PG �
 | `BRIDGE_BOOTSTRAP_ADMIN_USERNAME` / `BRIDGE_BOOTSTRAP_ADMIN_PASSWORD` | 空 | 库里没有管理员时首次启动创建 |
 | `BRIDGE_COOKIE_SECURE` | `true` | 会话 Cookie 是否带 Secure（纯 HTTP 本地调试时设为 `false`） |
 | `BRIDGE_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
+| `BRIDGE_VAPID_SUBJECT` | `mailto:admin@bridge.invalid` | Web 推送的 VAPID 联系方式（`mailto:` 或 `https:`）；运行时设置 `vapid_subject` 非空时以它为准 |
 
 ### 运行时参数（settings 表，`PATCH /api/v1/admin/settings` 修改，所有副本即时生效）
 
@@ -266,6 +301,11 @@ Stream 消费者（consumer group，多副本可同时消费）每批一个 PG �
 | `upstream_idle_timeout_seconds` | 300 | 上游空闲超时（无总超时） |
 | `auto_renew_lead_hours` | 24 | 自动续费提前量 |
 | `cooldown_5xx_seconds` / `cooldown_429_default_seconds` | 30 / 60 | 冷却时长 |
+| `public_query_ip_per_minute` / `public_query_key_per_minute` | 30 / 30 | 凭 key 查询接口按 IP / 按 key 的每分钟次数（1–10000） |
+| `status_key_per_minute` | 60 | 状态栏接口 `/v1/bridge/status` 每个 key 的每分钟次数（1–10000） |
+| `admin_token_per_minute` | 120 | 每个管理 API token 的每分钟次数（1–10000） |
+| `stream_backlog_threshold` | 1000 | 结算积压超过它并持续 5 分钟推送 `stream_backlog_high` |
+| `vapid_subject` | 空 | Web 推送联系方式，空 = `BRIDGE_VAPID_SUBJECT` |
 
 ## 只用 Docker 体验（演示环境）
 
@@ -369,6 +409,7 @@ go test -race -count=1 ./...
 - Redis 只支持单实例（Lua 脚本会访问以参数传入的 key，Cluster 下不成立）。
 - 可用额度是预估：5h 窗口假设重置后立即开始下一个（上限），池子和账号容量是 leader 上次刷新时的值。
 - cost-compare 两边按请求开始时间分桶；CPA 实例上不经过中转站的请求只出现在 cpa-quota 一侧。
+- 推送的状态检测由 leader 每 30 秒做一次，事件最多延迟一个周期；`key_exhausted` 在 key 被拒时触发，同一个 key 的同一原因到窗口预计恢复（总额度为 24 小时）之前不再重复。
 
 ## 许可
 

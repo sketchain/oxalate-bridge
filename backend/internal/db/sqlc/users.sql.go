@@ -26,7 +26,7 @@ func (q *Queries) CountAdmins(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, username, password_hash, role, status, max_concurrency, rpm, note)
 VALUES ($1, $2, $3, $4, 'active', $5, $6, $7)
-RETURNING id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at
+RETURNING id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at, locale
 `
 
 type CreateUserParams struct {
@@ -64,12 +64,13 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.Locale,
 	)
 	return i, err
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at FROM users WHERE id = $1 AND deleted_at IS NULL
+SELECT id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at, locale FROM users WHERE id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
@@ -89,6 +90,7 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.Locale,
 	)
 	return i, err
 }
@@ -110,7 +112,7 @@ func (q *Queries) GetUserBalance(ctx context.Context, id uuid.UUID) (GetUserBala
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at FROM users WHERE lower(username) = lower($1) AND deleted_at IS NULL
+SELECT id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at, locale FROM users WHERE lower(username) = lower($1) AND deleted_at IS NULL
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, lower string) (User, error) {
@@ -130,12 +132,13 @@ func (q *Queries) GetUserByUsername(ctx context.Context, lower string) (User, er
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.Locale,
 	)
 	return i, err
 }
 
 const getUserForUpdate = `-- name: GetUserForUpdate :one
-SELECT id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
+SELECT id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at, locale FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
 `
 
 func (q *Queries) GetUserForUpdate(ctx context.Context, id uuid.UUID) (User, error) {
@@ -155,8 +158,79 @@ func (q *Queries) GetUserForUpdate(ctx context.Context, id uuid.UUID) (User, err
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.Locale,
 	)
 	return i, err
+}
+
+const listActiveAdmins = `-- name: ListActiveAdmins :many
+SELECT id, locale FROM users WHERE role = 'admin' AND status = 'active' AND deleted_at IS NULL
+`
+
+type ListActiveAdminsRow struct {
+	ID     uuid.UUID
+	Locale string
+}
+
+func (q *Queries) ListActiveAdmins(ctx context.Context) ([]ListActiveAdminsRow, error) {
+	rows, err := q.db.Query(ctx, listActiveAdmins)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveAdminsRow{}
+	for rows.Next() {
+		var i ListActiveAdminsRow
+		if err := rows.Scan(&i.ID, &i.Locale); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listActiveUsersForNotify = `-- name: ListActiveUsersForNotify :many
+SELECT u.id, u.role, u.locale, u.balance_micro, u.balance_version FROM users u
+WHERE u.status = 'active' AND u.deleted_at IS NULL
+  AND EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.user_id = u.id)
+`
+
+type ListActiveUsersForNotifyRow struct {
+	ID             uuid.UUID
+	Role           string
+	Locale         string
+	BalanceMicro   int64
+	BalanceVersion int64
+}
+
+// Users that may receive balance notifications (those with a push device).
+func (q *Queries) ListActiveUsersForNotify(ctx context.Context) ([]ListActiveUsersForNotifyRow, error) {
+	rows, err := q.db.Query(ctx, listActiveUsersForNotify)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveUsersForNotifyRow{}
+	for rows.Next() {
+		var i ListActiveUsersForNotifyRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Role,
+			&i.Locale,
+			&i.BalanceMicro,
+			&i.BalanceVersion,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listUserBalanceChecks = `-- name: ListUserBalanceChecks :many
@@ -223,7 +297,7 @@ func (q *Queries) ListUsernames(ctx context.Context, ids []uuid.UUID) ([]ListUse
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at FROM users
+SELECT id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at, locale FROM users
 WHERE deleted_at IS NULL
   AND ($2::text IS NULL OR username ILIKE '%' || $2::text || '%')
   AND ($3::timestamptz IS NULL OR (created_at, id) < ($3::timestamptz, $4::uuid))
@@ -266,6 +340,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.Locale,
 		); err != nil {
 			return nil, err
 		}
@@ -294,6 +369,20 @@ func (q *Queries) SetUserBalance(ctx context.Context, arg SetUserBalanceParams) 
 	return balance_version, err
 }
 
+const setUserLocale = `-- name: SetUserLocale :exec
+UPDATE users SET locale = $2, updated_at = now() WHERE id = $1 AND deleted_at IS NULL
+`
+
+type SetUserLocaleParams struct {
+	ID     uuid.UUID
+	Locale string
+}
+
+func (q *Queries) SetUserLocale(ctx context.Context, arg SetUserLocaleParams) error {
+	_, err := q.db.Exec(ctx, setUserLocale, arg.ID, arg.Locale)
+	return err
+}
+
 const softDeleteUser = `-- name: SoftDeleteUser :exec
 UPDATE users SET status = 'deleted', deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL
 `
@@ -306,7 +395,7 @@ func (q *Queries) SoftDeleteUser(ctx context.Context, id uuid.UUID) error {
 const updateUser = `-- name: UpdateUser :one
 UPDATE users SET role = $2, status = $3, max_concurrency = $4, rpm = $5, note = $6, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at
+RETURNING id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at, locale
 `
 
 type UpdateUserParams struct {
@@ -342,6 +431,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.Locale,
 	)
 	return i, err
 }

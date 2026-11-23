@@ -15,7 +15,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 
+	"github.com/sketchain/oxalate-bridge/backend/internal/fakecpa"
 	"github.com/sketchain/oxalate-bridge/backend/internal/rstate"
+	"github.com/sketchain/oxalate-bridge/backend/internal/server"
 	"github.com/sketchain/oxalate-bridge/backend/internal/testutil"
 )
 
@@ -78,16 +80,172 @@ func TestKeyQuotaScopeBalance(t *testing.T) {
 		}
 	}
 	lim := gjson.Parse(rawGet(t, e.user, "/keys/"+e.keyID+"/limits"))
-	if lim.Get("quota_used_micro").Int() != 0 || lim.Get("used_all_micro").Int() != 3*messagesCost || lim.Get("windows.0.used_micro").Int() != 0 {
+	if lim.Get("quota_used_micro").Int() != 0 || lim.Get("used_all_micro").Int() != 3*messagesCost || lim.Get("windows.0.used_micro").Int() != 0 ||
+		lim.Get("exhausted").Exists() {
 		t.Fatalf("balance scope after plan %s", lim.Raw)
 	}
-	// Standard-only: the first balance charge passes, the next is refused.
-	e.patchKey(map[string]any{"tiers": []string{"standard"}})
+}
+
+// relayRejections returns the tier codes of a 429 tier rejection.
+func relayRejections(out []byte) map[string]string {
+	m := map[string]string{}
+	for _, r := range gjson.GetBytes(out, "error.rejections").Array() {
+		m[r.Get("tier").String()] = r.Get("code").String()
+	}
+	return m
+}
+
+// Balance scope, total quota used up: standard and force leave the tier
+// chain with key_balance_quota_exhausted, plan is still tried.
+func TestKeyBalanceQuotaKeepsPlan(t *testing.T) {
+	e := setup(t, envOpts{balanceMicro: 1_000_000, tiers: []string{"standard", "plan"}})
+	e.patchKey(map[string]any{"quota_limit_micro": 3000, "quota_scope": "balance"})
+	// The first balance charge passes (remaining > 0, the last may overshoot).
 	if resp, out := e.relayOpus(nil); resp.StatusCode != 200 || resp.Header.Get("X-Relay-Tier") != "standard" {
 		t.Fatalf("standard: %d %s", resp.StatusCode, out)
 	}
+	// Exhausted: standard is skipped, plan admits.
+	for i := 0; i < 2; i++ {
+		if resp, out := e.relayOpus(nil); resp.StatusCode != 200 || resp.Header.Get("X-Relay-Tier") != "plan" {
+			t.Fatalf("plan after balance quota %d: %d %s", i, resp.StatusCode, out)
+		}
+	}
+	lim := gjson.Parse(rawGet(t, e.user, "/keys/"+e.keyID+"/limits"))
+	if lim.Get("quota_used_micro").Int() != messagesCost || lim.Get("exhausted.code").String() != "key_balance_quota_exhausted" ||
+		!lim.Get("exhausted.plan_available").Bool() || lim.Get("exhausted.window").Exists() {
+		t.Fatalf("limits %s", lim.Raw)
+	}
+	// Only balance tiers left: the usual 429 with one entry per tier.
+	e.patchKey(map[string]any{"tiers": []string{"standard", "force"}})
+	resp, out := e.relayOpus(nil)
+	rej := relayRejections(out)
+	if resp.StatusCode != 429 || gjson.GetBytes(out, "error.type").String() != "rate_limit_error" ||
+		rej["standard"] != "key_balance_quota_exhausted" || rej["force"] != "key_balance_quota_exhausted" || len(rej) != 2 ||
+		!strings.Contains(gjson.GetBytes(out, "error.message").String(), "Plan 档仍可用") {
+		t.Fatalf("balance tiers only: %d %s", resp.StatusCode, out)
+	}
+	e.persist()
+	if n := e.scalar("SELECT count(*) FROM request_logs WHERE error_type = 'tier_rejected' AND status_code = 429"); n != 1 {
+		t.Fatalf("tier_rejected logs %d", n)
+	}
+	if n := e.scalar("SELECT count(*) FROM request_logs WHERE error_type IN ('key_quota_exhausted', 'key_window_exhausted')"); n != 0 {
+		t.Fatalf("whole-key rejections logged %d", n)
+	}
+}
+
+// Plan used up too: the 429 lists the plan reason and the key's balance
+// reason tier by tier.
+func TestKeyBalanceQuotaAndPlanExhausted(t *testing.T) {
+	e := setup(t, envOpts{balanceMicro: 1_000_000, planQuota: 3000, tiers: []string{"standard", "plan"}})
+	e.patchKey(map[string]any{"quota_limit_micro": 3000, "quota_scope": "balance"})
+	for _, want := range []string{"standard", "plan"} {
+		if resp, out := e.relayOpus(nil); resp.StatusCode != 200 || resp.Header.Get("X-Relay-Tier") != want {
+			t.Fatalf("%s: %d %s", want, resp.StatusCode, out)
+		}
+	}
+	resp, out := e.relayOpus(nil)
+	rej := relayRejections(out)
+	if resp.StatusCode != 429 || rej["standard"] != "key_balance_quota_exhausted" || rej["plan"] != "plan_quota_exhausted" {
+		t.Fatalf("both exhausted: %d %s", resp.StatusCode, out)
+	}
+	if m := gjson.GetBytes(out, "error.message").String(); !strings.Contains(m, "普通调用: key 余额口径") || !strings.Contains(m, "plan: ") {
+		t.Fatalf("message %q", m)
+	}
+}
+
+// Balance scope, a window used up: the same, with window and recovers_at.
+func TestKeyBalanceWindowKeepsPlan(t *testing.T) {
+	e := setup(t, envOpts{balanceMicro: 1_000_000, tiers: []string{"standard", "plan"}})
+	e.patchKey(map[string]any{"quota_scope": "balance", "limit_5h_micro": 3000})
+	if resp, out := e.relayOpus(nil); resp.StatusCode != 200 || resp.Header.Get("X-Relay-Tier") != "standard" {
+		t.Fatalf("standard: %d %s", resp.StatusCode, out)
+	}
+	if resp, out := e.relayOpus(nil); resp.StatusCode != 200 || resp.Header.Get("X-Relay-Tier") != "plan" {
+		t.Fatalf("plan after balance window: %d %s", resp.StatusCode, out)
+	}
+	e.patchKey(map[string]any{"tiers": []string{"force"}})
+	resp, out := e.relayOpus(nil)
+	r := gjson.GetBytes(out, "error.rejections.0")
+	if resp.StatusCode != 429 || r.Get("tier").String() != "force" || r.Get("code").String() != "key_balance_quota_exhausted" || r.Get("window").String() != "5h" {
+		t.Fatalf("force only: %d %s", resp.StatusCode, out)
+	}
+	rec, err := time.Parse(time.RFC3339, r.Get("recovers_at").String())
+	if err != nil || rec.Before(time.Now().Add(4*time.Hour+58*time.Minute)) || rec.After(time.Now().Add(5*time.Hour+time.Minute)) {
+		t.Fatalf("recovers_at %s %v", r.Get("recovers_at"), err)
+	}
+	lim := gjson.Parse(rawGet(t, e.user, "/keys/"+e.keyID+"/limits"))
+	if lim.Get("exhausted.code").String() != "key_balance_quota_exhausted" || lim.Get("exhausted.window").String() != "5h" ||
+		!lim.Get("exhausted.plan_available").Bool() || !lim.Get("exhausted.recovers_at").Exists() {
+		t.Fatalf("limits %s", lim.Raw)
+	}
+}
+
+// All scope keeps refusing the whole key for both the quota and a window;
+// the status reports plan_available = false.
+func TestKeyAllScopeRefusesWholeKey(t *testing.T) {
+	e := setup(t, envOpts{balanceMicro: 1_000_000, tiers: []string{"standard", "plan"}})
+	e.patchKey(map[string]any{"quota_scope": "all", "limit_5h_micro": 3000})
+	if resp, out := e.relayOpus(nil); resp.StatusCode != 200 {
+		t.Fatalf("first: %d %s", resp.StatusCode, out)
+	}
+	resp, out := e.relayOpus(nil)
+	if resp.StatusCode != 429 || errCode(out) != "key_window_exhausted" || gjson.GetBytes(out, "error.rejections").Exists() {
+		t.Fatalf("window: %d %s", resp.StatusCode, out)
+	}
+	lim := gjson.Parse(rawGet(t, e.user, "/keys/"+e.keyID+"/limits"))
+	if lim.Get("exhausted.code").String() != "key_window_exhausted" || lim.Get("exhausted.plan_available").Bool() {
+		t.Fatalf("limits %s", lim.Raw)
+	}
+	e.patchKey(map[string]any{"limit_5h_micro": nil, "quota_limit_micro": 3000})
 	if resp, out := e.relayOpus(nil); resp.StatusCode != 429 || errCode(out) != "key_quota_exhausted" {
-		t.Fatalf("balance exhausted: %d %s", resp.StatusCode, out)
+		t.Fatalf("quota: %d %s", resp.StatusCode, out)
+	}
+	code, body := publicQuery(t, e.rep.URL(), e.key)
+	if code != 200 || gjson.Get(body, "limits.exhausted.code").String() != "key_quota_exhausted" || gjson.Get(body, "limits.exhausted.plan_available").Bool() {
+		t.Fatalf("public %d %s", code, body)
+	}
+}
+
+// keyHeldDuring starts a relay with a slow upstream and returns the key's
+// held amount while it is in flight.
+func keyHeldDuring(t *testing.T, e *env) (int64, string) {
+	t.Helper()
+	e.cpaA.Set(func(c *fakecpa.CPA) { c.Delay = 600 * time.Millisecond })
+	defer e.cpaA.Set(func(c *fakecpa.CPA) { c.Delay = 0 })
+	done := make(chan string, 1)
+	go func() {
+		resp, out := e.relayOpus(nil)
+		done <- fmt.Sprintf("%d %s %s", resp.StatusCode, resp.Header.Get("X-Relay-Tier"), out)
+	}()
+	time.Sleep(300 * time.Millisecond)
+	u, err := e.rep.App.Proxy.Meter.Usage(context.Background(), uuid.MustParse(e.keyID), time.Now())
+	testutil.Must(t, err)
+	return u.Held, <-done
+}
+
+// Holds: under the balance scope plan requests are not bounded by the key,
+// standard / force holds are capped by the key's remaining quota and window.
+func TestKeyBalanceHoldBounds(t *testing.T) {
+	e := setup(t, envOpts{balanceMicro: 1_000_000, tiers: []string{"plan"}})
+	e.patchKey(map[string]any{"quota_scope": "balance", "quota_limit_micro": 2000, "limit_1d_micro": 1500})
+	if held, res := keyHeldDuring(t, e); held != 0 || !strings.HasPrefix(res, "200 plan") {
+		t.Fatalf("plan hold on key %d (%s)", held, res)
+	}
+	e.patchKey(map[string]any{"tiers": []string{"standard"}})
+	if held, res := keyHeldDuring(t, e); held != 1500 || !strings.HasPrefix(res, "200 standard") {
+		t.Fatalf("standard hold on key %d, want 1500 (%s)", held, res)
+	}
+	// The all scope bounds plan holds too.
+	e.patchKey(map[string]any{"tiers": []string{"plan"}, "quota_scope": "all", "limit_1d_micro": nil, "quota_limit_micro": 1_000_000})
+	e.persist()
+	lim := gjson.Parse(rawGet(t, e.user, "/keys/"+e.keyID+"/limits"))
+	want := lim.Get("quota_remaining_micro").Int()
+	if want <= 0 {
+		t.Fatalf("limits %s", lim.Raw)
+	}
+	e.patchKey(map[string]any{"quota_limit_micro": lim.Get("quota_used_micro").Int() + 1000})
+	if held, res := keyHeldDuring(t, e); held != 1000 || !strings.HasPrefix(res, "200 plan") {
+		t.Fatalf("all-scope plan hold on key %d, want 1000 (%s)", held, res)
 	}
 }
 
@@ -517,5 +675,75 @@ func TestPricingAndAssignable(t *testing.T) {
 	}
 	if !acc.Get("items.0.runtime.assignable").Exists() || ov.Get("accounts.assignable").Int() != int64(n) || acc.Get("summary.assignable").Int() != int64(n) {
 		t.Fatalf("assignable list %d overview %s", n, ov.Get("accounts").Raw)
+	}
+}
+
+// waitMinuteHead sleeps past the end of the current minute when it is close,
+// so a fixed one-minute rate window does not roll over mid-test.
+func waitMinuteHead() {
+	if s := time.Now().Second(); s >= 50 {
+		time.Sleep(time.Duration(61-s) * time.Second)
+	}
+}
+
+func bridgeStatus(t *testing.T, base, key string) (int, string) {
+	t.Helper()
+	req, _ := http.NewRequest("GET", base+"/v1/bridge/status", nil)
+	req.Header.Set("x-api-key", key)
+	resp, err := http.DefaultClient.Do(req)
+	testutil.Must(t, err)
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(raw)
+}
+
+// The public endpoint rate limits are runtime settings: a change on one
+// replica applies at once on every replica (pub/sub).
+func TestPublicRateLimitsFromSettings(t *testing.T) {
+	e := setup(t, envOpts{balanceMicro: 1_000_000, noPlan: true})
+	other := testutil.Start(t, e.schema, server.Options{DisableJobs: true, DisableConsumer: true, InstanceID: "other"})
+	got := e.admin.must("GET", "/admin/settings", nil, 200)
+	if got["public_query_ip_per_minute"] != float64(30) || got["public_query_key_per_minute"] != float64(30) || got["status_key_per_minute"] != float64(60) {
+		t.Fatalf("defaults %v", got)
+	}
+	for _, bad := range []map[string]any{{"public_query_ip_per_minute": 0}, {"public_query_key_per_minute": 10001}, {"status_key_per_minute": -1}} {
+		e.admin.must("PATCH", "/admin/settings", bad, 400)
+	}
+	e.admin.must("PATCH", "/admin/settings", map[string]any{"public_query_ip_per_minute": 5, "public_query_key_per_minute": 3, "status_key_per_minute": 2}, 200)
+	testutil.Eventually(t, 5*time.Second, func() bool {
+		s := other.App.Settings.Get()
+		return s.PublicQueryIPPerMinute == 5 && s.PublicQueryKeyPerMinute == 3 && s.StatusKeyPerMinute == 2
+	}, "the other replica did not reload the settings")
+	waitMinuteHead()
+	// Per key: 3 pass, the 4th is limited (on the other replica: shared counters).
+	for i := 1; i <= 4; i++ {
+		base := e.rep.URL()
+		if i%2 == 0 {
+			base = other.URL()
+		}
+		code, body := publicQuery(t, base, e.key)
+		if (i <= 3 && code != 200) || (i == 4 && code != 429) {
+			t.Fatalf("public query %d: %d %s", i, code, body)
+		}
+	}
+	// Per IP (counted before the key): the 5th hit passes the IP check, the 6th not.
+	if code, _ := publicQuery(t, other.URL(), "sk-unknown"); code != 401 {
+		t.Fatalf("5th from the IP: %d", code)
+	}
+	if code, _ := publicQuery(t, other.URL(), "sk-unknown"); code != 429 {
+		t.Fatalf("6th from the IP: %d", code)
+	}
+	// Status line: 2 per key per minute, the message names the limit.
+	for i := 1; i <= 3; i++ {
+		code, body := bridgeStatus(t, other.URL(), e.key)
+		if (i <= 2 && code != 200) || (i == 3 && (code != 429 || !strings.Contains(body, "limited to 2 per minute"))) {
+			t.Fatalf("status %d: %d %s", i, code, body)
+		}
+	}
+	// Raising the limit applies to the running minute right away.
+	e.admin.must("PATCH", "/admin/settings", map[string]any{"status_key_per_minute": 100}, 200)
+	testutil.Eventually(t, 5*time.Second, func() bool { return other.App.Settings.Get().StatusKeyPerMinute == 100 }, "reload")
+	if code, body := bridgeStatus(t, other.URL(), e.key); code != 200 {
+		t.Fatalf("status after raising: %d %s", code, body)
 	}
 }
