@@ -736,7 +736,7 @@ func TestPublicRateLimitsFromSettings(t *testing.T) {
 	// Status line: 2 per key per minute, the message names the limit.
 	for i := 1; i <= 3; i++ {
 		code, body := bridgeStatus(t, other.URL(), e.key)
-		if (i <= 2 && code != 200) || (i == 3 && (code != 429 || !strings.Contains(body, "limited to 2 per minute"))) {
+		if (i <= 2 && code != 200) || (i == 3 && (code != 429 || !strings.Contains(body, "每分钟最多 2 次"))) {
 			t.Fatalf("status %d: %d %s", i, code, body)
 		}
 	}

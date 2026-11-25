@@ -140,7 +140,7 @@ func TestWindowFromHardExhaustionAndLocalReset(t *testing.T) {
 	if got := a.Forced(now, Period7d); got != min(a.C5(now, Period7d), 90_000_000) {
 		t.Fatalf("week reset inside 7d should restore T7: %d", got)
 	}
-	// Paused / cooldown: both r are 0, resets still count.
+	// Exhausted / cooldown: both r are 0, resets still count.
 	ex := WindowFrom(WindowInput{Window: five, Safety: 0.9, Observed: observed, Exhausted: true, Period: Period5h}, now)
 	if ex.R != 0 || ex.T != 9_000_000 {
 		t.Fatalf("exhausted %+v", ex)

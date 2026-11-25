@@ -45,11 +45,11 @@ func TestSeedDemo(t *testing.T) {
 
 	admin := newClient(t, rep.URL())
 	admin.login("admin", "admin-password")
-	// Notification preferences are stored with their defaults (11 admin
-	// events + 4 per user for alice, bob and carol).
+	// Notification preferences are stored with their defaults (13 events for
+	// the admin + 5 per user for alice, bob and carol).
 	var prefs, thr int
 	testutil.Must(t, rep.App.Pool.QueryRow(ctx, "SELECT count(*), count(*) FILTER (WHERE threshold_micro = 20000000) FROM notification_prefs").Scan(&prefs, &thr))
-	if prefs != 11+3*4 || thr != 1 {
+	if prefs != 13+3*5 || thr != 1 {
 		t.Fatalf("notification prefs %d (threshold rows %d)", prefs, thr)
 	}
 	if n := gjson.Get(rawGet(t, admin, "/admin/accounts"), "items.#").Int(); n != 4 {
@@ -124,6 +124,23 @@ func TestSeedDemo(t *testing.T) {
 	}
 	if n := gjson.Get(rawGet(t, alice, "/announcements"), "items.#").Int(); n != 1 {
 		t.Fatalf("announcements %d", n)
+	}
+	// Safeguard: bob is locked with a pending appeal, one repeat was stopped
+	// by the blocklist, alice has one trigger left over from a stream.
+	bob := newClient(t, rep.URL())
+	bob.login("bob", "demo-pass-123")
+	sg := gjson.Parse(rawGet(t, bob, "/me/safeguard"))
+	if !sg.Get("locked").Bool() || sg.Get("blocked_count").Int() != 1 || sg.Get("appeal.status").String() != "pending" || sg.Get("used").Int() != 3 {
+		t.Fatalf("bob safeguard %s", sg.Raw)
+	}
+	if sg := gjson.Parse(rawGet(t, alice, "/me/safeguard")); sg.Get("used").Int() != 1 || sg.Get("locked").Bool() {
+		t.Fatalf("alice safeguard %s", sg.Raw)
+	}
+	if n := gjson.Get(rawGet(t, admin, "/admin/safeguard-appeals?status=pending"), "pending").Int(); n != 1 {
+		t.Fatalf("pending appeals %d", n)
+	}
+	if n := gjson.Get(rawGet(t, admin, "/admin/safeguard-blocks"), "items.#").Int(); n != 4 {
+		t.Fatalf("blocks %d", n)
 	}
 	res, err := jobs.Reconcile(ctx, rep.App.Store, testutil.Logger())
 	testutil.Must(t, err)

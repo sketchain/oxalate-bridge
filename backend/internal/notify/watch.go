@@ -71,7 +71,9 @@ func (s *Service) ObserveAccounts(ctx context.Context, obs []AccountObs) error {
 		o := o
 		if cur.Auth && !p.Auth {
 			s.emit(ctx, Notification{Event: AccountAuthError, Object: o.ID.String(), URL: url,
-				Params: func(string) map[string]string { return map[string]string{"name": o.Name, "reason": o.Reason} }})
+				Params: func(l string) map[string]string {
+					return map[string]string{"name": o.Name, "cause": phrase(l, "auth_"+AuthCause(o.Reason), nil), "reason": o.Reason}
+				}})
 		}
 		if cur.Stale && !p.Stale {
 			s.emit(ctx, Notification{Event: AccountStale, Object: o.ID.String(), URL: url,
@@ -333,6 +335,34 @@ func (s *Service) ObserveSafeguard(ctx context.Context) error {
 		since = r.CreatedAt
 	}
 	return s.St.R.Set(ctx, key, since.UnixMilli(), 0).Err()
+}
+
+// AppealSubmitted tells every admin about a new safeguard unlock appeal.
+func (s *Service) AppealSubmitted(ctx context.Context, appealID uuid.UUID, username, note string) {
+	s.emit(ctx, Notification{Event: SafeguardAppealNew, Object: appealID.String(), URL: "/admin/safeguard?tab=appeals",
+		Params: func(string) map[string]string {
+			return map[string]string{"user": username, "note": truncRunes(note, 80)}
+		}})
+}
+
+// AppealDecided tells the user how their appeal was decided.
+func (s *Service) AppealDecided(ctx context.Context, appealID, userID uuid.UUID, approved bool, reason string) {
+	s.emit(ctx, Notification{Event: SafeguardAppealDone, Object: appealID.String(), User: userID, URL: "/safeguard",
+		Params: func(l string) map[string]string {
+			if approved {
+				return map[string]string{"result": phrase(l, "appeal_ok", nil), "detail": phrase(l, "appeal_ok_body", nil)}
+			}
+			return map[string]string{"result": phrase(l, "appeal_no", nil),
+				"detail": phrase(l, "appeal_no_body", map[string]string{"reason": truncRunes(reason, 120)})}
+		}})
+}
+
+func truncRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
 
 // KeyExhausted tells the key owner that a key's total quota or a window is

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: oxalate-bridge panel API
-  version: 0.5.0
+  version: 0.6.0
   description: |
     Panel API of oxalate-bridge. This file is the single source of truth: the
     backend server code is generated from it with oapi-codegen (chi strict
@@ -20,8 +20,9 @@ info:
       check. Each admin operation carries `x-admin-token-scope`: `read`
       (GET / HEAD, including the SSE stream: read and write tokens), `write`
       (write tokens only) or `none` (session only: managing admin tokens).
-      Changing a user's role, creating an admin user and setting an admin's
-      password are refused for every token (`admin_token_forbidden`, 403).
+      Changing a user's role, creating an admin user, setting an admin's
+      password, disabling an admin and deleting an admin are refused for
+      every token (`admin_token_forbidden`, 403).
       Token errors: `admin_token_invalid`, `admin_token_expired`,
       `admin_token_revoked` (401), `admin_token_ip_denied`,
       `admin_token_read_only`, `admin_token_forbidden` (403),
@@ -41,6 +42,15 @@ info:
     `GET /v1/models`; Claude Messages protocol only) are not part of this API.
     `GET /v1/bridge/status` (relay domain, API key auth exactly as /v1/messages,
     not billed or logged, rate limited separately per key by the `status_key_per_minute` setting, default 60) returns a `KeyStatus`.
+
+    Safeguard: before any tier is tried, a user whose safeguard count reached
+    the allowance is refused locally with `safeguard_locked` (403,
+    permission_error), and a /v1/messages request whose normalized last user
+    message is on the site-wide blocklist with `safeguard_prompt_blocked`
+    (400, invalid_request_error; not sent upstream, allowance untouched).
+    Neither falls through to another tier. A Claude safety refusal (an error
+    answer, `stop_reason: refusal`, or a refusal inside a stream) is passed
+    to the client as is, stored with the full request body and counted.
 
     Relay rejections caused by the key itself are Anthropic-shaped errors and never
     fall through to the next tier: `key_expired` (403, permission_error),
@@ -74,6 +84,8 @@ tags:
   - name: admin-subscriptions
   - name: admin-system
   - name: notifications
+  - name: safeguard
+  - name: admin-safeguard
 
 paths:
   /auth/login:
@@ -145,6 +157,55 @@ paths:
             schema: { $ref: '#/components/schemas/LocaleUpdate' }
       responses:
         '204': { description: Saved. }
+        default: { $ref: '#/components/responses/Error' }
+  /me/safeguard:
+    get:
+      tags: [safeguard]
+      operationId: getMySafeguard
+      summary: The caller's safeguard counters, reset cards, lock and latest appeal, and the requests the prompt blocklist stopped.
+      responses:
+        '200':
+          description: Safeguard state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MySafeguard' }
+        default: { $ref: '#/components/responses/Error' }
+  /me/safeguard/reset-card:
+    post:
+      tags: [safeguard]
+      operationId: useSafeguardResetCard
+      summary: Spend one reset card to clear the safeguard count (and the lock).
+      description: |
+        Errors: `safeguard_no_reset_card` (409) when the user has none,
+        `safeguard_nothing_to_reset` (409) when the count is already 0.
+      responses:
+        '200':
+          description: State after the reset.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MySafeguard' }
+        default: { $ref: '#/components/responses/Error' }
+  /me/safeguard/appeals:
+    post:
+      tags: [safeguard]
+      operationId: submitSafeguardAppeal
+      summary: Ask an administrator to lift the safeguard lock.
+      description: |
+        Only while locked (`safeguard_not_locked`, 409) and with no other
+        pending appeal (`safeguard_appeal_pending`, 409). Admins get a
+        `safeguard_appeal_new` push; the decision comes back as
+        `safeguard_appeal_result`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SafeguardAppealCreate' }
+      responses:
+        '200':
+          description: State with the new appeal.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MySafeguard' }
         default: { $ref: '#/components/responses/Error' }
   /push/config:
     get:
@@ -715,6 +776,39 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiKeyList' }
         default: { $ref: '#/components/responses/Error' }
+  /admin/users/{userId}/safeguard:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
+      tags: [admin-safeguard]
+      operationId: adminGetUserSafeguard
+      responses:
+        '200':
+          description: The user's safeguard counters.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUserSafeguard' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
+      tags: [admin-safeguard]
+      operationId: adminUpdateUserSafeguard
+      summary: Set the user's allowance override, count or reset cards (audited).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminUserSafeguardUpdate' }
+      responses:
+        '200':
+          description: Counters after the change.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUserSafeguard' }
+        default: { $ref: '#/components/responses/Error' }
   /admin/keys/{keyId}/enabled:
     parameters:
       - $ref: '#/components/parameters/KeyId'
@@ -852,9 +946,9 @@ paths:
       operationId: adminCreateAccount
       summary: Import an account. /quota and /v1/models must both succeed before it is saved.
       description: |
-        Only Claude subscriptions are accepted: when /quota reports a subscription other
-        than `claude` the import fails with 422 `unsupported_subscription` (edits are
-        checked the same way).
+        /quota must be served by cpa-quota v0.1.0 or later and list the account (set
+        `auth_indexes` in cpa-quota so each CPA reports exactly one account); otherwise the
+        import fails with 422 `upstream_validation_failed` ("quota response lists no account").
       requestBody:
         required: true
         content:
@@ -1373,18 +1467,195 @@ paths:
     get:
       security: [{ cookieAuth: [] }, { adminToken: [] }]
       x-admin-token-scope: read
-      tags: [admin-system]
+      tags: [admin-safeguard]
       operationId: adminListSafeguardEvents
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/UserIdFilter'
+        - name: prompt_hash
+          in: query
+          schema: { type: string }
       responses:
         '200':
-          description: Safeguard (Claude refusal) events, newest first.
+          description: Safeguard (Claude refusal) events, newest first; prompt cut to 500 characters.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SafeguardEventPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/safeguard-events/{eventId}:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
+      tags: [admin-safeguard]
+      operationId: adminGetSafeguardEvent
+      responses:
+        '200':
+          description: The event with the whole normalized prompt (body not included).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SafeguardEvent' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/safeguard-events/{eventId}/body:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
+      tags: [admin-safeguard]
+      operationId: adminGetSafeguardEventBody
+      summary: One chunk of the stored request body (the first chunk read is audited).
+      description: |
+        The body is stored gzip-compressed; this returns up to `limit` bytes
+        of the original JSON from `offset`, cut on a UTF-8 boundary. Pass
+        `next_offset` back as `offset`; it is null at the end.
+      parameters:
+        - name: offset
+          in: query
+          schema: { type: integer, format: int64, minimum: 0, default: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, format: int64, minimum: 1024, maximum: 1048576, default: 65536 }
+      responses:
+        '200':
+          description: The chunk.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SafeguardBodyChunk' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/safeguard-events/{eventId}/raw:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
+      tags: [admin-safeguard]
+      operationId: adminDownloadSafeguardEventBody
+      summary: The whole stored request body as a file (audited).
+      responses:
+        '200':
+          description: The original request body (JSON), as an attachment.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/safeguard-blocks:
+    get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
+      tags: [admin-safeguard]
+      operationId: adminListSafeguardBlocks
+      summary: The prompt blocklist (hash and prompt), newest first.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: status
+          in: query
+          schema: { type: string, enum: [all, active, revoked], default: active }
+        - name: q
+          in: query
+          description: Substring of the prompt, or an exact hash.
+          schema: { type: string }
+      responses:
+        '200':
+          description: Entries; prompt cut to 500 characters.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SafeguardBlockPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/safeguard-blocks/{hash}:
+    parameters:
+      - $ref: '#/components/parameters/BlockHash'
+    get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
+      tags: [admin-safeguard]
+      operationId: adminGetSafeguardBlock
+      responses:
+        '200':
+          description: The entry with the whole prompt.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SafeguardBlock' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/safeguard-blocks/{hash}/revoke:
+    parameters:
+      - $ref: '#/components/parameters/BlockHash'
+    post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
+      tags: [admin-safeguard]
+      operationId: adminRevokeSafeguardBlock
+      summary: Take a prompt off the blocklist (a false positive). Audited.
+      responses:
+        '200':
+          description: The revoked entry.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SafeguardBlock' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/safeguard-appeals:
+    get:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: read
+      tags: [admin-safeguard]
+      operationId: adminListSafeguardAppeals
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/UserIdFilter'
+        - name: status
+          in: query
+          schema: { type: string, enum: [all, pending, approved, rejected], default: all }
+      responses:
+        '200':
+          description: Appeals, newest first, with the pending count.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SafeguardAppealPage' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/safeguard-appeals/{appealId}/approve:
+    parameters:
+      - $ref: '#/components/parameters/AppealId'
+    post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
+      tags: [admin-safeguard]
+      operationId: adminApproveSafeguardAppeal
+      summary: Approve a pending appeal; the user's count is cleared and the lock lifted. Audited.
+      description: '`safeguard_appeal_decided` (409) when it is no longer pending.'
+      responses:
+        '200':
+          description: The decided appeal.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SafeguardAppeal' }
+        default: { $ref: '#/components/responses/Error' }
+  /admin/safeguard-appeals/{appealId}/reject:
+    parameters:
+      - $ref: '#/components/parameters/AppealId'
+    post:
+      security: [{ cookieAuth: [] }, { adminToken: [] }]
+      x-admin-token-scope: write
+      tags: [admin-safeguard]
+      operationId: adminRejectSafeguardAppeal
+      summary: Reject a pending appeal with a reason the user sees. Audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SafeguardAppealReject' }
+      responses:
+        '200':
+          description: The decided appeal.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SafeguardAppeal' }
         default: { $ref: '#/components/responses/Error' }
   /admin/prices:
     get:
@@ -1699,6 +1970,21 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    AppealId:
+      name: appealId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    BlockHash:
+      name: hash
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[0-9a-f]{64}$' }
     Cursor:
       name: cursor
       in: query
@@ -1777,7 +2063,9 @@ components:
                 admin_token_invalid, admin_token_expired, admin_token_revoked,
                 admin_token_ip_denied, admin_token_read_only, admin_token_forbidden,
                 admin_token_rate_limited, push_unavailable,
-                internal.
+                safeguard_no_reset_card, safeguard_nothing_to_reset,
+                safeguard_not_locked, safeguard_appeal_pending,
+                safeguard_appeal_decided, internal.
             message: { type: string }
             subscriptions:
               type: array
@@ -2344,12 +2632,13 @@ components:
 
     AdminUser:
       type: object
-      required: [id, username, role, status, balance_micro, max_concurrency, note, created_at, updated_at]
+      required: [id, username, role, status, balance_micro, max_concurrency, note, created_at, updated_at, safeguard_locked]
       properties:
         id: { type: string, format: uuid }
         username: { type: string }
         role: { $ref: '#/components/schemas/Role' }
         status: { $ref: '#/components/schemas/UserStatus' }
+        safeguard_locked: { type: boolean, description: Every key is refused until the count drops below the allowance. }
         balance_micro: { type: integer, format: int64 }
         max_concurrency: { type: integer }
         rpm: { type: integer, nullable: true }
@@ -2409,7 +2698,7 @@ components:
           type: boolean
           description: |
             Decided by the backend: the account can take a new session of a normal call right now —
-            enabled, not stale / cooldown / error / 5h or week full / paused, and H_A above the
+            enabled, not stale / cooldown / error / 5h or week full, and H_A above the
             normal-call threshold (standard_min_headroom_micro). A penalized account with enough
             headroom is assignable.
         status:
@@ -2426,13 +2715,13 @@ components:
           type: string
           description: |
             Machine-readable reason for `display_status` (empty when there is none). Known codes:
-            `disabled`, `upstream_auth` (upstream 401 / 403), `unsupported_subscription`, `error`
+            `disabled`, `upstream_auth` (upstream 401 / 403), `error`
             (any other error), `network`, `upstream_429`, `upstream_5xx`, `error_cooldown`,
-            `cooldown`, `quota_stale`, `5h_exhausted`, `week_exhausted`, `paused`, `penalized`.
+            `cooldown`, `quota_stale`, `5h_exhausted`, `week_exhausted`, `penalized`.
             Clients must cope with codes they do not know.
         hard_reason:
           type: string
-          description: Why the account cannot take requests (`5h_exhausted`, `week_exhausted`, `paused`, `cooldown`), empty otherwise.
+          description: Why the account cannot take requests (`5h_exhausted`, `week_exhausted`, `cooldown`), empty otherwise.
         oversold:
           type: boolean
           description: H_A < 0 (plan reservations exceed what is left of the week).
@@ -2442,7 +2731,7 @@ components:
         stale: { type: boolean }
         cooldown_until: { type: string, format: date-time, nullable: true }
         hard_exhausted: { type: boolean }
-        state: { type: string, description: 'cpa-quota account state: cold, estimated or paused.' }
+        state: { type: string, description: 'cpa-quota account state: cold or estimated.' }
         safety_factor: { type: number, format: double }
         observed_at: { type: string, format: date-time, nullable: true }
         fetched_at: { type: string, format: date-time, nullable: true }
@@ -2469,11 +2758,11 @@ components:
       type: string
       description: |
         The single status to show for an account, by priority: error > disabled > cooldown >
-        five_hour_full / week_full / paused (hard exhausted) > stale > penalized > normal.
-      enum: [error, disabled, cooldown, five_hour_full, week_full, paused, stale, penalized, normal]
+        five_hour_full / week_full (hard exhausted) > stale > penalized > normal.
+      enum: [error, disabled, cooldown, five_hour_full, week_full, stale, penalized, normal]
     Account:
       type: object
-      required: [id, name, base_url, enabled, note, instance, subscription, tier, auth_index, provider, watermark_5h_percent_effective, created_at, updated_at, runtime, sold_weekly_quota_micro, sold_upstream_micro]
+      required: [id, name, base_url, enabled, note, instance, tier, auth_index, watermark_5h_percent_effective, created_at, updated_at, runtime, sold_weekly_quota_micro, sold_upstream_micro]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -2484,10 +2773,8 @@ components:
         max_concurrency: { type: integer, nullable: true }
         note: { type: string }
         instance: { type: string }
-        subscription: { type: string }
         tier: { type: string }
         auth_index: { type: string }
-        provider: { type: string }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         runtime: { $ref: '#/components/schemas/AccountRuntime' }
@@ -2565,10 +2852,8 @@ components:
         models_ok: { type: boolean }
         models_error: { type: string }
         instance: { type: string }
-        subscription: { type: string }
         tier: { type: string }
         auth_index: { type: string }
-        provider: { type: string }
         models:
           type: array
           items: { type: string }
@@ -2584,19 +2869,15 @@ components:
         plan_name: { type: string }
     CpaQuotaEstimate:
       type: object
-      description: A row of cpa-quota's `estimates` table (schema version 1), unchanged.
-      required: [instance, auth_index, provider, subscription, tier, state, pause_reason, segment_window, basis, k_source,
+      description: A row of cpa-quota's `estimates` table (schema version 1, cpa-quota v0.1.0), unchanged.
+      required: [instance, auth_index, tier, state, basis, k_source,
                  totals_from, safety_factor, used_5h, used_7d, five_hour_total_usd, weekly_total_usd, remaining_five_hour_usd,
                  remaining_week_usd, clean_blocks, total_blocks, segments, excluded_segments, ratio, estimated_at, detail]
       properties:
         instance: { type: string }
         auth_index: { type: string }
-        provider: { type: string }
-        subscription: { type: string }
         tier: { type: string }
         state: { type: string }
-        pause_reason: { type: string }
-        segment_window: { type: string }
         basis: { type: string }
         k: { type: number, format: double, nullable: true }
         k_source: { type: string }
@@ -2764,7 +3045,7 @@ components:
         force: { type: number, format: double, minimum: 0 }
     Settings:
       type: object
-      required: [default_user_concurrency, watermark_5h_percent, watermark_penalty, standard_min_headroom_micro, sticky_ttl_seconds, sticky_ttl_1h_seconds, tier_multipliers, model_multipliers, hold_cap_micro, hold_default_max_tokens, max_retries, quota_poll_seconds, stale_after_seconds, models_poll_minutes, price_url, price_refresh_hours, upstream_idle_timeout_seconds, auto_renew_lead_hours, cooldown_5xx_seconds, cooldown_429_default_seconds, public_query_ip_per_minute, public_query_key_per_minute, status_key_per_minute, admin_token_per_minute, stream_backlog_threshold, vapid_subject, vapid_subject_effective]
+      required: [default_user_concurrency, watermark_5h_percent, watermark_penalty, standard_min_headroom_micro, sticky_ttl_seconds, sticky_ttl_1h_seconds, tier_multipliers, model_multipliers, hold_cap_micro, hold_default_max_tokens, max_retries, quota_poll_seconds, stale_after_seconds, models_poll_minutes, price_url, price_refresh_hours, upstream_idle_timeout_seconds, auto_renew_lead_hours, cooldown_5xx_seconds, cooldown_429_default_seconds, public_query_ip_per_minute, public_query_key_per_minute, status_key_per_minute, admin_token_per_minute, stream_backlog_threshold, vapid_subject, vapid_subject_effective, relay_error_locale, safeguard_default_allowance, safeguard_default_reset_cards, safeguard_hash_min_chars]
       properties:
         default_user_concurrency: { type: integer }
         watermark_5h_percent: { type: number, format: double }
@@ -2796,6 +3077,10 @@ components:
         stream_backlog_threshold: { type: integer, minimum: 1, description: 'Settlement stream backlog (entries) that, held for 5 minutes, sends stream_backlog_high (default 1000).' }
         vapid_subject: { type: string, description: 'Web Push contact (mailto: or https:); empty = BRIDGE_VAPID_SUBJECT or a placeholder.' }
         vapid_subject_effective: { type: string, readOnly: true, description: The contact actually used. }
+        relay_error_locale: { type: string, enum: [zh-CN, en], description: 'Language of error.message in relay (/v1) answers (default zh-CN); error.code and error.type are never localized.' }
+        safeguard_default_allowance: { type: integer, minimum: 1, maximum: 1000, description: Safeguard triggers per user before every key is locked (default 3; a user override wins). Changes apply to every user at once. }
+        safeguard_default_reset_cards: { type: integer, minimum: 0, maximum: 1000, description: Reset cards a new user starts with (default 1). }
+        safeguard_hash_min_chars: { type: integer, minimum: 0, maximum: 10000, description: Shortest normalized prompt (characters) put on the blocklist (default 16). }
     SettingsPatch:
       type: object
       description: Any subset of Settings.
@@ -2828,6 +3113,10 @@ components:
         admin_token_per_minute: { type: integer, minimum: 1, maximum: 10000 }
         stream_backlog_threshold: { type: integer, minimum: 1 }
         vapid_subject: { type: string }
+        relay_error_locale: { type: string, enum: [zh-CN, en] }
+        safeguard_default_allowance: { type: integer, minimum: 1, maximum: 1000 }
+        safeguard_default_reset_cards: { type: integer, minimum: 0, maximum: 1000 }
+        safeguard_hash_min_chars: { type: integer, minimum: 0, maximum: 10000 }
 
     AuditLog:
       type: object
@@ -2941,9 +3230,10 @@ components:
       description: |
         Admin events: account_auth_error, account_stale, subscription_pending,
         reconcile_mismatch, stream_backlog_high (on by default), account_full,
-        safeguard_event (off by default). User events: balance_low,
-        plan_expiring, auto_renew_failed (on by default), key_exhausted (off).
-      enum: [account_auth_error, account_stale, subscription_pending, reconcile_mismatch, stream_backlog_high, account_full, safeguard_event, balance_low, plan_expiring, auto_renew_failed, key_exhausted]
+        safeguard_event (off by default), safeguard_appeal_new (on). User
+        events: balance_low, plan_expiring, auto_renew_failed,
+        safeguard_appeal_result (on by default), key_exhausted (off).
+      enum: [account_auth_error, account_stale, subscription_pending, reconcile_mismatch, stream_backlog_high, account_full, safeguard_event, safeguard_appeal_new, balance_low, plan_expiring, auto_renew_failed, key_exhausted, safeguard_appeal_result]
     NotificationPref:
       type: object
       required: [event, group, enabled, default_enabled]
@@ -2982,7 +3272,12 @@ components:
         next_cursor: { type: string, nullable: true }
     SafeguardEvent:
       type: object
-      required: [id, request_id, model, category, reason, created_at]
+      description: |
+        One request Claude refused for safety reasons. `counted` is false
+        when the prompt was already on the blocklist (a concurrent repeat),
+        so it did not use the user's allowance. `prompt` is the normalized
+        last user message (see README); the list cuts it to 500 characters.
+      required: [id, request_id, model, category, reason, created_at, status_code, stream, counted, prompt_hash, prompt, has_body, body_size, username, key_name, key_prefix, account_name]
       properties:
         id: { type: string, format: uuid }
         request_id: { type: string, format: uuid }
@@ -2993,6 +3288,17 @@ components:
         category: { type: string }
         reason: { type: string }
         created_at: { type: string, format: date-time }
+        status_code: { type: integer, description: Upstream status (200 for a refusal inside a response or stream). }
+        stream: { type: boolean }
+        counted: { type: boolean }
+        prompt_hash: { type: string, description: Empty when the prompt was too short to hash. }
+        prompt: { type: string }
+        has_body: { type: boolean }
+        body_size: { type: integer, format: int64, description: Uncompressed body size in bytes. }
+        username: { type: string }
+        key_name: { type: string }
+        key_prefix: { type: string }
+        account_name: { type: string }
     SafeguardEventPage:
       type: object
       required: [items]
@@ -3001,6 +3307,152 @@ components:
           type: array
           items: { $ref: '#/components/schemas/SafeguardEvent' }
         next_cursor: { type: string, nullable: true }
+    SafeguardBodyChunk:
+      type: object
+      required: [text, offset, total_size]
+      properties:
+        text: { type: string }
+        offset: { type: integer, format: int64 }
+        next_offset: { type: integer, format: int64, nullable: true }
+        total_size: { type: integer, format: int64 }
+    SafeguardBlock:
+      type: object
+      required: [hash, prompt, created_at, hits, first_username, revoked_by_username]
+      properties:
+        hash: { type: string }
+        prompt: { type: string }
+        first_event_id: { type: string, format: uuid, nullable: true }
+        first_user_id: { type: string, format: uuid, nullable: true }
+        first_username: { type: string }
+        created_at: { type: string, format: date-time }
+        hits: { type: integer, format: int64, description: Requests the entry stopped. }
+        last_hit_at: { type: string, format: date-time, nullable: true }
+        revoked_at: { type: string, format: date-time, nullable: true }
+        revoked_by_username: { type: string }
+    SafeguardBlockPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SafeguardBlock' }
+        next_cursor: { type: string, nullable: true }
+    SafeguardAppealStatus:
+      type: string
+      enum: [pending, approved, rejected]
+    SafeguardAppeal:
+      type: object
+      required: [id, user_id, username, note, status, reject_reason, created_at, decided_by_username, used, allowance, reset_cards]
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        username: { type: string }
+        note: { type: string }
+        status: { $ref: '#/components/schemas/SafeguardAppealStatus' }
+        reject_reason: { type: string }
+        created_at: { type: string, format: date-time }
+        decided_at: { type: string, format: date-time, nullable: true }
+        decided_by_username: { type: string }
+        used: { type: integer, description: The user's current count. }
+        allowance: { type: integer, description: The user's allowance in effect. }
+        reset_cards: { type: integer }
+    SafeguardAppealPage:
+      type: object
+      required: [items, pending]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SafeguardAppeal' }
+        next_cursor: { type: string, nullable: true }
+        pending: { type: integer, format: int64 }
+    SafeguardAppealCreate:
+      type: object
+      required: [note]
+      properties:
+        note: { type: string, minLength: 1, maxLength: 2000 }
+    SafeguardAppealReject:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+    MySafeguardAppeal:
+      type: object
+      required: [id, note, status, reject_reason, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        note: { type: string }
+        status: { $ref: '#/components/schemas/SafeguardAppealStatus' }
+        reject_reason: { type: string }
+        created_at: { type: string, format: date-time }
+        decided_at: { type: string, format: date-time, nullable: true }
+    MySafeguardEvent:
+      type: object
+      required: [created_at, model, category, counted]
+      properties:
+        created_at: { type: string, format: date-time }
+        model: { type: string }
+        category: { type: string }
+        counted: { type: boolean }
+    MySafeguardBlocked:
+      type: object
+      required: [created_at, key_name, key_prefix]
+      properties:
+        created_at: { type: string, format: date-time }
+        key_name: { type: string }
+        key_prefix: { type: string }
+    MySafeguard:
+      type: object
+      description: |
+        Safeguard state of the caller. While `locked`, every key of the user
+        is refused locally with `safeguard_locked`. Requests whose prompt is
+        on the site-wide blocklist are refused with `safeguard_prompt_blocked`,
+        never reach upstream and do not use the allowance; `blocked_count`
+        and `recent_blocked` list them. Administrators can view the requests
+        that triggered the safeguard.
+      required: [allowance, used, remaining, reset_cards, locked, events_count, recent_events, blocked_count, recent_blocked]
+      properties:
+        allowance: { type: integer }
+        used: { type: integer }
+        remaining: { type: integer }
+        reset_cards: { type: integer }
+        locked: { type: boolean }
+        locked_at: { type: string, format: date-time, nullable: true }
+        appeal:
+          allOf: [{ $ref: '#/components/schemas/MySafeguardAppeal' }]
+          nullable: true
+          description: The latest appeal, if any.
+        events_count: { type: integer, format: int64 }
+        recent_events:
+          type: array
+          description: The latest 20 triggers.
+          items: { $ref: '#/components/schemas/MySafeguardEvent' }
+        blocked_count: { type: integer, format: int64 }
+        recent_blocked:
+          type: array
+          description: The latest 20 requests stopped by the blocklist.
+          items: { $ref: '#/components/schemas/MySafeguardBlocked' }
+    AdminUserSafeguard:
+      type: object
+      required: [user_id, username, allowance, default_allowance, used, reset_cards, locked, events_count, blocked_count]
+      properties:
+        user_id: { type: string, format: uuid }
+        username: { type: string }
+        allowance: { type: integer, description: Allowance in effect. }
+        allowance_override: { type: integer, nullable: true, description: null = the default setting. }
+        default_allowance: { type: integer }
+        used: { type: integer }
+        reset_cards: { type: integer }
+        locked: { type: boolean }
+        locked_at: { type: string, format: date-time, nullable: true }
+        events_count: { type: integer, format: int64 }
+        blocked_count: { type: integer, format: int64 }
+    AdminUserSafeguardUpdate:
+      type: object
+      description: Fields left out keep their value; allowance_override null = use the default.
+      properties:
+        allowance_override: { type: integer, minimum: 1, maximum: 1000, nullable: true }
+        used: { type: integer, minimum: 0, maximum: 100000 }
+        reset_cards: { type: integer, minimum: 0, maximum: 1000 }
     PriceStatus:
       type: object
       required: [source_url, origin, models, last_error]
@@ -3059,7 +3511,7 @@ components:
         assignable: { type: integer, description: Accounts with runtime.assignable (overlaps the display buckets). }
         normal: { type: integer, description: Normal and not penalized. }
         penalized: { type: integer, description: Normal status with the routing weight reduced (降权中). }
-        full: { type: integer, description: 'Hard exhausted: 5-hour or week window full, or paused by the plugin.' }
+        full: { type: integer, description: 'Hard exhausted: 5-hour or week window full.' }
         stale: { type: integer }
         cooldown: { type: integer }
         error: { type: integer }

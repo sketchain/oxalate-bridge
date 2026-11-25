@@ -19,6 +19,7 @@ import { Route as AppKeysRouteImport } from "./routes/_app/keys"
 import { Route as AppMeRouteImport } from "./routes/_app/me"
 import { Route as AppPlansRouteImport } from "./routes/_app/plans"
 import { Route as AppPricingRouteImport } from "./routes/_app/pricing"
+import { Route as AppSafeguardRouteImport } from "./routes/_app/safeguard"
 import { Route as AppUsageRouteImport } from "./routes/_app/usage"
 import { Route as AppAdminIndexRouteImport } from "./routes/_app/admin/index"
 import { Route as AppAdminAnnouncementsRouteImport } from "./routes/_app/admin/announcements"
@@ -85,6 +86,11 @@ const AppPlansRoute = AppPlansRouteImport.update({
 const AppPricingRoute = AppPricingRouteImport.update({
   id: "/pricing",
   path: "/pricing",
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSafeguardRoute = AppSafeguardRouteImport.update({
+  id: "/safeguard",
+  path: "/safeguard",
   getParentRoute: () => AppRoute,
 } as any)
 const AppUsageRoute = AppUsageRouteImport.update({
@@ -190,6 +196,7 @@ export interface FileRoutesByFullPath {
   "/me": typeof AppMeRoute
   "/plans": typeof AppPlansRoute
   "/pricing": typeof AppPricingRoute
+  "/safeguard": typeof AppSafeguardRoute
   "/usage": typeof AppUsageRoute
   "/admin/announcements": typeof AppAdminAnnouncementsRoute
   "/admin/audit": typeof AppAdminAuditRoute
@@ -217,6 +224,7 @@ export interface FileRoutesByTo {
   "/me": typeof AppMeRoute
   "/plans": typeof AppPlansRoute
   "/pricing": typeof AppPricingRoute
+  "/safeguard": typeof AppSafeguardRoute
   "/usage": typeof AppUsageRoute
   "/": typeof AppIndexRoute
   "/admin/announcements": typeof AppAdminAnnouncementsRoute
@@ -248,6 +256,7 @@ export interface FileRoutesById {
   "/_app/me": typeof AppMeRoute
   "/_app/plans": typeof AppPlansRoute
   "/_app/pricing": typeof AppPricingRoute
+  "/_app/safeguard": typeof AppSafeguardRoute
   "/_app/usage": typeof AppUsageRoute
   "/_app/": typeof AppIndexRoute
   "/_app/admin/announcements": typeof AppAdminAnnouncementsRoute
@@ -280,6 +289,7 @@ export interface FileRouteTypes {
     | "/me"
     | "/plans"
     | "/pricing"
+    | "/safeguard"
     | "/usage"
     | "/admin/announcements"
     | "/admin/audit"
@@ -307,6 +317,7 @@ export interface FileRouteTypes {
     | "/me"
     | "/plans"
     | "/pricing"
+    | "/safeguard"
     | "/usage"
     | "/"
     | "/admin/announcements"
@@ -337,6 +348,7 @@ export interface FileRouteTypes {
     | "/_app/me"
     | "/_app/plans"
     | "/_app/pricing"
+    | "/_app/safeguard"
     | "/_app/usage"
     | "/_app/"
     | "/_app/admin/announcements"
@@ -434,6 +446,13 @@ declare module "@tanstack/react-router" {
       path: "/pricing"
       fullPath: "/pricing"
       preLoaderRoute: typeof AppPricingRouteImport
+      parentRoute: typeof AppRoute
+    }
+    "/_app/safeguard": {
+      id: "/_app/safeguard"
+      path: "/safeguard"
+      fullPath: "/safeguard"
+      preLoaderRoute: typeof AppSafeguardRouteImport
       parentRoute: typeof AppRoute
     }
     "/_app/usage": {
@@ -612,6 +631,7 @@ interface AppRouteChildren {
   AppMeRoute: typeof AppMeRoute
   AppPlansRoute: typeof AppPlansRoute
   AppPricingRoute: typeof AppPricingRoute
+  AppSafeguardRoute: typeof AppSafeguardRoute
   AppUsageRoute: typeof AppUsageRoute
   AppIndexRoute: typeof AppIndexRoute
   AppSettingsNotificationsRoute: typeof AppSettingsNotificationsRoute
@@ -625,6 +645,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppMeRoute: AppMeRoute,
   AppPlansRoute: AppPlansRoute,
   AppPricingRoute: AppPricingRoute,
+  AppSafeguardRoute: AppSafeguardRoute,
   AppUsageRoute: AppUsageRoute,
   AppIndexRoute: AppIndexRoute,
   AppSettingsNotificationsRoute: AppSettingsNotificationsRoute,

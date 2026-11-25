@@ -9,7 +9,7 @@
 //	T5 = safety × five_hour.total, T7 = safety × week.total (0 = unknown → capacity 0)
 //	r5 = max(0, five_hour.remaining − S5), r7 = max(0, week.remaining − S7)
 //	     (S = local upstream spend since the window's snapshot or local reset;
-//	     r = 0 while hard exhausted: paused or in cooldown for both windows,
+//	     r = 0 while hard exhausted: in cooldown for both windows,
 //	     used ≥ 100 % for that window)
 //	n(T) = 0 if next_reset ≥ now+T, else ⌈(now+T − next_reset) / period⌉
 //	       (only resets strictly before now+T count, for 5h and 7d alike)
@@ -191,7 +191,7 @@ type WindowInput struct {
 	Safety    float64
 	Observed  time.Time
 	Spend     int64 // local spend since the window's snapshot or local reset
-	Exhausted bool  // paused or in cooldown
+	Exhausted bool  // in cooldown
 	Period    time.Duration
 }
 

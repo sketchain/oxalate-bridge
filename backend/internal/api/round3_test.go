@@ -160,7 +160,6 @@ func TestDisplayPriority(t *testing.T) {
 		wantCode         string
 	}{
 		{"error beats disabled", false, true, "upstream 401: bad key", cd("network"), Reason5hExhausted, true, true, AccountDisplayStatusError, ReasonUpstreamAuth},
-		{"unsupported", true, true, `unsupported subscription "codex": only claude`, nil, "", false, false, AccountDisplayStatusError, ReasonUnsupportedSubscription},
 		{"other error", true, true, "boom", nil, "", false, false, AccountDisplayStatusError, ReasonError},
 		{"disabled beats cooldown", false, false, "", cd("upstream 429"), "", true, false, AccountDisplayStatusDisabled, ReasonDisabled},
 		{"cooldown 429", true, false, "", cd("upstream 429"), "cooldown", true, true, AccountDisplayStatusCooldown, ReasonUpstream429},
@@ -170,7 +169,6 @@ func TestDisplayPriority(t *testing.T) {
 		{"cooldown other", true, false, "", cd("odd"), "cooldown", false, false, AccountDisplayStatusCooldown, ReasonCooldown},
 		{"5h full beats stale", true, false, "", nil, Reason5hExhausted, true, true, AccountDisplayStatusFiveHourFull, Reason5hExhausted},
 		{"week full", true, false, "", nil, ReasonWeekExhausted, false, true, AccountDisplayStatusWeekFull, ReasonWeekExhausted},
-		{"paused", true, false, "", nil, ReasonPaused, false, false, AccountDisplayStatusPaused, ReasonPaused},
 		{"stale beats penalized", true, false, "", nil, "", true, true, AccountDisplayStatusStale, ReasonQuotaStale},
 		{"penalized", true, false, "", nil, "", false, true, AccountDisplayStatusPenalized, ReasonPenalized},
 		{"normal", true, false, "", nil, "", false, false, AccountDisplayStatusNormal, ""},

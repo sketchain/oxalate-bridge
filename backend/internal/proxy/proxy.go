@@ -25,8 +25,10 @@ import (
 	"github.com/sketchain/oxalate-bridge/backend/internal/billing"
 	"github.com/sketchain/oxalate-bridge/backend/internal/keymeter"
 	"github.com/sketchain/oxalate-bridge/backend/internal/metrics"
+	"github.com/sketchain/oxalate-bridge/backend/internal/relaymsg"
 	"github.com/sketchain/oxalate-bridge/backend/internal/router"
 	"github.com/sketchain/oxalate-bridge/backend/internal/rstate"
+	"github.com/sketchain/oxalate-bridge/backend/internal/safeguard"
 	"github.com/sketchain/oxalate-bridge/backend/internal/secret"
 	"github.com/sketchain/oxalate-bridge/backend/internal/sessionid"
 	"github.com/sketchain/oxalate-bridge/backend/internal/settings"
@@ -65,6 +67,9 @@ type Proxy struct {
 	Meter *keymeter.Meter
 	// Status renders GET /v1/bridge/status (implemented by the panel API).
 	Status func(context.Context, authcache.Info) (any, error)
+	// Safeguard locks users out after their allowance of refusals, refuses
+	// blocklisted prompts and records refusals.
+	Safeguard *safeguard.Service
 }
 
 // NewTransport is the pooled transport used for CPA. There is no overall
@@ -116,7 +121,7 @@ func (p *Proxy) Routes(handle func(method, pattern string, h http.HandlerFunc)) 
 
 // ServeUnknown answers paths under /v1 that the relay does not serve.
 func (p *Proxy) ServeUnknown(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotFound, "not_found_error", "only the Claude Messages API is served (/v1/messages, /v1/messages/count_tokens, /v1/models, /v1/bridge/status)")
+	p.writeMsg(w, http.StatusNotFound, "not_found_error", relaymsg.NotFound, nil)
 }
 
 // apiKey extracts the client's API key.
@@ -135,21 +140,21 @@ func apiKey(r *http.Request) string {
 func (p *Proxy) authenticate(w http.ResponseWriter, r *http.Request) (authcache.Info, bool) {
 	key := apiKey(r)
 	if key == "" {
-		writeError(w, http.StatusUnauthorized, "authentication_error", "missing API key")
+		p.writeMsg(w, http.StatusUnauthorized, "authentication_error", relaymsg.MissingKey, nil)
 		return authcache.Info{}, false
 	}
 	info, err := p.Auth.Lookup(r.Context(), key)
 	if err != nil {
 		p.Log.Error("auth lookup", "err", err)
-		writeError(w, http.StatusServiceUnavailable, "api_error", "authentication temporarily unavailable")
+		p.writeMsg(w, http.StatusServiceUnavailable, "api_error", relaymsg.AuthUnavailable, nil)
 		return authcache.Info{}, false
 	}
 	if !info.Found {
-		writeError(w, http.StatusUnauthorized, "authentication_error", "invalid API key")
+		p.writeMsg(w, http.StatusUnauthorized, "authentication_error", relaymsg.InvalidKey, nil)
 		return authcache.Info{}, false
 	}
 	if !info.Usable() {
-		writeError(w, http.StatusForbidden, "permission_error", "API key or user is disabled")
+		p.writeMsg(w, http.StatusForbidden, "permission_error", relaymsg.KeyDisabled, nil)
 		return authcache.Info{}, false
 	}
 	return info, true
@@ -235,6 +240,8 @@ type call struct {
 	// balanceRej is an exhausted quota or window of a balance-scope key:
 	// standard and force are refused, the plan tier is still tried.
 	balanceRej *keymeter.Rejection
+	// refusal is a safeguard refusal seen in the response.
+	refusal *safeguard.Refusal
 }
 
 // admission is an admitted tier with its account candidates.
@@ -262,7 +269,7 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
 	if err != nil {
-		writeError(w, http.StatusRequestEntityTooLarge, "invalid_request_error", "request body too large or unreadable")
+		p.writeMsg(w, http.StatusRequestEntityTooLarge, "invalid_request_error", relaymsg.BodyTooLarge, nil)
 		return
 	}
 	requestID, _ := uuid.NewV7()
@@ -275,6 +282,9 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Relay-Request-Id", requestID.String())
 
 	ctx := r.Context()
+	if !c.checkSafeguard(ctx, w) {
+		return
+	}
 	if rej := keymeter.CheckStatic(auth, p.ClientIP(r), c.ri.normModel, start); rej != nil {
 		c.rejectKey(w, rej)
 		return
@@ -283,7 +293,7 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 		rej, err := p.Meter.CheckLimits(ctx, auth, start)
 		if err != nil {
 			p.Log.Error("key limits", "err", err)
-			writeError(w, http.StatusServiceUnavailable, "api_error", "key limit state unavailable")
+			p.writeMsg(w, http.StatusServiceUnavailable, "api_error", relaymsg.KeyLimitsUnavailable, nil)
 			return
 		}
 		if rej.TierOnly() {
@@ -307,7 +317,7 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 	}
 	adm, tier, rejections := RunTiers(ctx, auth.Tiers, func(ctx context.Context, tier string) (*admission, *router.Rejection) {
 		if c.keyRej != nil {
-			return nil, &router.Rejection{Tier: tier, Code: c.keyRej.Code, Message: c.keyRej.Message}
+			return nil, &router.Rejection{Tier: tier, Code: c.keyRej.Code, MsgID: c.keyRej.MsgID, MsgParams: c.keyRej.MsgParams}
 		}
 		if c.balanceRej != nil && c.auth.Counts(tier) {
 			return nil, c.balanceTierRejection(tier)
@@ -322,7 +332,9 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 		for _, rej := range rejections {
 			metrics.Rejections.WithLabelValues(rej.Tier, rej.Code).Inc()
 		}
-		msg := RejectionMessage(rejections)
+		loc := c.set.RelayErrorLocale
+		LocalizeRejections(loc, rejections)
+		msg := RejectionMessage(loc, rejections)
 		writeErrorWith(w, http.StatusTooManyRequests, "rate_limit_error", msg, map[string]any{"rejections": rejections})
 		c.settleRejected(http.StatusTooManyRequests, "tier_rejected")
 		return
@@ -331,18 +343,63 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 	c.serve(w, adm)
 }
 
+// checkSafeguard refuses, before any tier is tried, every request of a user
+// whose safeguard allowance is used up and every Messages request whose
+// prompt is on the blocklist. Neither reaches CPA or uses the allowance.
+func (c *call) checkSafeguard(ctx context.Context, w http.ResponseWriter) bool {
+	p := c.p
+	if p.Safeguard == nil {
+		return true
+	}
+	if safeguard.Locked(c.auth.SafeguardUsed, c.auth.SafeguardAllowance, c.set.SafeguardDefaultAllowance) {
+		metrics.Rejections.WithLabelValues("", "safeguard_locked").Inc()
+		p.writeMsgCode(w, http.StatusForbidden, "permission_error", "safeguard_locked", relaymsg.SafeguardLocked, nil, nil)
+		c.settleRejected(http.StatusForbidden, "safeguard_locked")
+		return false
+	}
+	if c.ep.path != "/v1/messages" {
+		return true
+	}
+	hash := safeguard.Hash(safeguard.Prompt(c.body), c.set.SafeguardHashMinChars)
+	blocked, err := p.Safeguard.Blocked(ctx, hash)
+	if err != nil {
+		p.Log.Error("safeguard blocklist", "err", err)
+		p.writeMsg(w, http.StatusServiceUnavailable, "api_error", relaymsg.SafeguardUnavailable, nil)
+		return false
+	}
+	if !blocked {
+		return true
+	}
+	metrics.Rejections.WithLabelValues("", "safeguard_prompt_blocked").Inc()
+	if err := p.Safeguard.RecordHit(context.WithoutCancel(ctx), c.requestID, c.auth.UserID, c.auth.KeyID, hash, c.start); err != nil {
+		p.Log.Error("record blocklist hit", "err", err)
+	}
+	p.writeMsgCode(w, http.StatusBadRequest, "invalid_request_error", "safeguard_prompt_blocked", relaymsg.SafeguardPromptBlocks, nil, nil)
+	c.settleRejected(http.StatusBadRequest, "safeguard_prompt_blocked")
+	return false
+}
+
+// recordRefusal stores a refusal the response carried (before the client
+// sees the refusal, so an immediate retry already meets the lock or the
+// blocklist).
+func (c *call) recordRefusal(account *router.Account, status int, ref safeguard.Refusal) {
+	if c.p.Safeguard == nil {
+		return
+	}
+	accID := account.ID
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err := c.p.Safeguard.Record(ctx, safeguard.Trigger{RequestID: c.requestID, UserID: c.auth.UserID, KeyID: c.auth.KeyID,
+		AccountID: &accID, Model: c.ri.normModel, Refusal: ref, StatusCode: status, Stream: c.ri.stream, Body: c.body,
+		At: c.start}); err != nil {
+		c.p.Log.Error("record safeguard refusal", "request_id", c.requestID, "err", err)
+	}
+}
+
 // balanceTierRejection renders c.balanceRej as the rejection of one tier.
 func (c *call) balanceTierRejection(tier string) *router.Rejection {
 	r := c.balanceRej
-	msg := "key 余额口径的总额度已用完（Plan 档仍可用）"
-	if r.Window != "" {
-		msg = "key 余额口径的 " + r.Window + " 窗口限额已用完"
-		if r.RecoversAt != nil {
-			msg += "，预计 " + r.RecoversAt.UTC().Format(time.RFC3339) + " 恢复"
-		}
-		msg += "（Plan 档仍可用）"
-	}
-	return &router.Rejection{Tier: tier, Code: r.Code, Message: msg, Window: r.Window, RecoversAt: r.RecoversAt}
+	return &router.Rejection{Tier: tier, Code: r.Code, MsgID: r.MsgID, MsgParams: r.MsgParams, Window: r.Window, RecoversAt: r.RecoversAt}
 }
 
 // rejectKey answers a key-level refusal (never falls through to a tier).
@@ -351,7 +408,7 @@ func (c *call) rejectKey(w http.ResponseWriter, rej *keymeter.Rejection) {
 	if c.p.OnKeyExhausted != nil && (rej.Code == keymeter.CodeQuotaExhausted || rej.Code == keymeter.CodeWindowExhausted) {
 		go c.p.OnKeyExhausted(context.Background(), c.auth.KeyID, rej.Code, rej.Window, rej.RecoversAt)
 	}
-	writeErrorWith(w, rej.Status, rej.Type, rej.Message, rej.Extra())
+	writeErrorWith(w, rej.Status, rej.Type, rej.Text(c.set.RelayErrorLocale), rej.Extra())
 	c.settleRejected(rej.Status, rej.Code)
 }
 
@@ -372,22 +429,22 @@ func (c *call) admitLimits(ctx context.Context, w http.ResponseWriter) bool {
 	}
 	if a.UserMaxConc == 0 {
 		// 0 means the user may not make requests at all.
-		writeError(w, http.StatusTooManyRequests, "rate_limit_error", "用户并发上限为 0")
+		c.p.writeMsg(w, http.StatusTooManyRequests, "rate_limit_error", relaymsg.UserConcurrencyZero, nil)
 		c.settleRejected(http.StatusTooManyRequests, "rate_limited")
 		return false
 	}
 	ok, idx, err := c.p.St.Admit(ctx, c.requestID.String(), conc, rpm, leaseTTL, c.p.now())
 	if err != nil {
 		c.p.Log.Error("admit limits", "err", err)
-		writeError(w, http.StatusServiceUnavailable, "api_error", "rate limiter unavailable")
+		c.p.writeMsg(w, http.StatusServiceUnavailable, "api_error", relaymsg.RateLimiterUnavailable, nil)
 		return false
 	}
 	if !ok {
-		msg := "并发数已达上限"
+		id := relaymsg.ConcurrencyLimited
 		if idx >= len(conc) {
-			msg = "每分钟请求数已达上限"
+			id = relaymsg.RPMLimited
 		}
-		writeError(w, http.StatusTooManyRequests, "rate_limit_error", msg)
+		c.p.writeMsg(w, http.StatusTooManyRequests, "rate_limit_error", id, nil)
 		c.settleRejected(http.StatusTooManyRequests, "rate_limited")
 		return false
 	}
@@ -596,18 +653,18 @@ func (c *call) admitTier(ctx context.Context, tier string) (*admission, *router.
 			return nil, rej
 		}
 		if !c.acquireAccount(ctx, t.Account) {
-			return nil, &router.Rejection{Tier: tier, Code: router.CodeAccountBusy, Message: "plan 绑定账号并发已满"}
+			return nil, &router.Rejection{Tier: tier, Code: router.CodeAccountBusy, MsgID: relaymsg.PlanAccountBusy}
 		}
 		if !c.ep.count {
 			ok, err := c.hold(ctx, tier, t.Wallet, tierMult, modelMult, c.periodBase(t))
 			if err != nil {
 				c.dropLease(c.p.St.ConcKey("a", t.Account.ID))
 				c.p.Log.Error("plan hold", "err", err)
-				return nil, &router.Rejection{Tier: tier, Code: router.CodeStateUnavailable, Message: "额度状态暂不可用"}
+				return nil, &router.Rejection{Tier: tier, Code: router.CodeStateUnavailable, MsgID: relaymsg.QuotaStateDown}
 			}
 			if !ok {
 				c.dropLease(c.p.St.ConcKey("a", t.Account.ID))
-				return nil, &router.Rejection{Tier: tier, Code: router.CodePlanExhausted, Message: "plan 本期额度已用完"}
+				return nil, &router.Rejection{Tier: tier, Code: router.CodePlanExhausted, MsgID: relaymsg.PlanExhausted}
 			}
 		}
 		return &admission{tier: tier, plan: t, account: t.Account, wallet: t.Wallet, tierMult: tierMult, modelMult: modelMult}, nil
@@ -617,23 +674,23 @@ func (c *call) admitTier(ctx context.Context, tier string) (*admission, *router.
 			avail, err := c.walletAvailable(ctx, wallet, c.userBase)
 			if err != nil {
 				c.p.Log.Error("balance read", "err", err)
-				return nil, &router.Rejection{Tier: tier, Code: router.CodeStateUnavailable, Message: "余额状态暂不可用"}
+				return nil, &router.Rejection{Tier: tier, Code: router.CodeStateUnavailable, MsgID: relaymsg.BalanceStateDown}
 			}
 			if avail <= 0 {
-				return nil, &router.Rejection{Tier: tier, Code: router.CodeInsufficientFunds, Message: "余额不足"}
+				return nil, &router.Rejection{Tier: tier, Code: router.CodeInsufficientFunds, MsgID: relaymsg.InsufficientFunds}
 			}
 		}
 		cands, err := c.p.Router.Candidates(ctx, tier, c.ri.normModel, now, nil)
 		if err != nil {
 			c.p.Log.Error("candidates", "err", err)
-			return nil, &router.Rejection{Tier: tier, Code: router.CodeStateUnavailable, Message: "路由状态暂不可用"}
+			return nil, &router.Rejection{Tier: tier, Code: router.CodeStateUnavailable, MsgID: relaymsg.RouteStateDown}
 		}
 		acc, rest, busy := c.pickAndLease(ctx, cands)
 		if acc == nil {
 			if busy {
-				return nil, &router.Rejection{Tier: tier, Code: router.CodeAccountBusy, Message: "可用账号并发已满"}
+				return nil, &router.Rejection{Tier: tier, Code: router.CodeAccountBusy, MsgID: relaymsg.AccountBusy}
 			}
-			return nil, &router.Rejection{Tier: tier, Code: router.CodeNoAccount, Message: "无可用账号"}
+			return nil, &router.Rejection{Tier: tier, Code: router.CodeNoAccount, MsgID: relaymsg.NoAccount}
 		}
 		if !c.ep.count {
 			ok, err := c.hold(ctx, tier, wallet, tierMult, modelMult, c.userBase)
@@ -641,17 +698,17 @@ func (c *call) admitTier(ctx context.Context, tier string) (*admission, *router.
 				c.dropLease(c.p.St.ConcKey("a", acc.ID))
 				if err != nil {
 					c.p.Log.Error("balance hold", "err", err)
-					return nil, &router.Rejection{Tier: tier, Code: router.CodeStateUnavailable, Message: "余额状态暂不可用"}
+					return nil, &router.Rejection{Tier: tier, Code: router.CodeStateUnavailable, MsgID: relaymsg.BalanceStateDown}
 				}
 				if c.balanceRej != nil {
 					return nil, c.balanceTierRejection(tier)
 				}
-				return nil, &router.Rejection{Tier: tier, Code: router.CodeInsufficientFunds, Message: "余额不足"}
+				return nil, &router.Rejection{Tier: tier, Code: router.CodeInsufficientFunds, MsgID: relaymsg.InsufficientFunds}
 			}
 		}
 		return &admission{tier: tier, account: acc, candidates: rest, wallet: wallet, tierMult: tierMult, modelMult: modelMult}, nil
 	}
-	return nil, &router.Rejection{Tier: tier, Code: router.CodeUnsupportedTier, Message: "未知档位"}
+	return nil, &router.Rejection{Tier: tier, Code: router.CodeUnsupportedTier, MsgID: relaymsg.UnknownTier}
 }
 
 // pickAndLease picks a candidate (sticky first) whose account lease can be
@@ -728,34 +785,6 @@ func responseHeaderDrop(name string) bool {
 		return true
 	}
 	return false
-}
-
-var refusalRe = regexp.MustCompile(`^claude refusal(?:\s*\(([^)]*)\))?\s*:?\s*(.*)$`)
-
-// refusal detects CPA's safeguard error text in a 400 body.
-func refusal(body []byte) (*settle.Safeguard, bool) {
-	candidates := []string{}
-	if gjson.ValidBytes(body) {
-		for _, path := range []string{"error.message", "message", "error", "detail"} {
-			if r := gjson.GetBytes(body, path); r.Type == gjson.String {
-				candidates = append(candidates, r.String())
-			}
-		}
-	}
-	candidates = append(candidates, string(body))
-	for _, text := range candidates {
-		text = strings.TrimSpace(text)
-		if !strings.HasPrefix(text, "claude refusal") {
-			continue
-		}
-		m := refusalRe.FindStringSubmatch(text)
-		sg := &settle.Safeguard{}
-		if m != nil {
-			sg.Category, sg.Reason = strings.TrimSpace(m[1]), strings.TrimSpace(m[2])
-		}
-		return sg, true
-	}
-	return nil, false
 }
 
 // idleReader cancels the upstream request when no byte arrives for d.
@@ -915,10 +944,11 @@ func (c *call) serve(w http.ResponseWriter, adm *admission) {
 			break
 		}
 		if res.err == nil && res.resp.StatusCode == http.StatusBadRequest {
-			if sg, ok := refusal(res.errBody); ok {
+			if ref, ok := safeguard.DetectError(res.errBody); ok {
 				metrics.UpstreamErrors.WithLabelValues("refusal").Inc()
+				c.recordRefusal(account, http.StatusBadRequest, ref)
 				c.writeUpstreamError(w, res)
-				c.settle(adm, account, http.StatusBadRequest, "safeguard_refusal", usage.Usage{}, retries, res.firstMs, sg)
+				c.settle(adm, account, http.StatusBadRequest, "safeguard_refusal", usage.Usage{}, retries, res.firstMs)
 				return
 			}
 		}
@@ -940,19 +970,27 @@ func (c *call) serve(w http.ResponseWriter, adm *admission) {
 		if c.r.Context().Err() != nil {
 			status, typ = 499, "client_closed"
 		} else {
-			writeError(w, http.StatusBadGateway, "api_error", "upstream unreachable")
+			c.p.writeMsg(w, http.StatusBadGateway, "api_error", relaymsg.UpstreamUnreachable, nil)
 		}
-		c.settle(adm, account, status, typ, usage.Usage{}, retries, 0, nil)
+		c.settle(adm, account, status, typ, usage.Usage{}, retries, 0)
 		return
 	}
 	if res.resp.StatusCode >= 400 {
 		c.writeUpstreamError(w, res)
-		c.settle(adm, account, res.resp.StatusCode, "upstream_"+strconv.Itoa(res.resp.StatusCode), usage.Usage{}, retries, res.firstMs, nil)
+		c.settle(adm, account, res.resp.StatusCode, "upstream_"+strconv.Itoa(res.resp.StatusCode), usage.Usage{}, retries, res.firstMs)
 		return
 	}
 	metrics.FirstByte.WithLabelValues(adm.tier).Observe(float64(res.firstMs) / 1000)
-	u, status, errType := c.stream(w, res)
-	c.settle(adm, account, status, errType, u, retries, res.firstMs, nil)
+	u, status, errType := c.stream(w, res, account)
+	if c.refusal != nil {
+		// A refusal after the response started: the usage reported so far
+		// is charged like any request, and the request counts as a trigger.
+		metrics.UpstreamErrors.WithLabelValues("refusal").Inc()
+		if errType == "" {
+			errType = "safeguard_refusal"
+		}
+	}
+	c.settle(adm, account, status, errType, u, retries, res.firstMs)
 }
 
 func (c *call) nextAccount(adm *admission, failed *router.Account, cands *[]router.Candidate) *router.Account {
@@ -981,7 +1019,7 @@ func (c *call) writeUpstreamError(w http.ResponseWriter, res attemptResult) {
 }
 
 // stream copies the response to the client while reading usage.
-func (c *call) stream(w http.ResponseWriter, res attemptResult) (usage.Usage, int, string) {
+func (c *call) stream(w http.ResponseWriter, res attemptResult, account *router.Account) (usage.Usage, int, string) {
 	resp := res.resp
 	defer func() {
 		resp.Body.Close()
@@ -1004,6 +1042,10 @@ func (c *call) stream(w http.ResponseWriter, res attemptResult) (usage.Usage, in
 	var u usage.Usage
 	if !isSSE {
 		buf, err := io.ReadAll(resp.Body)
+		if ref, ok := safeguard.DetectResponse(buf); ok && !c.ep.count {
+			c.refusal = &ref
+			c.recordRefusal(account, resp.StatusCode, ref)
+		}
 		if len(buf) > 0 {
 			if _, werr := w.Write(buf); werr != nil {
 				return usage.FromBody(buf), 499, "client_closed"
@@ -1029,15 +1071,27 @@ func (c *call) stream(w http.ResponseWriter, res attemptResult) (usage.Usage, in
 			_ = rc.Flush()
 		}
 	}
-	sc := &usage.SSEScanner{OnEvent: u.Event}
+	sc := &usage.SSEScanner{OnEvent: func(event string, data []byte) {
+		u.Event(event, data)
+		if c.refusal == nil {
+			if ref, ok := safeguard.DetectEvent(event, data); ok {
+				c.refusal = &ref
+			}
+		}
+	}}
+	recorded := false
 	buf := make([]byte, 32<<10)
 	var readErr error
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
 			chunk := buf[:n]
-			write(chunk)
 			sc.Feed(chunk)
+			if c.refusal != nil && !recorded {
+				recorded = true
+				c.recordRefusal(account, resp.StatusCode, *c.refusal)
+			}
+			write(chunk)
 			if writeErr != nil {
 				break
 			}
@@ -1050,6 +1104,9 @@ func (c *call) stream(w http.ResponseWriter, res attemptResult) (usage.Usage, in
 		}
 	}
 	sc.Flush()
+	if c.refusal != nil && !recorded {
+		c.recordRefusal(account, resp.StatusCode, *c.refusal)
+	}
 	switch {
 	case writeErr != nil || c.r.Context().Err() != nil:
 		return u, 499, "client_closed"
@@ -1060,13 +1117,12 @@ func (c *call) stream(w http.ResponseWriter, res attemptResult) (usage.Usage, in
 }
 
 // settle computes the charge and hands the record to Redis.
-func (c *call) settle(adm *admission, account *router.Account, status int, errType string, u usage.Usage, retries, firstMs int, sg *settle.Safeguard) {
+func (c *call) settle(adm *admission, account *router.Account, status int, errType string, u usage.Usage, retries, firstMs int) {
 	now := c.p.now()
 	rec := c.baseRecord(now, status, errType)
 	rec.Tier = adm.tier
 	rec.TierMult, rec.ModelMult = adm.tierMult, adm.modelMult
 	rec.Retries, rec.FirstByteMs = retries, firstMs
-	rec.Safeguard = sg
 	accID := account.ID
 	rec.AccountID = &accID
 	if adm.plan != nil {
@@ -1145,6 +1201,21 @@ func statusClass(status int) string {
 		return "4xx"
 	}
 	return "2xx"
+}
+
+// writeMsg writes an Anthropic-shaped error whose message is relaymsg id in
+// the configured locale.
+func (p *Proxy) writeMsg(w http.ResponseWriter, status int, typ, id string, params map[string]string) {
+	writeError(w, status, typ, relaymsg.Text(p.Settings.Get().RelayErrorLocale, id, params))
+}
+
+// writeMsgCode is writeMsg with error.code (and extra members).
+func (p *Proxy) writeMsgCode(w http.ResponseWriter, status int, typ, code, id string, params map[string]string, extra map[string]any) {
+	e := map[string]any{"code": code}
+	for k, v := range extra {
+		e[k] = v
+	}
+	writeErrorWith(w, status, typ, relaymsg.Text(p.Settings.Get().RelayErrorLocale, id, params), e)
 }
 
 // writeError writes an Anthropic-shaped error.

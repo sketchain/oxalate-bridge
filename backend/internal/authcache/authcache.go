@@ -48,6 +48,10 @@ type Info struct {
 	ModelAllowlist  []string   `json:"model_allowlist,omitempty"`
 	IPAllowlist     []string   `json:"ip_allowlist,omitempty"`
 	AllowOwnerQuery bool       `json:"allow_owner_query,omitempty"`
+
+	// Safeguard counters of the user (allowance nil = the default setting).
+	SafeguardAllowance *int32 `json:"safeguard_allowance,omitempty"`
+	SafeguardUsed      int32  `json:"safeguard_used,omitempty"`
 }
 
 // Expired reports whether the key has expired at now.
@@ -195,7 +199,7 @@ func (c *Cache) loadPG(ctx context.Context, h string) (Info, error) {
 		KeyEnabled: row.KeyEnabled, UserActive: row.UserStatus == "active",
 		QuotaLimit: row.QuotaLimitMicro, QuotaScope: row.QuotaScope, Limit5h: row.Limit5hMicro, Limit1d: row.Limit1dMicro,
 		Limit7d: row.Limit7dMicro, ExpiresAt: row.ExpiresAt, ModelAllowlist: row.ModelAllowlist, IPAllowlist: row.IpAllowlist,
-		AllowOwnerQuery: row.AllowOwnerQuery}, nil
+		AllowOwnerQuery: row.AllowOwnerQuery, SafeguardAllowance: row.SafeguardAllowance, SafeguardUsed: row.SafeguardUsed}, nil
 }
 
 // DropL1 removes key hashes from this replica's L1 (pub/sub handler).

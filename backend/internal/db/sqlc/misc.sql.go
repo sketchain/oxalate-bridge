@@ -172,39 +172,6 @@ func (q *Queries) InsertReconcileRun(ctx context.Context, arg InsertReconcileRun
 	return err
 }
 
-const insertSafeguardEvent = `-- name: InsertSafeguardEvent :exec
-INSERT INTO safeguard_events (id, request_id, user_id, key_id, account_id, model, category, reason, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-ON CONFLICT (request_id) DO NOTHING
-`
-
-type InsertSafeguardEventParams struct {
-	ID        uuid.UUID
-	RequestID uuid.UUID
-	UserID    *uuid.UUID
-	KeyID     *uuid.UUID
-	AccountID *uuid.UUID
-	Model     string
-	Category  string
-	Reason    string
-	CreatedAt time.Time
-}
-
-func (q *Queries) InsertSafeguardEvent(ctx context.Context, arg InsertSafeguardEventParams) error {
-	_, err := q.db.Exec(ctx, insertSafeguardEvent,
-		arg.ID,
-		arg.RequestID,
-		arg.UserID,
-		arg.KeyID,
-		arg.AccountID,
-		arg.Model,
-		arg.Category,
-		arg.Reason,
-		arg.CreatedAt,
-	)
-	return err
-}
-
 const insertSettingIfAbsent = `-- name: InsertSettingIfAbsent :exec
 INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING
 `
@@ -281,56 +248,6 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 			&i.CreatedAt,
 			&i.TokenID,
 			&i.TokenName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listSafeguardEvents = `-- name: ListSafeguardEvents :many
-SELECT id, request_id, user_id, key_id, account_id, model, category, reason, created_at FROM safeguard_events
-WHERE ($2::uuid IS NULL OR user_id = $2::uuid)
-  AND ($3::timestamptz IS NULL OR (created_at, id) < ($3::timestamptz, $4::uuid))
-ORDER BY created_at DESC, id DESC
-LIMIT $1
-`
-
-type ListSafeguardEventsParams struct {
-	Limit    int32
-	UserID   *uuid.UUID
-	CursorAt *time.Time
-	CursorID *uuid.UUID
-}
-
-func (q *Queries) ListSafeguardEvents(ctx context.Context, arg ListSafeguardEventsParams) ([]SafeguardEvent, error) {
-	rows, err := q.db.Query(ctx, listSafeguardEvents,
-		arg.Limit,
-		arg.UserID,
-		arg.CursorAt,
-		arg.CursorID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []SafeguardEvent{}
-	for rows.Next() {
-		var i SafeguardEvent
-		if err := rows.Scan(
-			&i.ID,
-			&i.RequestID,
-			&i.UserID,
-			&i.KeyID,
-			&i.AccountID,
-			&i.Model,
-			&i.Category,
-			&i.Reason,
-			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

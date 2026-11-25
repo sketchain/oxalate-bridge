@@ -24,7 +24,7 @@ func TestRejectionsByScope(t *testing.T) {
 		if c.rej.Code != c.code || c.rej.TierOnly() != c.tierOnly || c.rej.Window != c.window || c.rej.Status != 429 || c.rej.Type != "rate_limit_error" {
 			t.Errorf("case %d: %+v", i, c.rej)
 		}
-		if c.tierOnly != strings.Contains(c.rej.Message, "plan tier is still available") {
+		if c.tierOnly != strings.Contains(c.rej.Text("en"), "plan tier is still available") || c.tierOnly != strings.Contains(c.rej.Text("zh-CN"), "Plan 档仍可用") {
 			t.Errorf("case %d: message %q", i, c.rej.Message)
 		}
 	}

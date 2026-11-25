@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -26,7 +27,7 @@ func errorCode(body map[string]any) string {
 	return ""
 }
 
-func TestClaudeOnlyAccountsAndPlans(t *testing.T) {
+func TestClaudeOnlyPlansAndQuotaAccounts(t *testing.T) {
 	e := setup(t, envOpts{balanceMicro: 1_000_000, noPlan: true})
 	ctx := context.Background()
 
@@ -36,43 +37,38 @@ func TestClaudeOnlyAccountsAndPlans(t *testing.T) {
 		"weekly_quota_micro": 1, "price_micro": 0, "duration_value": 1, "duration_unit": "month"}, &body); code != 400 || errorCode(body) != "unsupported_subscription" {
 		t.Fatalf("chatgpt plan: %d %v", code, body)
 	}
-	// Accounts: an instance reporting another subscription is refused.
-	gpt := fakecpa.New("gpt")
-	t.Cleanup(gpt.Close)
-	gpt.Set(func(c *fakecpa.CPA) { c.Sub = "chatgpt" })
+	// Accounts: a cpa-quota instance that tracks no account (auth_indexes
+	// unset and nothing seen yet) cannot be imported.
+	empty := fakecpa.New("empty")
+	t.Cleanup(empty.Close)
+	empty.Set(func(c *fakecpa.CPA) { c.NoAccounts = true })
 	body = nil
-	if code := e.admin.do("POST", "/admin/accounts", map[string]any{"name": "G", "base_url": gpt.URL(), "cpa_key": gpt.Key,
-		"quota_token": gpt.QuotaToken}, &body); code != 422 || errorCode(body) != "unsupported_subscription" {
-		t.Fatalf("chatgpt account: %d %v", code, body)
+	if code := e.admin.do("POST", "/admin/accounts", map[string]any{"name": "E", "base_url": empty.URL(), "cpa_key": empty.Key,
+		"quota_token": empty.QuotaToken}, &body); code != 422 || errorCode(body) != "upstream_validation_failed" ||
+		!strings.Contains(fmt.Sprint(body), "quota response lists no account") {
+		t.Fatalf("empty instance: %d %v", code, body)
 	}
 	if n := e.scalar("SELECT count(*) FROM accounts"); n != 1 {
 		t.Fatalf("accounts %d", n)
 	}
-	// The schema enforces it as well.
-	if _, err := e.rep.App.Pool.Exec(ctx, "UPDATE accounts SET subscription = 'chatgpt'"); err == nil || !strings.Contains(err.Error(), "accounts_subscription_claude") {
-		t.Fatalf("check constraint not enforced: %v", err)
+	// The subscription and provider columns are gone (cpa-quota v0.1.0
+	// does not report them).
+	if n := e.scalar("SELECT count(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'accounts' AND column_name IN ('subscription','provider')"); n != 0 {
+		t.Fatalf("stale columns %d", n)
 	}
 
-	// An existing account whose instance switches subscription: edits and
-	// tests fail, and the poller takes it out of routing.
-	e.cpaA.Set(func(c *fakecpa.CPA) { c.Sub = "chatgpt" })
+	// An existing account whose instance stops listing it: edits and tests
+	// fail with the same reason.
+	e.cpaA.Set(func(c *fakecpa.CPA) { c.NoAccounts = true })
 	body = nil
-	if code := e.admin.do("PATCH", "/admin/accounts/"+e.accA, map[string]any{"note": "x"}, &body); code != 422 || errorCode(body) != "unsupported_subscription" {
+	if code := e.admin.do("PATCH", "/admin/accounts/"+e.accA, map[string]any{"note": "x"}, &body); code != 422 || errorCode(body) != "upstream_validation_failed" {
 		t.Fatalf("edit: %d %v", code, body)
 	}
 	res := e.admin.must("POST", "/admin/accounts/"+e.accA+"/test", nil, 200)
-	if res["ok"] != false || res["quota_ok"] != false || !strings.Contains(res["quota_error"].(string), "unsupported subscription") {
+	if res["ok"] != false || res["quota_ok"] != false || !strings.Contains(res["quota_error"].(string), "lists no account") {
 		t.Fatalf("test result %v", res)
 	}
-	testutil.Must(t, e.rep.App.Jobs.PollQuotas(ctx))
-	if got := e.scalar("SELECT count(*) FROM accounts WHERE error_status AND subscription = 'claude'"); got != 1 {
-		t.Fatal("account not marked error after switching subscription")
-	}
-	testutil.Must(t, e.rep.App.Cat.ReloadDB(ctx))
-	resp, out := e.relay("/v1/messages", []byte(`{"model":"claude-opus-4-8","max_tokens":8,"messages":[]}`), nil)
-	if resp.StatusCode != 429 || !bytes.Contains(out, []byte("no_available_account")) {
-		t.Fatalf("relay to errored account: %d %s", resp.StatusCode, out)
-	}
+	_ = ctx
 }
 
 func TestModelsListIsUnionOfEnabledAccounts(t *testing.T) {
@@ -287,10 +283,10 @@ func TestCPAQuotaEndpoints(t *testing.T) {
 		t.Fatalf("estimate before data: %d %v", code, body)
 	}
 	detail := `{"auth_index":"acct-a","k":6.0,"five_hour":{"used_percent":39,"total_usd":8.5},"nested":{"z":1,"a":[1,2]}}`
-	execArgs(`INSERT INTO estimates (instance, auth_index, provider, subscription, tier, state, segment_window, basis, k, k_source,
+	execArgs(`INSERT INTO estimates (instance, auth_index, tier, state, basis, k, k_source,
 		totals_from, safety_factor, used_5h, reset_5h, used_7d, five_hour_total_usd, weekly_total_usd, remaining_five_hour_usd,
 		remaining_week_usd, clean_blocks, total_blocks, segments, excluded_segments, ratio, observed_at, estimated_at, detail)
-		VALUES ('a', 'acct-a', 'claude', 'claude', 'max5x', 'estimated', '5h', 'raw', NULL, 'default', 'tier', 0.9, 39, now(), 39.83,
+		VALUES ('a', 'acct-a', 'max5x', 'estimated', 'raw', NULL, 'default', 'tier', 0.9, 39, now(), 39.83,
 		8.5, 51, 4.6665, 27.6165, 6, 6, 228, 0, 11.76, now(), now(), $1)`, detail)
 	est := e.admin.must("GET", base+"/estimate", nil, 200)
 	gotDetail, _ := json.Marshal(est["detail"])
@@ -323,14 +319,14 @@ func TestCPAQuotaEndpoints(t *testing.T) {
 	// Quota series: 2500 points one minute apart -> downsampled to <= 2000,
 	// other limits and window lengths ignored.
 	start := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Minute)
-	execArgs(`INSERT INTO quota_reports (instance, auth_index, provider, request_id, at_ns)
-		SELECT 'a', 'acct-a', 'claude', 'r' || i, $1::bigint + i * 60000000000 FROM generate_series(0, 2499) AS i`, start.UnixNano())
-	execArgs(`INSERT INTO quota_report_windows (report_id, instance, auth_index, provider, limit_key, seconds, at_ns, used_percent, reset_ns)
-		SELECT id, instance, auth_index, provider, 'unified', 18000, at_ns, (id % 100)::double precision, at_ns + 3600000000000 FROM quota_reports`)
-	execArgs(`INSERT INTO quota_report_windows (report_id, instance, auth_index, provider, limit_key, seconds, at_ns, used_percent, reset_ns)
-		SELECT id, instance, auth_index, provider, 'unified', 604800, at_ns, 50, 0 FROM quota_reports WHERE request_id IN ('r10', 'r20')`)
-	execArgs(`INSERT INTO quota_report_windows (report_id, instance, auth_index, provider, limit_key, seconds, at_ns, used_percent, reset_ns)
-		SELECT id, instance, auth_index, provider, 'other', 18000, at_ns, 1, 0 FROM quota_reports WHERE request_id = 'r30'`)
+	execArgs(`INSERT INTO quota_reports (instance, auth_index, request_id, at_ns)
+		SELECT 'a', 'acct-a', 'r' || i, $1::bigint + i * 60000000000 FROM generate_series(0, 2499) AS i`, start.UnixNano())
+	execArgs(`INSERT INTO quota_report_windows (report_id, instance, auth_index, limit_key, seconds, at_ns, used_percent, reset_ns)
+		SELECT id, instance, auth_index, 'unified', 18000, at_ns, (id % 100)::double precision, at_ns + 3600000000000 FROM quota_reports`)
+	execArgs(`INSERT INTO quota_report_windows (report_id, instance, auth_index, limit_key, seconds, at_ns, used_percent, reset_ns)
+		SELECT id, instance, auth_index, 'unified', 604800, at_ns, 50, 0 FROM quota_reports WHERE request_id IN ('r10', 'r20')`)
+	execArgs(`INSERT INTO quota_report_windows (report_id, instance, auth_index, limit_key, seconds, at_ns, used_percent, reset_ns)
+		SELECT id, instance, auth_index, 'other', 18000, at_ns, 1, 0 FROM quota_reports WHERE request_id = 'r30'`)
 	sFrom, sTo := start.Format(time.RFC3339), start.Add(2500*time.Minute).Format(time.RFC3339)
 	qs := e.admin.must("GET", base+"/quota-series?window=5h&from="+sFrom+"&to="+sTo, nil, 200)
 	pts := qs["items"].([]any)
@@ -360,8 +356,8 @@ func TestCPAQuotaEndpoints(t *testing.T) {
 	e.persist()
 	now := time.Now().UTC()
 	for i, acc := range []string{"complete", "complete", "inconsistent"} {
-		execArgs(`INSERT INTO requests (instance, auth_index, provider, request_id, requested_ns, completed_ns, accounting, cost_usd)
-			VALUES ('a', 'acct-a', 'claude', $1, $2, $2, $3, $4)`, "q"+string(rune('0'+i)), now.UnixNano(), acc, map[bool]float64{true: 0.002, false: 1}[acc == "complete"])
+		execArgs(`INSERT INTO requests (instance, auth_index, request_id, requested_ns, completed_ns, accounting, cost_usd)
+			VALUES ('a', 'acct-a', $1, $2, $2, $3, $4)`, "q"+string(rune('0'+i)), now.UnixNano(), acc, map[bool]float64{true: 0.002, false: 1}[acc == "complete"])
 	}
 	cc := e.admin.must("GET", base+"/cost-compare"+q+"&bucket=hour", nil, 200)
 	rows := cc["items"].([]any)

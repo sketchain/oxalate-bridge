@@ -30,8 +30,6 @@ type Window struct {
 // relies on).
 type Account struct {
 	AuthIndex    string     `json:"auth_index"`
-	Provider     string     `json:"provider"`
-	Subscription string     `json:"subscription"`
 	Tier         string     `json:"tier"`
 	State        string     `json:"state"`
 	SafetyFactor float64    `json:"safety_factor"`
@@ -42,31 +40,19 @@ type Account struct {
 	Week     *Window  `json:"week"`
 }
 
-// QuotaResponse is the quota endpoint response.
+// QuotaResponse is the quota endpoint response (cpa-quota v0.1.0).
 type QuotaResponse struct {
-	Instance     string `json:"instance"`
-	Subscription string `json:"subscription"`
-	Tier         string `json:"tier"`
-	Database     struct {
+	Plugin   string `json:"plugin"`
+	Version  string `json:"version"`
+	Instance string `json:"instance"`
+	Tier     string `json:"tier"`
+	Database struct {
 		Status string `json:"status"`
 	} `json:"database"`
 	Estimates struct {
 		Loaded bool `json:"loaded"`
 	} `json:"estimates"`
 	Accounts []Account `json:"accounts"`
-}
-
-// SubscriptionClaude is the only subscription the bridge serves.
-const SubscriptionClaude = "claude"
-
-// IsClaude reports whether a /quota response describes a Claude
-// subscription (both the instance and its account must say so).
-func IsClaude(q *QuotaResponse) bool {
-	if q == nil || q.Subscription != SubscriptionClaude || len(q.Accounts) == 0 {
-		return false
-	}
-	s := q.Accounts[0].Subscription
-	return s == "" || s == SubscriptionClaude
 }
 
 // Client calls CPA instances.
@@ -170,7 +156,6 @@ type Snapshot struct {
 	DatabaseStatus string    `json:"database_status"`
 	EstimatesReady bool      `json:"estimates_loaded"`
 	Instance       string    `json:"instance"`
-	Subscription   string    `json:"subscription"`
 	Tier           string    `json:"tier"`
 	Account        Account   `json:"account"`
 	HasData        bool      `json:"has_data"`
@@ -210,12 +195,9 @@ func EffectiveWindow(w *Window, safety float64, observed time.Time, now time.Tim
 	return out, since, true
 }
 
-// HardExhausted reports whether an account cannot take any request: paused
-// by the plugin or a window at or above 100 % (after local resets).
+// HardExhausted reports whether an account cannot take any request: a
+// window at or above 100 % (after local resets).
 func HardExhausted(a Account, now time.Time) (bool, string) {
-	if Paused(a, now) {
-		return true, "paused"
-	}
 	observed := time.Time{}
 	if a.ObservedAt != nil {
 		observed = *a.ObservedAt
@@ -227,26 +209,4 @@ func HardExhausted(a Account, now time.Time) (bool, string) {
 		return true, "week_exhausted"
 	}
 	return false, ""
-}
-
-// Paused reports whether the plugin paused the account and the pause still
-// holds locally (see HardExhausted).
-func Paused(a Account, now time.Time) bool {
-	return a.State == "paused" && !pausedWindowsReset(a, now)
-}
-
-// pausedWindowsReset reports whether a paused account was paused by full
-// windows that have all reset since: the pause is then over locally.
-func pausedWindowsReset(a Account, now time.Time) bool {
-	full := 0
-	for _, w := range []*Window{a.FiveHour, a.Week} {
-		if w == nil || w.UsedPercent < 100 {
-			continue
-		}
-		full++
-		if w.ResetAt == nil || now.Before(*w.ResetAt) {
-			return false
-		}
-	}
-	return full > 0
 }

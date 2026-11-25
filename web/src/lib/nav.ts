@@ -16,6 +16,7 @@ import {
   Server,
   Settings,
   ShieldAlert,
+  ShieldCheck,
   SlidersHorizontal,
   Ticket,
   Users,
@@ -28,7 +29,7 @@ export interface NavItem {
   label: string; // i18n key
   icon: LucideIcon;
   exact?: boolean;
-  badge?: "pending";
+  badge?: "pending" | "appeals";
 }
 
 export const userNav: NavItem[] = [
@@ -38,6 +39,7 @@ export const userNav: NavItem[] = [
   { n: "04", to: "/plans", label: "nav.plans", icon: Ticket },
   { n: "05", to: "/billing", label: "nav.billing", icon: CreditCard },
   { n: "17", to: "/pricing", label: "nav.pricing", icon: Tags },
+  { n: "21", to: "/safeguard", label: "nav.mySafeguard", icon: ShieldCheck },
   { n: "06", to: "/settings", label: "nav.settings", icon: Settings },
 ];
 
@@ -50,7 +52,7 @@ export const adminNav: NavItem[] = [
   { n: "12", to: "/admin/logs", label: "nav.requestLogs", icon: ScrollText },
   { n: "13", to: "/admin/ledger", label: "nav.ledger", icon: ReceiptText },
   { n: "14", to: "/admin/audit", label: "nav.audit", icon: FileClock },
-  { n: "15", to: "/admin/safeguard", label: "nav.safeguard", icon: ShieldAlert },
+  { n: "15", to: "/admin/safeguard", label: "nav.safeguard", icon: ShieldAlert, badge: "appeals" },
   { n: "18", to: "/admin/redeem", label: "nav.redeem", icon: Gift },
   { n: "19", to: "/admin/announcements", label: "nav.announcements", icon: Megaphone },
   { n: "20", to: "/admin/pricing", label: "nav.adminPricing", icon: Tags },

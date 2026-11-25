@@ -26,7 +26,6 @@ const (
 	AccountDisplayStatusError        AccountDisplayStatus = "error"
 	AccountDisplayStatusFiveHourFull AccountDisplayStatus = "five_hour_full"
 	AccountDisplayStatusNormal       AccountDisplayStatus = "normal"
-	AccountDisplayStatusPaused       AccountDisplayStatus = "paused"
 	AccountDisplayStatusPenalized    AccountDisplayStatus = "penalized"
 	AccountDisplayStatusStale        AccountDisplayStatus = "stale"
 	AccountDisplayStatusWeekFull     AccountDisplayStatus = "week_full"
@@ -44,8 +43,6 @@ func (e AccountDisplayStatus) Valid() bool {
 	case AccountDisplayStatusFiveHourFull:
 		return true
 	case AccountDisplayStatusNormal:
-		return true
-	case AccountDisplayStatusPaused:
 		return true
 	case AccountDisplayStatusPenalized:
 		return true
@@ -342,16 +339,16 @@ func (e LedgerType) Valid() bool {
 
 // Defines values for Locale.
 const (
-	En   Locale = "en"
-	ZhCN Locale = "zh-CN"
+	LocaleEn   Locale = "en"
+	LocaleZhCN Locale = "zh-CN"
 )
 
 // Valid indicates whether the value is a known member of the Locale enum.
 func (e Locale) Valid() bool {
 	switch e {
-	case En:
+	case LocaleEn:
 		return true
-	case ZhCN:
+	case LocaleZhCN:
 		return true
 	default:
 		return false
@@ -378,17 +375,19 @@ func (e MyUsageSummaryGranularity) Valid() bool {
 
 // Defines values for NotificationEvent.
 const (
-	NotificationEventAccountAuthError    NotificationEvent = "account_auth_error"
-	NotificationEventAccountFull         NotificationEvent = "account_full"
-	NotificationEventAccountStale        NotificationEvent = "account_stale"
-	NotificationEventAutoRenewFailed     NotificationEvent = "auto_renew_failed"
-	NotificationEventBalanceLow          NotificationEvent = "balance_low"
-	NotificationEventKeyExhausted        NotificationEvent = "key_exhausted"
-	NotificationEventPlanExpiring        NotificationEvent = "plan_expiring"
-	NotificationEventReconcileMismatch   NotificationEvent = "reconcile_mismatch"
-	NotificationEventSafeguardEvent      NotificationEvent = "safeguard_event"
-	NotificationEventStreamBacklogHigh   NotificationEvent = "stream_backlog_high"
-	NotificationEventSubscriptionPending NotificationEvent = "subscription_pending"
+	NotificationEventAccountAuthError      NotificationEvent = "account_auth_error"
+	NotificationEventAccountFull           NotificationEvent = "account_full"
+	NotificationEventAccountStale          NotificationEvent = "account_stale"
+	NotificationEventAutoRenewFailed       NotificationEvent = "auto_renew_failed"
+	NotificationEventBalanceLow            NotificationEvent = "balance_low"
+	NotificationEventKeyExhausted          NotificationEvent = "key_exhausted"
+	NotificationEventPlanExpiring          NotificationEvent = "plan_expiring"
+	NotificationEventReconcileMismatch     NotificationEvent = "reconcile_mismatch"
+	NotificationEventSafeguardAppealNew    NotificationEvent = "safeguard_appeal_new"
+	NotificationEventSafeguardAppealResult NotificationEvent = "safeguard_appeal_result"
+	NotificationEventSafeguardEvent        NotificationEvent = "safeguard_event"
+	NotificationEventStreamBacklogHigh     NotificationEvent = "stream_backlog_high"
+	NotificationEventSubscriptionPending   NotificationEvent = "subscription_pending"
 )
 
 // Valid indicates whether the value is a known member of the NotificationEvent enum.
@@ -409,6 +408,10 @@ func (e NotificationEvent) Valid() bool {
 	case NotificationEventPlanExpiring:
 		return true
 	case NotificationEventReconcileMismatch:
+		return true
+	case NotificationEventSafeguardAppealNew:
+		return true
+	case NotificationEventSafeguardAppealResult:
 		return true
 	case NotificationEventSafeguardEvent:
 		return true
@@ -598,6 +601,63 @@ func (e Role) Valid() bool {
 	}
 }
 
+// Defines values for SafeguardAppealStatus.
+const (
+	SafeguardAppealStatusApproved SafeguardAppealStatus = "approved"
+	SafeguardAppealStatusPending  SafeguardAppealStatus = "pending"
+	SafeguardAppealStatusRejected SafeguardAppealStatus = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the SafeguardAppealStatus enum.
+func (e SafeguardAppealStatus) Valid() bool {
+	switch e {
+	case SafeguardAppealStatusApproved:
+		return true
+	case SafeguardAppealStatusPending:
+		return true
+	case SafeguardAppealStatusRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SettingsRelayErrorLocale.
+const (
+	SettingsRelayErrorLocaleEn   SettingsRelayErrorLocale = "en"
+	SettingsRelayErrorLocaleZhCN SettingsRelayErrorLocale = "zh-CN"
+)
+
+// Valid indicates whether the value is a known member of the SettingsRelayErrorLocale enum.
+func (e SettingsRelayErrorLocale) Valid() bool {
+	switch e {
+	case SettingsRelayErrorLocaleEn:
+		return true
+	case SettingsRelayErrorLocaleZhCN:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SettingsPatchRelayErrorLocale.
+const (
+	SettingsPatchRelayErrorLocaleEn   SettingsPatchRelayErrorLocale = "en"
+	SettingsPatchRelayErrorLocaleZhCN SettingsPatchRelayErrorLocale = "zh-CN"
+)
+
+// Valid indicates whether the value is a known member of the SettingsPatchRelayErrorLocale enum.
+func (e SettingsPatchRelayErrorLocale) Valid() bool {
+	switch e {
+	case SettingsPatchRelayErrorLocaleEn:
+		return true
+	case SettingsPatchRelayErrorLocaleZhCN:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SubscriptionKind.
 const (
 	Claude SubscriptionKind = "claude"
@@ -748,6 +808,51 @@ func (e AdminGetAccountQuotaSeriesParamsWindow) Valid() bool {
 	}
 }
 
+// Defines values for AdminListSafeguardAppealsParamsStatus.
+const (
+	AdminListSafeguardAppealsParamsStatusAll      AdminListSafeguardAppealsParamsStatus = "all"
+	AdminListSafeguardAppealsParamsStatusApproved AdminListSafeguardAppealsParamsStatus = "approved"
+	AdminListSafeguardAppealsParamsStatusPending  AdminListSafeguardAppealsParamsStatus = "pending"
+	AdminListSafeguardAppealsParamsStatusRejected AdminListSafeguardAppealsParamsStatus = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the AdminListSafeguardAppealsParamsStatus enum.
+func (e AdminListSafeguardAppealsParamsStatus) Valid() bool {
+	switch e {
+	case AdminListSafeguardAppealsParamsStatusAll:
+		return true
+	case AdminListSafeguardAppealsParamsStatusApproved:
+		return true
+	case AdminListSafeguardAppealsParamsStatusPending:
+		return true
+	case AdminListSafeguardAppealsParamsStatusRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminListSafeguardBlocksParamsStatus.
+const (
+	AdminListSafeguardBlocksParamsStatusActive  AdminListSafeguardBlocksParamsStatus = "active"
+	AdminListSafeguardBlocksParamsStatusAll     AdminListSafeguardBlocksParamsStatus = "all"
+	AdminListSafeguardBlocksParamsStatusRevoked AdminListSafeguardBlocksParamsStatus = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the AdminListSafeguardBlocksParamsStatus enum.
+func (e AdminListSafeguardBlocksParamsStatus) Valid() bool {
+	switch e {
+	case AdminListSafeguardBlocksParamsStatusActive:
+		return true
+	case AdminListSafeguardBlocksParamsStatusAll:
+		return true
+	case AdminListSafeguardBlocksParamsStatusRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AdminGetUsageSummaryParamsGranularity.
 const (
 	AdminGetUsageSummaryParamsGranularityDay  AdminGetUsageSummaryParamsGranularity = "day"
@@ -799,7 +904,6 @@ type Account struct {
 	MaxConcurrency nullable.Nullable[int]     `json:"max_concurrency,omitempty"`
 	Name           string                     `json:"name"`
 	Note           string                     `json:"note"`
-	Provider       string                     `json:"provider"`
 	Runtime        AccountRuntime             `json:"runtime"`
 
 	// SoldUpstreamMicro sold_weekly_quota_micro ÷ plan multiplier, comparable with week_total_micro (the overcommit warning uses the same figures).
@@ -807,7 +911,6 @@ type Account struct {
 
 	// SoldWeeklyQuotaMicro Σ weekly quota (user price) of the active and pending_assignment subscriptions bound to the account.
 	SoldWeeklyQuotaMicro        int64                      `json:"sold_weekly_quota_micro"`
-	Subscription                string                     `json:"subscription"`
 	Tier                        string                     `json:"tier"`
 	UpdatedAt                   time.Time                  `json:"updated_at"`
 	Watermark5hPercent          nullable.Nullable[float64] `json:"watermark_5h_percent,omitempty"`
@@ -830,7 +933,7 @@ type AccountCreate struct {
 }
 
 // AccountDisplayStatus The single status to show for an account, by priority: error > disabled > cooldown >
-// five_hour_full / week_full / paused (hard exhausted) > stale > penalized > normal.
+// five_hour_full / week_full (hard exhausted) > stale > penalized > normal.
 type AccountDisplayStatus string
 
 // AccountList defines model for AccountList.
@@ -849,7 +952,7 @@ type AccountRef struct {
 // AccountRuntime defines model for AccountRuntime.
 type AccountRuntime struct {
 	// Assignable Decided by the backend: the account can take a new session of a normal call right now —
-	// enabled, not stale / cooldown / error / 5h or week full / paused, and H_A above the
+	// enabled, not stale / cooldown / error / 5h or week full, and H_A above the
 	// normal-call threshold (standard_min_headroom_micro). A penalized account with enough
 	// headroom is assignable.
 	Assignable         bool                         `json:"assignable"`
@@ -858,14 +961,14 @@ type AccountRuntime struct {
 	DatabaseStatus     *string                      `json:"database_status,omitempty"`
 
 	// DisplayStatus The single status to show for an account, by priority: error > disabled > cooldown >
-	// five_hour_full / week_full / paused (hard exhausted) > stale > penalized > normal.
+	// five_hour_full / week_full (hard exhausted) > stale > penalized > normal.
 	DisplayStatus   AccountDisplayStatus           `json:"display_status"`
 	EstimatesLoaded *bool                          `json:"estimates_loaded,omitempty"`
 	FetchedAt       nullable.Nullable[time.Time]   `json:"fetched_at,omitempty"`
 	FiveHour        nullable.Nullable[QuotaWindow] `json:"five_hour,omitempty"`
 	HardExhausted   bool                           `json:"hard_exhausted"`
 
-	// HardReason Why the account cannot take requests (`5h_exhausted`, `week_exhausted`, `paused`, `cooldown`), empty otherwise.
+	// HardReason Why the account cannot take requests (`5h_exhausted`, `week_exhausted`, `cooldown`), empty otherwise.
 	HardReason string `json:"hard_reason"`
 
 	// HeadroomMicro H_A = (week.remaining − S_A) − Σ reservations.
@@ -886,7 +989,7 @@ type AccountRuntime struct {
 	SpendSinceObservedMicro int64 `json:"spend_since_observed_micro"`
 	Stale                   bool  `json:"stale"`
 
-	// State cpa-quota account state: cold, estimated or paused.
+	// State cpa-quota account state: cold or estimated.
 	State  *string              `json:"state,omitempty"`
 	Status AccountRuntimeStatus `json:"status"`
 
@@ -895,9 +998,9 @@ type AccountRuntime struct {
 	StatusReason string `json:"status_reason"`
 
 	// StatusReasonCode Machine-readable reason for `display_status` (empty when there is none). Known codes:
-	// `disabled`, `upstream_auth` (upstream 401 / 403), `unsupported_subscription`, `error`
+	// `disabled`, `upstream_auth` (upstream 401 / 403), `error`
 	// (any other error), `network`, `upstream_429`, `upstream_5xx`, `error_cooldown`,
-	// `cooldown`, `quota_stale`, `5h_exhausted`, `week_exhausted`, `paused`, `penalized`.
+	// `cooldown`, `quota_stale`, `5h_exhausted`, `week_exhausted`, `penalized`.
 	// Clients must cope with codes they do not know.
 	StatusReasonCode string                         `json:"status_reason_code"`
 	Week             nullable.Nullable[QuotaWindow] `json:"week,omitempty"`
@@ -909,17 +1012,15 @@ type AccountRuntimeStatus string
 
 // AccountTestResult defines model for AccountTestResult.
 type AccountTestResult struct {
-	AuthIndex    *string   `json:"auth_index,omitempty"`
-	Instance     *string   `json:"instance,omitempty"`
-	Models       *[]string `json:"models,omitempty"`
-	ModelsError  *string   `json:"models_error,omitempty"`
-	ModelsOk     bool      `json:"models_ok"`
-	Ok           bool      `json:"ok"`
-	Provider     *string   `json:"provider,omitempty"`
-	QuotaError   *string   `json:"quota_error,omitempty"`
-	QuotaOk      bool      `json:"quota_ok"`
-	Subscription *string   `json:"subscription,omitempty"`
-	Tier         *string   `json:"tier,omitempty"`
+	AuthIndex   *string   `json:"auth_index,omitempty"`
+	Instance    *string   `json:"instance,omitempty"`
+	Models      *[]string `json:"models,omitempty"`
+	ModelsError *string   `json:"models_error,omitempty"`
+	ModelsOk    bool      `json:"models_ok"`
+	Ok          bool      `json:"ok"`
+	QuotaError  *string   `json:"quota_error,omitempty"`
+	QuotaOk     bool      `json:"quota_ok"`
+	Tier        *string   `json:"tier,omitempty"`
 }
 
 // AccountUpdate Fields left out keep their value (secrets are never returned; omit them to keep them).
@@ -1022,9 +1123,12 @@ type AdminUser struct {
 	Note           string                 `json:"note"`
 	Role           Role                   `json:"role"`
 	Rpm            nullable.Nullable[int] `json:"rpm,omitempty"`
-	Status         UserStatus             `json:"status"`
-	UpdatedAt      time.Time              `json:"updated_at"`
-	Username       string                 `json:"username"`
+
+	// SafeguardLocked Every key is refused until the count drops below the allowance.
+	SafeguardLocked bool       `json:"safeguard_locked"`
+	Status          UserStatus `json:"status"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	Username        string     `json:"username"`
 }
 
 // AdminUserCreate defines model for AdminUserCreate.
@@ -1042,6 +1146,31 @@ type AdminUserCreate struct {
 type AdminUserPage struct {
 	Items      []AdminUser               `json:"items"`
 	NextCursor nullable.Nullable[string] `json:"next_cursor,omitempty"`
+}
+
+// AdminUserSafeguard defines model for AdminUserSafeguard.
+type AdminUserSafeguard struct {
+	// Allowance Allowance in effect.
+	Allowance int `json:"allowance"`
+
+	// AllowanceOverride null = the default setting.
+	AllowanceOverride nullable.Nullable[int]       `json:"allowance_override,omitempty"`
+	BlockedCount      int64                        `json:"blocked_count"`
+	DefaultAllowance  int                          `json:"default_allowance"`
+	EventsCount       int64                        `json:"events_count"`
+	Locked            bool                         `json:"locked"`
+	LockedAt          nullable.Nullable[time.Time] `json:"locked_at,omitempty"`
+	ResetCards        int                          `json:"reset_cards"`
+	Used              int                          `json:"used"`
+	UserId            openapi_types.UUID           `json:"user_id"`
+	Username          string                       `json:"username"`
+}
+
+// AdminUserSafeguardUpdate Fields left out keep their value; allowance_override null = use the default.
+type AdminUserSafeguardUpdate struct {
+	AllowanceOverride nullable.Nullable[int] `json:"allowance_override,omitempty"`
+	ResetCards        *int                   `json:"reset_cards,omitempty"`
+	Used              *int                   `json:"used,omitempty"`
 }
 
 // AdminUserUpdate Fields left out keep their value; send rpm null for unlimited.
@@ -1454,7 +1583,7 @@ type CostCompareRow struct {
 	DiffMicro int64 `json:"diff_micro"`
 }
 
-// CpaQuotaEstimate A row of cpa-quota's `estimates` table (schema version 1), unchanged.
+// CpaQuotaEstimate A row of cpa-quota's `estimates` table (schema version 1, cpa-quota v0.1.0), unchanged.
 type CpaQuotaEstimate struct {
 	AuthIndex   string `json:"auth_index"`
 	Basis       string `json:"basis"`
@@ -1469,18 +1598,14 @@ type CpaQuotaEstimate struct {
 	K                    nullable.Nullable[float64]   `json:"k,omitempty"`
 	KSource              string                       `json:"k_source"`
 	ObservedAt           nullable.Nullable[time.Time] `json:"observed_at,omitempty"`
-	PauseReason          string                       `json:"pause_reason"`
-	Provider             string                       `json:"provider"`
 	Ratio                float64                      `json:"ratio"`
 	RemainingFiveHourUsd float64                      `json:"remaining_five_hour_usd"`
 	RemainingWeekUsd     float64                      `json:"remaining_week_usd"`
 	Reset5h              nullable.Nullable[time.Time] `json:"reset_5h,omitempty"`
 	Reset7d              nullable.Nullable[time.Time] `json:"reset_7d,omitempty"`
 	SafetyFactor         float64                      `json:"safety_factor"`
-	SegmentWindow        string                       `json:"segment_window"`
 	Segments             int                          `json:"segments"`
 	State                string                       `json:"state"`
-	Subscription         string                       `json:"subscription"`
 	Tier                 string                       `json:"tier"`
 	TotalBlocks          int                          `json:"total_blocks"`
 	TotalsFrom           string                       `json:"totals_from"`
@@ -1509,7 +1634,9 @@ type Error struct {
 		// admin_token_invalid, admin_token_expired, admin_token_revoked,
 		// admin_token_ip_denied, admin_token_read_only, admin_token_forbidden,
 		// admin_token_rate_limited, push_unavailable,
-		// internal.
+		// safeguard_no_reset_card, safeguard_nothing_to_reset,
+		// safeguard_not_locked, safeguard_appeal_pending,
+		// safeguard_appeal_decided, internal.
 		Code    string `json:"code"`
 		Message string `json:"message"`
 
@@ -1815,6 +1942,57 @@ type MyRequestLogPage struct {
 	NextCursor nullable.Nullable[string] `json:"next_cursor,omitempty"`
 }
 
+// MySafeguard Safeguard state of the caller. While `locked`, every key of the user
+// is refused locally with `safeguard_locked`. Requests whose prompt is
+// on the site-wide blocklist are refused with `safeguard_prompt_blocked`,
+// never reach upstream and do not use the allowance; `blocked_count`
+// and `recent_blocked` list them. Administrators can view the requests
+// that triggered the safeguard.
+type MySafeguard struct {
+	Allowance int `json:"allowance"`
+
+	// Appeal The latest appeal, if any.
+	Appeal       nullable.Nullable[MySafeguardAppeal] `json:"appeal,omitempty"`
+	BlockedCount int64                                `json:"blocked_count"`
+	EventsCount  int64                                `json:"events_count"`
+	Locked       bool                                 `json:"locked"`
+	LockedAt     nullable.Nullable[time.Time]         `json:"locked_at,omitempty"`
+
+	// RecentBlocked The latest 20 requests stopped by the blocklist.
+	RecentBlocked []MySafeguardBlocked `json:"recent_blocked"`
+
+	// RecentEvents The latest 20 triggers.
+	RecentEvents []MySafeguardEvent `json:"recent_events"`
+	Remaining    int                `json:"remaining"`
+	ResetCards   int                `json:"reset_cards"`
+	Used         int                `json:"used"`
+}
+
+// MySafeguardAppeal defines model for MySafeguardAppeal.
+type MySafeguardAppeal struct {
+	CreatedAt    time.Time                    `json:"created_at"`
+	DecidedAt    nullable.Nullable[time.Time] `json:"decided_at,omitempty"`
+	Id           openapi_types.UUID           `json:"id"`
+	Note         string                       `json:"note"`
+	RejectReason string                       `json:"reject_reason"`
+	Status       SafeguardAppealStatus        `json:"status"`
+}
+
+// MySafeguardBlocked defines model for MySafeguardBlocked.
+type MySafeguardBlocked struct {
+	CreatedAt time.Time `json:"created_at"`
+	KeyName   string    `json:"key_name"`
+	KeyPrefix string    `json:"key_prefix"`
+}
+
+// MySafeguardEvent defines model for MySafeguardEvent.
+type MySafeguardEvent struct {
+	Category  string    `json:"category"`
+	Counted   bool      `json:"counted"`
+	CreatedAt time.Time `json:"created_at"`
+	Model     string    `json:"model"`
+}
+
 // MySubscription A subscription as its owner sees it (no account, no upstream cost).
 type MySubscription struct {
 	ActivatedAt   nullable.Nullable[time.Time]     `json:"activated_at,omitempty"`
@@ -1868,8 +2046,9 @@ type MyUsageSummaryGranularity string
 
 // NotificationEvent Admin events: account_auth_error, account_stale, subscription_pending,
 // reconcile_mismatch, stream_backlog_high (on by default), account_full,
-// safeguard_event (off by default). User events: balance_low,
-// plan_expiring, auto_renew_failed (on by default), key_exhausted (off).
+// safeguard_event (off by default), safeguard_appeal_new (on). User
+// events: balance_low, plan_expiring, auto_renew_failed,
+// safeguard_appeal_result (on by default), key_exhausted (off).
 type NotificationEvent string
 
 // NotificationPref defines model for NotificationPref.
@@ -1879,8 +2058,9 @@ type NotificationPref struct {
 
 	// Event Admin events: account_auth_error, account_stale, subscription_pending,
 	// reconcile_mismatch, stream_backlog_high (on by default), account_full,
-	// safeguard_event (off by default). User events: balance_low,
-	// plan_expiring, auto_renew_failed (on by default), key_exhausted (off).
+	// safeguard_event (off by default), safeguard_appeal_new (on). User
+	// events: balance_low, plan_expiring, auto_renew_failed,
+	// safeguard_appeal_result (on by default), key_exhausted (off).
 	Event NotificationEvent     `json:"event"`
 	Group NotificationPrefGroup `json:"group"`
 }
@@ -1903,8 +2083,9 @@ type NotificationPrefsUpdate struct {
 
 		// Event Admin events: account_auth_error, account_stale, subscription_pending,
 		// reconcile_mismatch, stream_backlog_high (on by default), account_full,
-		// safeguard_event (off by default). User events: balance_low,
-		// plan_expiring, auto_renew_failed (on by default), key_exhausted (off).
+		// safeguard_event (off by default), safeguard_appeal_new (on). User
+		// events: balance_low, plan_expiring, auto_renew_failed,
+		// safeguard_appeal_result (on by default), key_exhausted (off).
 		Event NotificationEvent `json:"event"`
 	} `json:"items,omitempty"`
 }
@@ -1917,7 +2098,7 @@ type OverviewAccounts struct {
 	Disabled   int `json:"disabled"`
 	Error      int `json:"error"`
 
-	// Full Hard exhausted: 5-hour or week window full, or paused by the plugin.
+	// Full Hard exhausted: 5-hour or week window full.
 	Full int `json:"full"`
 
 	// HeadroomMicro Σ max(0, H_A) over enabled accounts that are not in error. A negative H_A (oversold) never offsets other accounts.
@@ -2339,17 +2520,106 @@ type RequestLogPage struct {
 // Role defines model for Role.
 type Role string
 
-// SafeguardEvent defines model for SafeguardEvent.
+// SafeguardAppeal defines model for SafeguardAppeal.
+type SafeguardAppeal struct {
+	// Allowance The user's allowance in effect.
+	Allowance         int                          `json:"allowance"`
+	CreatedAt         time.Time                    `json:"created_at"`
+	DecidedAt         nullable.Nullable[time.Time] `json:"decided_at,omitempty"`
+	DecidedByUsername string                       `json:"decided_by_username"`
+	Id                openapi_types.UUID           `json:"id"`
+	Note              string                       `json:"note"`
+	RejectReason      string                       `json:"reject_reason"`
+	ResetCards        int                          `json:"reset_cards"`
+	Status            SafeguardAppealStatus        `json:"status"`
+
+	// Used The user's current count.
+	Used     int                `json:"used"`
+	UserId   openapi_types.UUID `json:"user_id"`
+	Username string             `json:"username"`
+}
+
+// SafeguardAppealCreate defines model for SafeguardAppealCreate.
+type SafeguardAppealCreate struct {
+	Note string `json:"note"`
+}
+
+// SafeguardAppealPage defines model for SafeguardAppealPage.
+type SafeguardAppealPage struct {
+	Items      []SafeguardAppeal         `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor,omitempty"`
+	Pending    int64                     `json:"pending"`
+}
+
+// SafeguardAppealReject defines model for SafeguardAppealReject.
+type SafeguardAppealReject struct {
+	Reason string `json:"reason"`
+}
+
+// SafeguardAppealStatus defines model for SafeguardAppealStatus.
+type SafeguardAppealStatus string
+
+// SafeguardBlock defines model for SafeguardBlock.
+type SafeguardBlock struct {
+	CreatedAt     time.Time                             `json:"created_at"`
+	FirstEventId  nullable.Nullable[openapi_types.UUID] `json:"first_event_id,omitempty"`
+	FirstUserId   nullable.Nullable[openapi_types.UUID] `json:"first_user_id,omitempty"`
+	FirstUsername string                                `json:"first_username"`
+	Hash          string                                `json:"hash"`
+
+	// Hits Requests the entry stopped.
+	Hits              int64                        `json:"hits"`
+	LastHitAt         nullable.Nullable[time.Time] `json:"last_hit_at,omitempty"`
+	Prompt            string                       `json:"prompt"`
+	RevokedAt         nullable.Nullable[time.Time] `json:"revoked_at,omitempty"`
+	RevokedByUsername string                       `json:"revoked_by_username"`
+}
+
+// SafeguardBlockPage defines model for SafeguardBlockPage.
+type SafeguardBlockPage struct {
+	Items      []SafeguardBlock          `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor,omitempty"`
+}
+
+// SafeguardBodyChunk defines model for SafeguardBodyChunk.
+type SafeguardBodyChunk struct {
+	NextOffset nullable.Nullable[int64] `json:"next_offset,omitempty"`
+	Offset     int64                    `json:"offset"`
+	Text       string                   `json:"text"`
+	TotalSize  int64                    `json:"total_size"`
+}
+
+// SafeguardEvent One request Claude refused for safety reasons. `counted` is false
+// when the prompt was already on the blocklist (a concurrent repeat),
+// so it did not use the user's allowance. `prompt` is the normalized
+// last user message (see README); the list cuts it to 500 characters.
 type SafeguardEvent struct {
-	AccountId nullable.Nullable[openapi_types.UUID] `json:"account_id,omitempty"`
+	AccountId   nullable.Nullable[openapi_types.UUID] `json:"account_id,omitempty"`
+	AccountName string                                `json:"account_name"`
+
+	// BodySize Uncompressed body size in bytes.
+	BodySize  int64                                 `json:"body_size"`
 	Category  string                                `json:"category"`
+	Counted   bool                                  `json:"counted"`
 	CreatedAt time.Time                             `json:"created_at"`
+	HasBody   bool                                  `json:"has_body"`
 	Id        openapi_types.UUID                    `json:"id"`
 	KeyId     nullable.Nullable[openapi_types.UUID] `json:"key_id,omitempty"`
+	KeyName   string                                `json:"key_name"`
+	KeyPrefix string                                `json:"key_prefix"`
 	Model     string                                `json:"model"`
-	Reason    string                                `json:"reason"`
-	RequestId openapi_types.UUID                    `json:"request_id"`
-	UserId    nullable.Nullable[openapi_types.UUID] `json:"user_id,omitempty"`
+	Prompt    string                                `json:"prompt"`
+
+	// PromptHash Empty when the prompt was too short to hash.
+	PromptHash string             `json:"prompt_hash"`
+	Reason     string             `json:"reason"`
+	RequestId  openapi_types.UUID `json:"request_id"`
+
+	// StatusCode Upstream status (200 for a refusal inside a response or stream).
+	StatusCode int                                   `json:"status_code"`
+	Stream     bool                                  `json:"stream"`
+	UserId     nullable.Nullable[openapi_types.UUID] `json:"user_id,omitempty"`
+	Username   string                                `json:"username"`
 }
 
 // SafeguardEventPage defines model for SafeguardEventPage.
@@ -2380,8 +2650,20 @@ type Settings struct {
 	PublicQueryIpPerMinute int `json:"public_query_ip_per_minute"`
 
 	// PublicQueryKeyPerMinute GET /public/key-usage per key per minute (default 30).
-	PublicQueryKeyPerMinute  int   `json:"public_query_key_per_minute"`
-	QuotaPollSeconds         int   `json:"quota_poll_seconds"`
+	PublicQueryKeyPerMinute int `json:"public_query_key_per_minute"`
+	QuotaPollSeconds        int `json:"quota_poll_seconds"`
+
+	// RelayErrorLocale Language of error.message in relay (/v1) answers (default zh-CN); error.code and error.type are never localized.
+	RelayErrorLocale SettingsRelayErrorLocale `json:"relay_error_locale"`
+
+	// SafeguardDefaultAllowance Safeguard triggers per user before every key is locked (default 3; a user override wins). Changes apply to every user at once.
+	SafeguardDefaultAllowance int `json:"safeguard_default_allowance"`
+
+	// SafeguardDefaultResetCards Reset cards a new user starts with (default 1).
+	SafeguardDefaultResetCards int `json:"safeguard_default_reset_cards"`
+
+	// SafeguardHashMinChars Shortest normalized prompt (characters) put on the blocklist (default 16).
+	SafeguardHashMinChars    int   `json:"safeguard_hash_min_chars"`
 	StaleAfterSeconds        int   `json:"stale_after_seconds"`
 	StandardMinHeadroomMicro int64 `json:"standard_min_headroom_micro"`
 
@@ -2404,35 +2686,45 @@ type Settings struct {
 	WatermarkPenalty      float64 `json:"watermark_penalty"`
 }
 
+// SettingsRelayErrorLocale Language of error.message in relay (/v1) answers (default zh-CN); error.code and error.type are never localized.
+type SettingsRelayErrorLocale string
+
 // SettingsPatch Any subset of Settings.
 type SettingsPatch struct {
-	AdminTokenPerMinute        *int                `json:"admin_token_per_minute,omitempty"`
-	AutoRenewLeadHours         *int                `json:"auto_renew_lead_hours,omitempty"`
-	Cooldown429DefaultSeconds  *int                `json:"cooldown_429_default_seconds,omitempty"`
-	Cooldown5xxSeconds         *int                `json:"cooldown_5xx_seconds,omitempty"`
-	DefaultUserConcurrency     *int                `json:"default_user_concurrency,omitempty"`
-	HoldCapMicro               *int64              `json:"hold_cap_micro,omitempty"`
-	HoldDefaultMaxTokens       *int64              `json:"hold_default_max_tokens,omitempty"`
-	MaxRetries                 *int                `json:"max_retries,omitempty"`
-	ModelMultipliers           *map[string]float64 `json:"model_multipliers,omitempty"`
-	ModelsPollMinutes          *int                `json:"models_poll_minutes,omitempty"`
-	PriceRefreshHours          *int                `json:"price_refresh_hours,omitempty"`
-	PriceUrl                   *string             `json:"price_url,omitempty"`
-	PublicQueryIpPerMinute     *int                `json:"public_query_ip_per_minute,omitempty"`
-	PublicQueryKeyPerMinute    *int                `json:"public_query_key_per_minute,omitempty"`
-	QuotaPollSeconds           *int                `json:"quota_poll_seconds,omitempty"`
-	StaleAfterSeconds          *int                `json:"stale_after_seconds,omitempty"`
-	StandardMinHeadroomMicro   *int64              `json:"standard_min_headroom_micro,omitempty"`
-	StatusKeyPerMinute         *int                `json:"status_key_per_minute,omitempty"`
-	StickyTtl1hSeconds         *int                `json:"sticky_ttl_1h_seconds,omitempty"`
-	StickyTtlSeconds           *int                `json:"sticky_ttl_seconds,omitempty"`
-	StreamBacklogThreshold     *int                `json:"stream_backlog_threshold,omitempty"`
-	TierMultipliers            *TierMultipliers    `json:"tier_multipliers,omitempty"`
-	UpstreamIdleTimeoutSeconds *int                `json:"upstream_idle_timeout_seconds,omitempty"`
-	VapidSubject               *string             `json:"vapid_subject,omitempty"`
-	Watermark5hPercent         *float64            `json:"watermark_5h_percent,omitempty"`
-	WatermarkPenalty           *float64            `json:"watermark_penalty,omitempty"`
+	AdminTokenPerMinute        *int                           `json:"admin_token_per_minute,omitempty"`
+	AutoRenewLeadHours         *int                           `json:"auto_renew_lead_hours,omitempty"`
+	Cooldown429DefaultSeconds  *int                           `json:"cooldown_429_default_seconds,omitempty"`
+	Cooldown5xxSeconds         *int                           `json:"cooldown_5xx_seconds,omitempty"`
+	DefaultUserConcurrency     *int                           `json:"default_user_concurrency,omitempty"`
+	HoldCapMicro               *int64                         `json:"hold_cap_micro,omitempty"`
+	HoldDefaultMaxTokens       *int64                         `json:"hold_default_max_tokens,omitempty"`
+	MaxRetries                 *int                           `json:"max_retries,omitempty"`
+	ModelMultipliers           *map[string]float64            `json:"model_multipliers,omitempty"`
+	ModelsPollMinutes          *int                           `json:"models_poll_minutes,omitempty"`
+	PriceRefreshHours          *int                           `json:"price_refresh_hours,omitempty"`
+	PriceUrl                   *string                        `json:"price_url,omitempty"`
+	PublicQueryIpPerMinute     *int                           `json:"public_query_ip_per_minute,omitempty"`
+	PublicQueryKeyPerMinute    *int                           `json:"public_query_key_per_minute,omitempty"`
+	QuotaPollSeconds           *int                           `json:"quota_poll_seconds,omitempty"`
+	RelayErrorLocale           *SettingsPatchRelayErrorLocale `json:"relay_error_locale,omitempty"`
+	SafeguardDefaultAllowance  *int                           `json:"safeguard_default_allowance,omitempty"`
+	SafeguardDefaultResetCards *int                           `json:"safeguard_default_reset_cards,omitempty"`
+	SafeguardHashMinChars      *int                           `json:"safeguard_hash_min_chars,omitempty"`
+	StaleAfterSeconds          *int                           `json:"stale_after_seconds,omitempty"`
+	StandardMinHeadroomMicro   *int64                         `json:"standard_min_headroom_micro,omitempty"`
+	StatusKeyPerMinute         *int                           `json:"status_key_per_minute,omitempty"`
+	StickyTtl1hSeconds         *int                           `json:"sticky_ttl_1h_seconds,omitempty"`
+	StickyTtlSeconds           *int                           `json:"sticky_ttl_seconds,omitempty"`
+	StreamBacklogThreshold     *int                           `json:"stream_backlog_threshold,omitempty"`
+	TierMultipliers            *TierMultipliers               `json:"tier_multipliers,omitempty"`
+	UpstreamIdleTimeoutSeconds *int                           `json:"upstream_idle_timeout_seconds,omitempty"`
+	VapidSubject               *string                        `json:"vapid_subject,omitempty"`
+	Watermark5hPercent         *float64                       `json:"watermark_5h_percent,omitempty"`
+	WatermarkPenalty           *float64                       `json:"watermark_penalty,omitempty"`
 }
+
+// SettingsPatchRelayErrorLocale defines model for SettingsPatch.RelayErrorLocale.
+type SettingsPatchRelayErrorLocale string
 
 // Subscription defines model for Subscription.
 type Subscription struct {
@@ -2547,11 +2839,20 @@ type AccountIdFilter = openapi_types.UUID
 // AnnouncementId defines model for AnnouncementId.
 type AnnouncementId = openapi_types.UUID
 
+// AppealId defines model for AppealId.
+type AppealId = openapi_types.UUID
+
+// BlockHash defines model for BlockHash.
+type BlockHash = string
+
 // Cursor defines model for Cursor.
 type Cursor = string
 
 // DryRun defines model for DryRun.
 type DryRun = bool
+
+// EventId defines model for EventId.
+type EventId = openapi_types.UUID
 
 // From defines model for From.
 type From = time.Time
@@ -2676,11 +2977,42 @@ type AdminListRequestLogsParams struct {
 	StatusCode *int `form:"status_code,omitempty" json:"status_code,omitempty"`
 }
 
+// AdminListSafeguardAppealsParams defines parameters for AdminListSafeguardAppeals.
+type AdminListSafeguardAppealsParams struct {
+	Cursor *Cursor                                `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *Limit                                 `form:"limit,omitempty" json:"limit,omitempty"`
+	UserId *UserIdFilter                          `form:"user_id,omitempty" json:"user_id,omitempty"`
+	Status *AdminListSafeguardAppealsParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+}
+
+// AdminListSafeguardAppealsParamsStatus defines parameters for AdminListSafeguardAppeals.
+type AdminListSafeguardAppealsParamsStatus string
+
+// AdminListSafeguardBlocksParams defines parameters for AdminListSafeguardBlocks.
+type AdminListSafeguardBlocksParams struct {
+	Cursor *Cursor                               `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *Limit                                `form:"limit,omitempty" json:"limit,omitempty"`
+	Status *AdminListSafeguardBlocksParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// Q Substring of the prompt, or an exact hash.
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+}
+
+// AdminListSafeguardBlocksParamsStatus defines parameters for AdminListSafeguardBlocks.
+type AdminListSafeguardBlocksParamsStatus string
+
 // AdminListSafeguardEventsParams defines parameters for AdminListSafeguardEvents.
 type AdminListSafeguardEventsParams struct {
-	Cursor *Cursor       `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *Limit        `form:"limit,omitempty" json:"limit,omitempty"`
-	UserId *UserIdFilter `form:"user_id,omitempty" json:"user_id,omitempty"`
+	Cursor     *Cursor       `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit      *Limit        `form:"limit,omitempty" json:"limit,omitempty"`
+	UserId     *UserIdFilter `form:"user_id,omitempty" json:"user_id,omitempty"`
+	PromptHash *string       `form:"prompt_hash,omitempty" json:"prompt_hash,omitempty"`
+}
+
+// AdminGetSafeguardEventBodyParams defines parameters for AdminGetSafeguardEventBody.
+type AdminGetSafeguardEventBodyParams struct {
+	Offset *int64 `form:"offset,omitempty" json:"offset,omitempty"`
+	Limit  *int64 `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // AdminListSubscriptionsParams defines parameters for AdminListSubscriptions.
@@ -2808,6 +3140,9 @@ type AdminUpdatePlanJSONRequestBody = PlanInput
 // AdminCreateRedeemBatchJSONRequestBody defines body for AdminCreateRedeemBatch for application/json ContentType.
 type AdminCreateRedeemBatchJSONRequestBody = RedeemBatchCreate
 
+// AdminRejectSafeguardAppealJSONRequestBody defines body for AdminRejectSafeguardAppeal for application/json ContentType.
+type AdminRejectSafeguardAppealJSONRequestBody = SafeguardAppealReject
+
 // AdminUpdateSettingsJSONRequestBody defines body for AdminUpdateSettings for application/json ContentType.
 type AdminUpdateSettingsJSONRequestBody = SettingsPatch
 
@@ -2832,6 +3167,9 @@ type AdminUpdateUserJSONRequestBody = AdminUserUpdate
 // AdminAdjustBalanceJSONRequestBody defines body for AdminAdjustBalance for application/json ContentType.
 type AdminAdjustBalanceJSONRequestBody = BalanceAdjust
 
+// AdminUpdateUserSafeguardJSONRequestBody defines body for AdminUpdateUserSafeguard for application/json ContentType.
+type AdminUpdateUserSafeguardJSONRequestBody = AdminUserSafeguardUpdate
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
 
@@ -2849,6 +3187,9 @@ type SetMyLocaleJSONRequestBody = LocaleUpdate
 
 // ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
 type ChangePasswordJSONRequestBody = ChangePasswordRequest
+
+// SubmitSafeguardAppealJSONRequestBody defines body for SubmitSafeguardAppeal for application/json ContentType.
+type SubmitSafeguardAppealJSONRequestBody = SafeguardAppealCreate
 
 // UpdateNotificationPrefsJSONRequestBody defines body for UpdateNotificationPrefs for application/json ContentType.
 type UpdateNotificationPrefsJSONRequestBody = NotificationPrefsUpdate
@@ -2988,8 +3329,35 @@ type ServerInterface interface {
 	// (GET /admin/request-logs)
 	AdminListRequestLogs(w http.ResponseWriter, r *http.Request, params AdminListRequestLogsParams)
 
+	// (GET /admin/safeguard-appeals)
+	AdminListSafeguardAppeals(w http.ResponseWriter, r *http.Request, params AdminListSafeguardAppealsParams)
+	// AdminApproveSafeguardAppeal Approve a pending appeal; the user's count is cleared and the lock lifted. Audited.
+	// (POST /admin/safeguard-appeals/{appealId}/approve)
+	AdminApproveSafeguardAppeal(w http.ResponseWriter, r *http.Request, appealId AppealId)
+	// AdminRejectSafeguardAppeal Reject a pending appeal with a reason the user sees. Audited.
+	// (POST /admin/safeguard-appeals/{appealId}/reject)
+	AdminRejectSafeguardAppeal(w http.ResponseWriter, r *http.Request, appealId AppealId)
+	// AdminListSafeguardBlocks The prompt blocklist (hash and prompt), newest first.
+	// (GET /admin/safeguard-blocks)
+	AdminListSafeguardBlocks(w http.ResponseWriter, r *http.Request, params AdminListSafeguardBlocksParams)
+
+	// (GET /admin/safeguard-blocks/{hash})
+	AdminGetSafeguardBlock(w http.ResponseWriter, r *http.Request, hash BlockHash)
+	// AdminRevokeSafeguardBlock Take a prompt off the blocklist (a false positive). Audited.
+	// (POST /admin/safeguard-blocks/{hash}/revoke)
+	AdminRevokeSafeguardBlock(w http.ResponseWriter, r *http.Request, hash BlockHash)
+
 	// (GET /admin/safeguard-events)
 	AdminListSafeguardEvents(w http.ResponseWriter, r *http.Request, params AdminListSafeguardEventsParams)
+
+	// (GET /admin/safeguard-events/{eventId})
+	AdminGetSafeguardEvent(w http.ResponseWriter, r *http.Request, eventId EventId)
+	// AdminGetSafeguardEventBody One chunk of the stored request body (the first chunk read is audited).
+	// (GET /admin/safeguard-events/{eventId}/body)
+	AdminGetSafeguardEventBody(w http.ResponseWriter, r *http.Request, eventId EventId, params AdminGetSafeguardEventBodyParams)
+	// AdminDownloadSafeguardEventBody The whole stored request body as a file (audited).
+	// (GET /admin/safeguard-events/{eventId}/raw)
+	AdminDownloadSafeguardEventBody(w http.ResponseWriter, r *http.Request, eventId EventId)
 
 	// (GET /admin/settings)
 	AdminGetSettings(w http.ResponseWriter, r *http.Request)
@@ -3035,6 +3403,12 @@ type ServerInterface interface {
 	// AdminListUserKeys The user's API keys (secrets are never returned here).
 	// (GET /admin/users/{userId}/keys)
 	AdminListUserKeys(w http.ResponseWriter, r *http.Request, userId UserId)
+
+	// (GET /admin/users/{userId}/safeguard)
+	AdminGetUserSafeguard(w http.ResponseWriter, r *http.Request, userId UserId)
+	// AdminUpdateUserSafeguard Set the user's allowance override, count or reset cards (audited).
+	// (PATCH /admin/users/{userId}/safeguard)
+	AdminUpdateUserSafeguard(w http.ResponseWriter, r *http.Request, userId UserId)
 	// ListActiveAnnouncements Announcements in effect now that the caller has not dismissed.
 	// (GET /announcements)
 	ListActiveAnnouncements(w http.ResponseWriter, r *http.Request)
@@ -3095,6 +3469,15 @@ type ServerInterface interface {
 
 	// (POST /me/password)
 	ChangePassword(w http.ResponseWriter, r *http.Request)
+	// GetMySafeguard The caller's safeguard counters, reset cards, lock and latest appeal, and the requests the prompt blocklist stopped.
+	// (GET /me/safeguard)
+	GetMySafeguard(w http.ResponseWriter, r *http.Request)
+	// SubmitSafeguardAppeal Ask an administrator to lift the safeguard lock.
+	// (POST /me/safeguard/appeals)
+	SubmitSafeguardAppeal(w http.ResponseWriter, r *http.Request)
+	// UseSafeguardResetCard Spend one reset card to clear the safeguard count (and the lock).
+	// (POST /me/safeguard/reset-card)
+	UseSafeguardResetCard(w http.ResponseWriter, r *http.Request)
 
 	// (GET /models)
 	ListModels(w http.ResponseWriter, r *http.Request)
@@ -3377,8 +3760,59 @@ func (_ Unimplemented) AdminListRequestLogs(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// (GET /admin/safeguard-appeals)
+func (_ Unimplemented) AdminListSafeguardAppeals(w http.ResponseWriter, r *http.Request, params AdminListSafeguardAppealsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminApproveSafeguardAppeal Approve a pending appeal; the user's count is cleared and the lock lifted. Audited.
+// (POST /admin/safeguard-appeals/{appealId}/approve)
+func (_ Unimplemented) AdminApproveSafeguardAppeal(w http.ResponseWriter, r *http.Request, appealId AppealId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminRejectSafeguardAppeal Reject a pending appeal with a reason the user sees. Audited.
+// (POST /admin/safeguard-appeals/{appealId}/reject)
+func (_ Unimplemented) AdminRejectSafeguardAppeal(w http.ResponseWriter, r *http.Request, appealId AppealId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminListSafeguardBlocks The prompt blocklist (hash and prompt), newest first.
+// (GET /admin/safeguard-blocks)
+func (_ Unimplemented) AdminListSafeguardBlocks(w http.ResponseWriter, r *http.Request, params AdminListSafeguardBlocksParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /admin/safeguard-blocks/{hash})
+func (_ Unimplemented) AdminGetSafeguardBlock(w http.ResponseWriter, r *http.Request, hash BlockHash) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminRevokeSafeguardBlock Take a prompt off the blocklist (a false positive). Audited.
+// (POST /admin/safeguard-blocks/{hash}/revoke)
+func (_ Unimplemented) AdminRevokeSafeguardBlock(w http.ResponseWriter, r *http.Request, hash BlockHash) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (GET /admin/safeguard-events)
 func (_ Unimplemented) AdminListSafeguardEvents(w http.ResponseWriter, r *http.Request, params AdminListSafeguardEventsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /admin/safeguard-events/{eventId})
+func (_ Unimplemented) AdminGetSafeguardEvent(w http.ResponseWriter, r *http.Request, eventId EventId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminGetSafeguardEventBody One chunk of the stored request body (the first chunk read is audited).
+// (GET /admin/safeguard-events/{eventId}/body)
+func (_ Unimplemented) AdminGetSafeguardEventBody(w http.ResponseWriter, r *http.Request, eventId EventId, params AdminGetSafeguardEventBodyParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminDownloadSafeguardEventBody The whole stored request body as a file (audited).
+// (GET /admin/safeguard-events/{eventId}/raw)
+func (_ Unimplemented) AdminDownloadSafeguardEventBody(w http.ResponseWriter, r *http.Request, eventId EventId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3460,6 +3894,17 @@ func (_ Unimplemented) AdminAdjustBalance(w http.ResponseWriter, r *http.Request
 // AdminListUserKeys The user's API keys (secrets are never returned here).
 // (GET /admin/users/{userId}/keys)
 func (_ Unimplemented) AdminListUserKeys(w http.ResponseWriter, r *http.Request, userId UserId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /admin/users/{userId}/safeguard)
+func (_ Unimplemented) AdminGetUserSafeguard(w http.ResponseWriter, r *http.Request, userId UserId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminUpdateUserSafeguard Set the user's allowance override, count or reset cards (audited).
+// (PATCH /admin/users/{userId}/safeguard)
+func (_ Unimplemented) AdminUpdateUserSafeguard(w http.ResponseWriter, r *http.Request, userId UserId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3568,6 +4013,24 @@ func (_ Unimplemented) SetMyLocale(w http.ResponseWriter, r *http.Request) {
 
 // (POST /me/password)
 func (_ Unimplemented) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetMySafeguard The caller's safeguard counters, reset cards, lock and latest appeal, and the requests the prompt blocklist stopped.
+// (GET /me/safeguard)
+func (_ Unimplemented) GetMySafeguard(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// SubmitSafeguardAppeal Ask an administrator to lift the safeguard lock.
+// (POST /me/safeguard/appeals)
+func (_ Unimplemented) SubmitSafeguardAppeal(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// UseSafeguardResetCard Spend one reset card to clear the safeguard count (and the lock).
+// (POST /me/safeguard/reset-card)
+func (_ Unimplemented) UseSafeguardResetCard(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -4944,6 +5407,254 @@ func (siw *ServerInterfaceWrapper) AdminListRequestLogs(w http.ResponseWriter, r
 	handler.ServeHTTP(w, r)
 }
 
+// AdminListSafeguardAppeals operation middleware
+func (siw *ServerInterfaceWrapper) AdminListSafeguardAppeals(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminListSafeguardAppealsParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "user_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "user_id", r.URL.Query(), &params.UserId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "user_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminListSafeguardAppeals(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminApproveSafeguardAppeal operation middleware
+func (siw *ServerInterfaceWrapper) AdminApproveSafeguardAppeal(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "appealId" -------------
+	var appealId AppealId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "appealId", chi.URLParam(r, "appealId"), &appealId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "appealId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminApproveSafeguardAppeal(w, r, appealId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminRejectSafeguardAppeal operation middleware
+func (siw *ServerInterfaceWrapper) AdminRejectSafeguardAppeal(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "appealId" -------------
+	var appealId AppealId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "appealId", chi.URLParam(r, "appealId"), &appealId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "appealId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminRejectSafeguardAppeal(w, r, appealId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminListSafeguardBlocks operation middleware
+func (siw *ServerInterfaceWrapper) AdminListSafeguardBlocks(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminListSafeguardBlocksParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminListSafeguardBlocks(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminGetSafeguardBlock operation middleware
+func (siw *ServerInterfaceWrapper) AdminGetSafeguardBlock(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "hash" -------------
+	var hash BlockHash
+
+	err = runtime.BindStyledParameterWithOptions("simple", "hash", chi.URLParam(r, "hash"), &hash, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "hash", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminGetSafeguardBlock(w, r, hash)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminRevokeSafeguardBlock operation middleware
+func (siw *ServerInterfaceWrapper) AdminRevokeSafeguardBlock(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "hash" -------------
+	var hash BlockHash
+
+	err = runtime.BindStyledParameterWithOptions("simple", "hash", chi.URLParam(r, "hash"), &hash, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "hash", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminRevokeSafeguardBlock(w, r, hash)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // AdminListSafeguardEvents operation middleware
 func (siw *ServerInterfaceWrapper) AdminListSafeguardEvents(w http.ResponseWriter, r *http.Request) {
 
@@ -4992,8 +5703,128 @@ func (siw *ServerInterfaceWrapper) AdminListSafeguardEvents(w http.ResponseWrite
 		return
 	}
 
+	// ------------- Optional query parameter "prompt_hash" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "prompt_hash", r.URL.Query(), &params.PromptHash, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "prompt_hash"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "prompt_hash", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminListSafeguardEvents(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminGetSafeguardEvent operation middleware
+func (siw *ServerInterfaceWrapper) AdminGetSafeguardEvent(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "eventId" -------------
+	var eventId EventId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "eventId", chi.URLParam(r, "eventId"), &eventId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "eventId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminGetSafeguardEvent(w, r, eventId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminGetSafeguardEventBody operation middleware
+func (siw *ServerInterfaceWrapper) AdminGetSafeguardEventBody(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "eventId" -------------
+	var eventId EventId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "eventId", chi.URLParam(r, "eventId"), &eventId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "eventId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminGetSafeguardEventBodyParams
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminGetSafeguardEventBody(w, r, eventId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminDownloadSafeguardEventBody operation middleware
+func (siw *ServerInterfaceWrapper) AdminDownloadSafeguardEventBody(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "eventId" -------------
+	var eventId EventId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "eventId", chi.URLParam(r, "eventId"), &eventId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "eventId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminDownloadSafeguardEventBody(w, r, eventId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5560,6 +6391,58 @@ func (siw *ServerInterfaceWrapper) AdminListUserKeys(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// AdminGetUserSafeguard operation middleware
+func (siw *ServerInterfaceWrapper) AdminGetUserSafeguard(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "userId" -------------
+	var userId UserId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", chi.URLParam(r, "userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminGetUserSafeguard(w, r, userId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminUpdateUserSafeguard operation middleware
+func (siw *ServerInterfaceWrapper) AdminUpdateUserSafeguard(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "userId" -------------
+	var userId UserId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", chi.URLParam(r, "userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminUpdateUserSafeguard(w, r, userId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListActiveAnnouncements operation middleware
 func (siw *ServerInterfaceWrapper) ListActiveAnnouncements(w http.ResponseWriter, r *http.Request) {
 
@@ -5988,6 +6871,48 @@ func (siw *ServerInterfaceWrapper) ChangePassword(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ChangePassword(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMySafeguard operation middleware
+func (siw *ServerInterfaceWrapper) GetMySafeguard(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMySafeguard(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SubmitSafeguardAppeal operation middleware
+func (siw *ServerInterfaceWrapper) SubmitSafeguardAppeal(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SubmitSafeguardAppeal(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UseSafeguardResetCard operation middleware
+func (siw *ServerInterfaceWrapper) UseSafeguardResetCard(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UseSafeguardResetCard(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6613,6 +7538,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/me/locale", wrapper.SetMyLocale)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/me/safeguard", wrapper.GetMySafeguard)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/me/safeguard/reset-card", wrapper.UseSafeguardResetCard)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/me/safeguard/appeals", wrapper.SubmitSafeguardAppeal)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/push/config", wrapper.GetPushConfig)
 	})
 	r.Group(func(r chi.Router) {
@@ -6733,6 +7667,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/admin/users/{userId}/keys", wrapper.AdminListUserKeys)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/users/{userId}/safeguard", wrapper.AdminGetUserSafeguard)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/admin/users/{userId}/safeguard", wrapper.AdminUpdateUserSafeguard)
+	})
+	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/admin/keys/{keyId}/enabled", wrapper.AdminSetKeyEnabled)
 	})
 	r.Group(func(r chi.Router) {
@@ -6833,6 +7773,33 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/admin/safeguard-events", wrapper.AdminListSafeguardEvents)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/safeguard-events/{eventId}", wrapper.AdminGetSafeguardEvent)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/safeguard-events/{eventId}/body", wrapper.AdminGetSafeguardEventBody)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/safeguard-events/{eventId}/raw", wrapper.AdminDownloadSafeguardEventBody)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/safeguard-blocks", wrapper.AdminListSafeguardBlocks)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/safeguard-blocks/{hash}", wrapper.AdminGetSafeguardBlock)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/safeguard-blocks/{hash}/revoke", wrapper.AdminRevokeSafeguardBlock)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/safeguard-appeals", wrapper.AdminListSafeguardAppeals)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/safeguard-appeals/{appealId}/approve", wrapper.AdminApproveSafeguardAppeal)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/safeguard-appeals/{appealId}/reject", wrapper.AdminRejectSafeguardAppeal)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/admin/prices", wrapper.AdminGetPrices)
@@ -8504,6 +9471,241 @@ func (response AdminListRequestLogsdefaultJSONResponse) VisitAdminListRequestLog
 	return err
 }
 
+type AdminListSafeguardAppealsRequestObject struct {
+	Params AdminListSafeguardAppealsParams
+}
+
+type AdminListSafeguardAppealsResponseObject interface {
+	VisitAdminListSafeguardAppealsResponse(w http.ResponseWriter) error
+}
+
+type AdminListSafeguardAppeals200JSONResponse SafeguardAppealPage
+
+func (response AdminListSafeguardAppeals200JSONResponse) VisitAdminListSafeguardAppealsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminListSafeguardAppealsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminListSafeguardAppealsdefaultJSONResponse) VisitAdminListSafeguardAppealsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminApproveSafeguardAppealRequestObject struct {
+	AppealId AppealId `json:"appealId"`
+}
+
+type AdminApproveSafeguardAppealResponseObject interface {
+	VisitAdminApproveSafeguardAppealResponse(w http.ResponseWriter) error
+}
+
+type AdminApproveSafeguardAppeal200JSONResponse SafeguardAppeal
+
+func (response AdminApproveSafeguardAppeal200JSONResponse) VisitAdminApproveSafeguardAppealResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminApproveSafeguardAppealdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminApproveSafeguardAppealdefaultJSONResponse) VisitAdminApproveSafeguardAppealResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminRejectSafeguardAppealRequestObject struct {
+	AppealId AppealId `json:"appealId"`
+	Body     *AdminRejectSafeguardAppealJSONRequestBody
+}
+
+type AdminRejectSafeguardAppealResponseObject interface {
+	VisitAdminRejectSafeguardAppealResponse(w http.ResponseWriter) error
+}
+
+type AdminRejectSafeguardAppeal200JSONResponse SafeguardAppeal
+
+func (response AdminRejectSafeguardAppeal200JSONResponse) VisitAdminRejectSafeguardAppealResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminRejectSafeguardAppealdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminRejectSafeguardAppealdefaultJSONResponse) VisitAdminRejectSafeguardAppealResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminListSafeguardBlocksRequestObject struct {
+	Params AdminListSafeguardBlocksParams
+}
+
+type AdminListSafeguardBlocksResponseObject interface {
+	VisitAdminListSafeguardBlocksResponse(w http.ResponseWriter) error
+}
+
+type AdminListSafeguardBlocks200JSONResponse SafeguardBlockPage
+
+func (response AdminListSafeguardBlocks200JSONResponse) VisitAdminListSafeguardBlocksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminListSafeguardBlocksdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminListSafeguardBlocksdefaultJSONResponse) VisitAdminListSafeguardBlocksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetSafeguardBlockRequestObject struct {
+	Hash BlockHash `json:"hash"`
+}
+
+type AdminGetSafeguardBlockResponseObject interface {
+	VisitAdminGetSafeguardBlockResponse(w http.ResponseWriter) error
+}
+
+type AdminGetSafeguardBlock200JSONResponse SafeguardBlock
+
+func (response AdminGetSafeguardBlock200JSONResponse) VisitAdminGetSafeguardBlockResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetSafeguardBlockdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminGetSafeguardBlockdefaultJSONResponse) VisitAdminGetSafeguardBlockResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminRevokeSafeguardBlockRequestObject struct {
+	Hash BlockHash `json:"hash"`
+}
+
+type AdminRevokeSafeguardBlockResponseObject interface {
+	VisitAdminRevokeSafeguardBlockResponse(w http.ResponseWriter) error
+}
+
+type AdminRevokeSafeguardBlock200JSONResponse SafeguardBlock
+
+func (response AdminRevokeSafeguardBlock200JSONResponse) VisitAdminRevokeSafeguardBlockResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminRevokeSafeguardBlockdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminRevokeSafeguardBlockdefaultJSONResponse) VisitAdminRevokeSafeguardBlockResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AdminListSafeguardEventsRequestObject struct {
 	Params AdminListSafeguardEventsParams
 }
@@ -8532,6 +9734,138 @@ type AdminListSafeguardEventsdefaultJSONResponse struct {
 }
 
 func (response AdminListSafeguardEventsdefaultJSONResponse) VisitAdminListSafeguardEventsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetSafeguardEventRequestObject struct {
+	EventId EventId `json:"eventId"`
+}
+
+type AdminGetSafeguardEventResponseObject interface {
+	VisitAdminGetSafeguardEventResponse(w http.ResponseWriter) error
+}
+
+type AdminGetSafeguardEvent200JSONResponse SafeguardEvent
+
+func (response AdminGetSafeguardEvent200JSONResponse) VisitAdminGetSafeguardEventResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetSafeguardEventdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminGetSafeguardEventdefaultJSONResponse) VisitAdminGetSafeguardEventResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetSafeguardEventBodyRequestObject struct {
+	EventId EventId `json:"eventId"`
+	Params  AdminGetSafeguardEventBodyParams
+}
+
+type AdminGetSafeguardEventBodyResponseObject interface {
+	VisitAdminGetSafeguardEventBodyResponse(w http.ResponseWriter) error
+}
+
+type AdminGetSafeguardEventBody200JSONResponse SafeguardBodyChunk
+
+func (response AdminGetSafeguardEventBody200JSONResponse) VisitAdminGetSafeguardEventBodyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetSafeguardEventBodydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminGetSafeguardEventBodydefaultJSONResponse) VisitAdminGetSafeguardEventBodyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminDownloadSafeguardEventBodyRequestObject struct {
+	EventId EventId `json:"eventId"`
+}
+
+type AdminDownloadSafeguardEventBodyResponseObject interface {
+	VisitAdminDownloadSafeguardEventBodyResponse(w http.ResponseWriter) error
+}
+
+type AdminDownloadSafeguardEventBody200ResponseHeaders struct {
+	ContentDisposition *string
+}
+
+type AdminDownloadSafeguardEventBody200ApplicationoctetStreamResponse struct {
+	Body          io.Reader
+	Headers       AdminDownloadSafeguardEventBody200ResponseHeaders
+	ContentLength int64
+}
+
+func (response AdminDownloadSafeguardEventBody200ApplicationoctetStreamResponse) VisitAdminDownloadSafeguardEventBodyResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	if response.Headers.ContentDisposition != nil {
+		w.Header().Set("Content-Disposition", fmt.Sprint(*response.Headers.ContentDisposition))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type AdminDownloadSafeguardEventBodydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminDownloadSafeguardEventBodydefaultJSONResponse) VisitAdminDownloadSafeguardEventBodyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -9132,6 +10466,85 @@ type AdminListUserKeysdefaultJSONResponse struct {
 }
 
 func (response AdminListUserKeysdefaultJSONResponse) VisitAdminListUserKeysResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetUserSafeguardRequestObject struct {
+	UserId UserId `json:"userId"`
+}
+
+type AdminGetUserSafeguardResponseObject interface {
+	VisitAdminGetUserSafeguardResponse(w http.ResponseWriter) error
+}
+
+type AdminGetUserSafeguard200JSONResponse AdminUserSafeguard
+
+func (response AdminGetUserSafeguard200JSONResponse) VisitAdminGetUserSafeguardResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetUserSafeguarddefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminGetUserSafeguarddefaultJSONResponse) VisitAdminGetUserSafeguardResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminUpdateUserSafeguardRequestObject struct {
+	UserId UserId `json:"userId"`
+	Body   *AdminUpdateUserSafeguardJSONRequestBody
+}
+
+type AdminUpdateUserSafeguardResponseObject interface {
+	VisitAdminUpdateUserSafeguardResponse(w http.ResponseWriter) error
+}
+
+type AdminUpdateUserSafeguard200JSONResponse AdminUserSafeguard
+
+func (response AdminUpdateUserSafeguard200JSONResponse) VisitAdminUpdateUserSafeguardResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminUpdateUserSafeguarddefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AdminUpdateUserSafeguarddefaultJSONResponse) VisitAdminUpdateUserSafeguardResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -9896,6 +11309,121 @@ type ChangePassworddefaultJSONResponse struct {
 }
 
 func (response ChangePassworddefaultJSONResponse) VisitChangePasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMySafeguardRequestObject struct {
+}
+
+type GetMySafeguardResponseObject interface {
+	VisitGetMySafeguardResponse(w http.ResponseWriter) error
+}
+
+type GetMySafeguard200JSONResponse MySafeguard
+
+func (response GetMySafeguard200JSONResponse) VisitGetMySafeguardResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMySafeguarddefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetMySafeguarddefaultJSONResponse) VisitGetMySafeguardResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitSafeguardAppealRequestObject struct {
+	Body *SubmitSafeguardAppealJSONRequestBody
+}
+
+type SubmitSafeguardAppealResponseObject interface {
+	VisitSubmitSafeguardAppealResponse(w http.ResponseWriter) error
+}
+
+type SubmitSafeguardAppeal200JSONResponse MySafeguard
+
+func (response SubmitSafeguardAppeal200JSONResponse) VisitSubmitSafeguardAppealResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitSafeguardAppealdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SubmitSafeguardAppealdefaultJSONResponse) VisitSubmitSafeguardAppealResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UseSafeguardResetCardRequestObject struct {
+}
+
+type UseSafeguardResetCardResponseObject interface {
+	VisitUseSafeguardResetCardResponse(w http.ResponseWriter) error
+}
+
+type UseSafeguardResetCard200JSONResponse MySafeguard
+
+func (response UseSafeguardResetCard200JSONResponse) VisitUseSafeguardResetCardResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UseSafeguardResetCarddefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response UseSafeguardResetCarddefaultJSONResponse) VisitUseSafeguardResetCardResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -10722,8 +12250,35 @@ type StrictServerInterface interface {
 	// (GET /admin/request-logs)
 	AdminListRequestLogs(ctx context.Context, request AdminListRequestLogsRequestObject) (AdminListRequestLogsResponseObject, error)
 
+	// (GET /admin/safeguard-appeals)
+	AdminListSafeguardAppeals(ctx context.Context, request AdminListSafeguardAppealsRequestObject) (AdminListSafeguardAppealsResponseObject, error)
+	// AdminApproveSafeguardAppeal Approve a pending appeal; the user's count is cleared and the lock lifted. Audited.
+	// (POST /admin/safeguard-appeals/{appealId}/approve)
+	AdminApproveSafeguardAppeal(ctx context.Context, request AdminApproveSafeguardAppealRequestObject) (AdminApproveSafeguardAppealResponseObject, error)
+	// AdminRejectSafeguardAppeal Reject a pending appeal with a reason the user sees. Audited.
+	// (POST /admin/safeguard-appeals/{appealId}/reject)
+	AdminRejectSafeguardAppeal(ctx context.Context, request AdminRejectSafeguardAppealRequestObject) (AdminRejectSafeguardAppealResponseObject, error)
+	// AdminListSafeguardBlocks The prompt blocklist (hash and prompt), newest first.
+	// (GET /admin/safeguard-blocks)
+	AdminListSafeguardBlocks(ctx context.Context, request AdminListSafeguardBlocksRequestObject) (AdminListSafeguardBlocksResponseObject, error)
+
+	// (GET /admin/safeguard-blocks/{hash})
+	AdminGetSafeguardBlock(ctx context.Context, request AdminGetSafeguardBlockRequestObject) (AdminGetSafeguardBlockResponseObject, error)
+	// AdminRevokeSafeguardBlock Take a prompt off the blocklist (a false positive). Audited.
+	// (POST /admin/safeguard-blocks/{hash}/revoke)
+	AdminRevokeSafeguardBlock(ctx context.Context, request AdminRevokeSafeguardBlockRequestObject) (AdminRevokeSafeguardBlockResponseObject, error)
+
 	// (GET /admin/safeguard-events)
 	AdminListSafeguardEvents(ctx context.Context, request AdminListSafeguardEventsRequestObject) (AdminListSafeguardEventsResponseObject, error)
+
+	// (GET /admin/safeguard-events/{eventId})
+	AdminGetSafeguardEvent(ctx context.Context, request AdminGetSafeguardEventRequestObject) (AdminGetSafeguardEventResponseObject, error)
+	// AdminGetSafeguardEventBody One chunk of the stored request body (the first chunk read is audited).
+	// (GET /admin/safeguard-events/{eventId}/body)
+	AdminGetSafeguardEventBody(ctx context.Context, request AdminGetSafeguardEventBodyRequestObject) (AdminGetSafeguardEventBodyResponseObject, error)
+	// AdminDownloadSafeguardEventBody The whole stored request body as a file (audited).
+	// (GET /admin/safeguard-events/{eventId}/raw)
+	AdminDownloadSafeguardEventBody(ctx context.Context, request AdminDownloadSafeguardEventBodyRequestObject) (AdminDownloadSafeguardEventBodyResponseObject, error)
 
 	// (GET /admin/settings)
 	AdminGetSettings(ctx context.Context, request AdminGetSettingsRequestObject) (AdminGetSettingsResponseObject, error)
@@ -10769,6 +12324,12 @@ type StrictServerInterface interface {
 	// AdminListUserKeys The user's API keys (secrets are never returned here).
 	// (GET /admin/users/{userId}/keys)
 	AdminListUserKeys(ctx context.Context, request AdminListUserKeysRequestObject) (AdminListUserKeysResponseObject, error)
+
+	// (GET /admin/users/{userId}/safeguard)
+	AdminGetUserSafeguard(ctx context.Context, request AdminGetUserSafeguardRequestObject) (AdminGetUserSafeguardResponseObject, error)
+	// AdminUpdateUserSafeguard Set the user's allowance override, count or reset cards (audited).
+	// (PATCH /admin/users/{userId}/safeguard)
+	AdminUpdateUserSafeguard(ctx context.Context, request AdminUpdateUserSafeguardRequestObject) (AdminUpdateUserSafeguardResponseObject, error)
 	// ListActiveAnnouncements Announcements in effect now that the caller has not dismissed.
 	// (GET /announcements)
 	ListActiveAnnouncements(ctx context.Context, request ListActiveAnnouncementsRequestObject) (ListActiveAnnouncementsResponseObject, error)
@@ -10829,6 +12390,15 @@ type StrictServerInterface interface {
 
 	// (POST /me/password)
 	ChangePassword(ctx context.Context, request ChangePasswordRequestObject) (ChangePasswordResponseObject, error)
+	// GetMySafeguard The caller's safeguard counters, reset cards, lock and latest appeal, and the requests the prompt blocklist stopped.
+	// (GET /me/safeguard)
+	GetMySafeguard(ctx context.Context, request GetMySafeguardRequestObject) (GetMySafeguardResponseObject, error)
+	// SubmitSafeguardAppeal Ask an administrator to lift the safeguard lock.
+	// (POST /me/safeguard/appeals)
+	SubmitSafeguardAppeal(ctx context.Context, request SubmitSafeguardAppealRequestObject) (SubmitSafeguardAppealResponseObject, error)
+	// UseSafeguardResetCard Spend one reset card to clear the safeguard count (and the lock).
+	// (POST /me/safeguard/reset-card)
+	UseSafeguardResetCard(ctx context.Context, request UseSafeguardResetCardRequestObject) (UseSafeguardResetCardResponseObject, error)
 
 	// (GET /models)
 	ListModels(ctx context.Context, request ListModelsRequestObject) (ListModelsResponseObject, error)
@@ -12047,6 +13617,169 @@ func (sh *strictHandler) AdminListRequestLogs(w http.ResponseWriter, r *http.Req
 	}
 }
 
+// AdminListSafeguardAppeals operation middleware
+func (sh *strictHandler) AdminListSafeguardAppeals(w http.ResponseWriter, r *http.Request, params AdminListSafeguardAppealsParams) {
+	var request AdminListSafeguardAppealsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminListSafeguardAppeals(ctx, request.(AdminListSafeguardAppealsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminListSafeguardAppeals")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminListSafeguardAppealsResponseObject); ok {
+		if err := validResponse.VisitAdminListSafeguardAppealsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminApproveSafeguardAppeal operation middleware
+func (sh *strictHandler) AdminApproveSafeguardAppeal(w http.ResponseWriter, r *http.Request, appealId AppealId) {
+	var request AdminApproveSafeguardAppealRequestObject
+
+	request.AppealId = appealId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminApproveSafeguardAppeal(ctx, request.(AdminApproveSafeguardAppealRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminApproveSafeguardAppeal")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminApproveSafeguardAppealResponseObject); ok {
+		if err := validResponse.VisitAdminApproveSafeguardAppealResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminRejectSafeguardAppeal operation middleware
+func (sh *strictHandler) AdminRejectSafeguardAppeal(w http.ResponseWriter, r *http.Request, appealId AppealId) {
+	var request AdminRejectSafeguardAppealRequestObject
+
+	request.AppealId = appealId
+
+	var body AdminRejectSafeguardAppealJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminRejectSafeguardAppeal(ctx, request.(AdminRejectSafeguardAppealRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminRejectSafeguardAppeal")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminRejectSafeguardAppealResponseObject); ok {
+		if err := validResponse.VisitAdminRejectSafeguardAppealResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminListSafeguardBlocks operation middleware
+func (sh *strictHandler) AdminListSafeguardBlocks(w http.ResponseWriter, r *http.Request, params AdminListSafeguardBlocksParams) {
+	var request AdminListSafeguardBlocksRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminListSafeguardBlocks(ctx, request.(AdminListSafeguardBlocksRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminListSafeguardBlocks")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminListSafeguardBlocksResponseObject); ok {
+		if err := validResponse.VisitAdminListSafeguardBlocksResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminGetSafeguardBlock operation middleware
+func (sh *strictHandler) AdminGetSafeguardBlock(w http.ResponseWriter, r *http.Request, hash BlockHash) {
+	var request AdminGetSafeguardBlockRequestObject
+
+	request.Hash = hash
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminGetSafeguardBlock(ctx, request.(AdminGetSafeguardBlockRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminGetSafeguardBlock")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminGetSafeguardBlockResponseObject); ok {
+		if err := validResponse.VisitAdminGetSafeguardBlockResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminRevokeSafeguardBlock operation middleware
+func (sh *strictHandler) AdminRevokeSafeguardBlock(w http.ResponseWriter, r *http.Request, hash BlockHash) {
+	var request AdminRevokeSafeguardBlockRequestObject
+
+	request.Hash = hash
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminRevokeSafeguardBlock(ctx, request.(AdminRevokeSafeguardBlockRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminRevokeSafeguardBlock")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminRevokeSafeguardBlockResponseObject); ok {
+		if err := validResponse.VisitAdminRevokeSafeguardBlockResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // AdminListSafeguardEvents operation middleware
 func (sh *strictHandler) AdminListSafeguardEvents(w http.ResponseWriter, r *http.Request, params AdminListSafeguardEventsParams) {
 	var request AdminListSafeguardEventsRequestObject
@@ -12066,6 +13799,85 @@ func (sh *strictHandler) AdminListSafeguardEvents(w http.ResponseWriter, r *http
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AdminListSafeguardEventsResponseObject); ok {
 		if err := validResponse.VisitAdminListSafeguardEventsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminGetSafeguardEvent operation middleware
+func (sh *strictHandler) AdminGetSafeguardEvent(w http.ResponseWriter, r *http.Request, eventId EventId) {
+	var request AdminGetSafeguardEventRequestObject
+
+	request.EventId = eventId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminGetSafeguardEvent(ctx, request.(AdminGetSafeguardEventRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminGetSafeguardEvent")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminGetSafeguardEventResponseObject); ok {
+		if err := validResponse.VisitAdminGetSafeguardEventResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminGetSafeguardEventBody operation middleware
+func (sh *strictHandler) AdminGetSafeguardEventBody(w http.ResponseWriter, r *http.Request, eventId EventId, params AdminGetSafeguardEventBodyParams) {
+	var request AdminGetSafeguardEventBodyRequestObject
+
+	request.EventId = eventId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminGetSafeguardEventBody(ctx, request.(AdminGetSafeguardEventBodyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminGetSafeguardEventBody")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminGetSafeguardEventBodyResponseObject); ok {
+		if err := validResponse.VisitAdminGetSafeguardEventBodyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminDownloadSafeguardEventBody operation middleware
+func (sh *strictHandler) AdminDownloadSafeguardEventBody(w http.ResponseWriter, r *http.Request, eventId EventId) {
+	var request AdminDownloadSafeguardEventBodyRequestObject
+
+	request.EventId = eventId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminDownloadSafeguardEventBody(ctx, request.(AdminDownloadSafeguardEventBodyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminDownloadSafeguardEventBody")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminDownloadSafeguardEventBodyResponseObject); ok {
+		if err := validResponse.VisitAdminDownloadSafeguardEventBodyResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -12508,6 +14320,65 @@ func (sh *strictHandler) AdminListUserKeys(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AdminListUserKeysResponseObject); ok {
 		if err := validResponse.VisitAdminListUserKeysResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminGetUserSafeguard operation middleware
+func (sh *strictHandler) AdminGetUserSafeguard(w http.ResponseWriter, r *http.Request, userId UserId) {
+	var request AdminGetUserSafeguardRequestObject
+
+	request.UserId = userId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminGetUserSafeguard(ctx, request.(AdminGetUserSafeguardRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminGetUserSafeguard")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminGetUserSafeguardResponseObject); ok {
+		if err := validResponse.VisitAdminGetUserSafeguardResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminUpdateUserSafeguard operation middleware
+func (sh *strictHandler) AdminUpdateUserSafeguard(w http.ResponseWriter, r *http.Request, userId UserId) {
+	var request AdminUpdateUserSafeguardRequestObject
+
+	request.UserId = userId
+
+	var body AdminUpdateUserSafeguardJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminUpdateUserSafeguard(ctx, request.(AdminUpdateUserSafeguardRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminUpdateUserSafeguard")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminUpdateUserSafeguardResponseObject); ok {
+		if err := validResponse.VisitAdminUpdateUserSafeguardResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -13049,6 +14920,85 @@ func (sh *strictHandler) ChangePassword(w http.ResponseWriter, r *http.Request) 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ChangePasswordResponseObject); ok {
 		if err := validResponse.VisitChangePasswordResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMySafeguard operation middleware
+func (sh *strictHandler) GetMySafeguard(w http.ResponseWriter, r *http.Request) {
+	var request GetMySafeguardRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMySafeguard(ctx, request.(GetMySafeguardRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMySafeguard")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMySafeguardResponseObject); ok {
+		if err := validResponse.VisitGetMySafeguardResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SubmitSafeguardAppeal operation middleware
+func (sh *strictHandler) SubmitSafeguardAppeal(w http.ResponseWriter, r *http.Request) {
+	var request SubmitSafeguardAppealRequestObject
+
+	var body SubmitSafeguardAppealJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SubmitSafeguardAppeal(ctx, request.(SubmitSafeguardAppealRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SubmitSafeguardAppeal")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SubmitSafeguardAppealResponseObject); ok {
+		if err := validResponse.VisitSubmitSafeguardAppealResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UseSafeguardResetCard operation middleware
+func (sh *strictHandler) UseSafeguardResetCard(w http.ResponseWriter, r *http.Request) {
+	var request UseSafeguardResetCardRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UseSafeguardResetCard(ctx, request.(UseSafeguardResetCardRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UseSafeguardResetCard")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UseSafeguardResetCardResponseObject); ok {
+		if err := validResponse.VisitUseSafeguardResetCardResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

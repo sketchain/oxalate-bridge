@@ -20,6 +20,7 @@ import (
 	"github.com/sketchain/oxalate-bridge/backend/internal/db/sqlc"
 	"github.com/sketchain/oxalate-bridge/backend/internal/jobs"
 	"github.com/sketchain/oxalate-bridge/backend/internal/router"
+	"github.com/sketchain/oxalate-bridge/backend/internal/safeguard"
 	"github.com/sketchain/oxalate-bridge/backend/internal/secret"
 	"github.com/sketchain/oxalate-bridge/backend/internal/settings"
 	"github.com/sketchain/oxalate-bridge/backend/internal/store"
@@ -28,9 +29,10 @@ import (
 
 // ---- users ----------------------------------------------------------------------
 
-func adminUserOf(u sqlc.User) AdminUser {
+func (s *Server) adminUserOf(u sqlc.User) AdminUser {
 	return AdminUser{Id: u.ID, Username: u.Username, Role: Role(u.Role), Status: UserStatus(u.Status), BalanceMicro: u.BalanceMicro,
-		MaxConcurrency: int(u.MaxConcurrency), Rpm: nullInt32(u.Rpm), Note: u.Note, CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt}
+		MaxConcurrency: int(u.MaxConcurrency), Rpm: nullInt32(u.Rpm), Note: u.Note, CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
+		SafeguardLocked: safeguard.Locked(u.SafeguardUsed, u.SafeguardAllowance, s.Settings.Get().SafeguardDefaultAllowance)}
 }
 
 var usernameRe = regexp.MustCompile(`^[A-Za-z0-9_.@-]{1,64}$`)
@@ -52,7 +54,7 @@ func (s *Server) AdminListUsers(ctx context.Context, req AdminListUsersRequestOb
 	}
 	items := make([]AdminUser, len(rows))
 	for i, u := range rows {
-		items[i] = adminUserOf(u)
+		items[i] = s.adminUserOf(u)
 	}
 	page := AdminUserPage{Items: items, NextCursor: nullable.NewNullNullable[string]()}
 	if len(rows) > 0 {
@@ -97,11 +99,12 @@ func (s *Server) AdminCreateUser(ctx context.Context, req AdminCreateUserRequest
 	}
 	id, _ := uuid.NewV7()
 	u, err := s.Store.Q.CreateUser(ctx, sqlc.CreateUserParams{ID: id, Username: b.Username, PasswordHash: secret.HashPassword(b.Password),
-		Role: role, MaxConcurrency: conc, Rpm: rpm, Note: deref(b.Note, "")})
+		Role: role, MaxConcurrency: conc, Rpm: rpm, Note: deref(b.Note, ""),
+		SafeguardResetCards: int32(s.Settings.Get().SafeguardDefaultResetCards)})
 	if err != nil {
 		return nil, mapDomainErr(err)
 	}
-	out := adminUserOf(u)
+	out := s.adminUserOf(u)
 	s.audit(ctx, "user.create", "user", u.ID.String(), nil, out)
 	return AdminCreateUser201JSONResponse(out), nil
 }
@@ -112,7 +115,7 @@ func (s *Server) AdminGetUser(ctx context.Context, req AdminGetUserRequestObject
 	if err != nil {
 		return nil, mapDomainErr(err)
 	}
-	return AdminGetUser200JSONResponse(adminUserOf(u)), nil
+	return AdminGetUser200JSONResponse(s.adminUserOf(u)), nil
 }
 
 // AdminUpdateUser implements PATCH /admin/users/{userId}.
@@ -145,6 +148,9 @@ func (s *Server) AdminUpdateUser(ctx context.Context, req AdminUpdateUserRequest
 		}
 		if b.Password != nil && before.Role == "admin" {
 			return nil, errTokenForbidden("set an admin's password")
+		}
+		if before.Role == "admin" && status != before.Status && status == "disabled" {
+			return nil, errTokenForbidden("disable admin users")
 		}
 	}
 	if before.ID == currentUser(ctx).ID && (role != "admin" || status != "active") {
@@ -192,20 +198,23 @@ func (s *Server) AdminUpdateUser(ctx context.Context, req AdminUpdateUserRequest
 		}
 		s.revokeSessions(ctx, before.ID, keep)
 	}
-	out := adminUserOf(after)
+	out := s.adminUserOf(after)
 	diffAfter := map[string]any{"user": out, "password_changed": b.Password != nil}
-	s.audit(ctx, "user.update", "user", before.ID.String(), adminUserOf(before), diffAfter)
+	s.audit(ctx, "user.update", "user", before.ID.String(), s.adminUserOf(before), diffAfter)
 	return AdminUpdateUser200JSONResponse(out), nil
 }
 
 // AdminDeleteUser implements DELETE /admin/users/{userId}.
 func (s *Server) AdminDeleteUser(ctx context.Context, req AdminDeleteUserRequestObject) (AdminDeleteUserResponseObject, error) {
-	if req.UserId == currentUser(ctx).ID {
-		return nil, badRequest("you cannot delete yourself")
-	}
 	before, err := s.Store.Q.GetUser(ctx, req.UserId)
 	if err != nil {
 		return nil, mapDomainErr(err)
+	}
+	if _, viaToken := currentToken(ctx); viaToken && before.Role == "admin" {
+		return nil, errTokenForbidden("delete admin users")
+	}
+	if req.UserId == currentUser(ctx).ID {
+		return nil, badRequest("you cannot delete yourself")
 	}
 	err = s.Store.InTx(ctx, func(tx *store.Tx) error {
 		if err := tx.Q.SoftDeleteUser(ctx, before.ID); err != nil {
@@ -217,7 +226,7 @@ func (s *Server) AdminDeleteUser(ctx context.Context, req AdminDeleteUserRequest
 		return nil, err
 	}
 	s.revokeSessions(ctx, before.ID, "")
-	s.audit(ctx, "user.delete", "user", before.ID.String(), adminUserOf(before), nil)
+	s.audit(ctx, "user.delete", "user", before.ID.String(), s.adminUserOf(before), nil)
 	return AdminDeleteUser204Response{}, nil
 }
 
@@ -364,8 +373,8 @@ func (s *Server) accountOf(ctx context.Context, row sqlc.Account, st *router.Acc
 	wm := s.effectiveWatermark(row)
 	out := Account{Id: row.ID, Name: row.Name, BaseUrl: row.BaseUrl, Enabled: row.Enabled,
 		Watermark5hPercent: nullFloat(row.Watermark5hPercent), Watermark5hPercentEffective: wm,
-		MaxConcurrency: nullInt32(row.MaxConcurrency), Note: row.Note, Instance: row.Instance, Subscription: row.Subscription,
-		Tier: row.Tier, AuthIndex: row.AuthIndex, Provider: row.Provider, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		MaxConcurrency: nullInt32(row.MaxConcurrency), Note: row.Note, Instance: row.Instance,
+		Tier: row.Tier, AuthIndex: row.AuthIndex, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		Runtime: s.runtimeOf(ctx, row, st, now), WeekTotalMicro: nullable.NewNullNullable[int64]()}
 	s.fillSold(ctx, &out, st)
 	return out
@@ -393,10 +402,9 @@ func (s *Server) accountStates(ctx context.Context, ids ...uuid.UUID) map[uuid.U
 
 // validation is the outcome of checking an account connection.
 type validation struct {
-	result      AccountTestResult
-	quota       *cpa.QuotaResponse
-	models      []string
-	unsupported string // the non-claude subscription /quota reported
+	result AccountTestResult
+	quota  *cpa.QuotaResponse
+	models []string
 }
 
 func (s *Server) validateAccount(ctx context.Context, baseURL, cpaKey, quotaToken string) validation {
@@ -409,16 +417,8 @@ func (s *Server) validateAccount(ctx context.Context, baseURL, cpaKey, quotaToke
 		v.result.QuotaError = &msg
 	} else {
 		acc := q.Accounts[0]
-		v.result.Instance, v.result.Subscription, v.result.Tier = &q.Instance, &q.Subscription, &q.Tier
-		v.result.AuthIndex, v.result.Provider = &acc.AuthIndex, &acc.Provider
-		if !cpa.IsClaude(q) {
-			// Only Claude subscriptions are served.
-			v.unsupported = q.Subscription
-			msg := fmt.Sprintf("unsupported subscription %q: only claude accounts can be used", q.Subscription)
-			v.result.QuotaError = &msg
-		} else {
-			v.result.QuotaOk, v.quota = true, q
-		}
+		v.result.Instance, v.result.Tier, v.result.AuthIndex = &q.Instance, &q.Tier, &acc.AuthIndex
+		v.result.QuotaOk, v.quota = true, q
 	}
 	models, err := s.CPA.Models(cctx, baseURL, cpaKey)
 	if err != nil {
@@ -436,9 +436,6 @@ func (v validation) err() error {
 	if v.result.Ok {
 		return nil
 	}
-	if v.unsupported != "" {
-		return apiErr(http.StatusUnprocessableEntity, "unsupported_subscription", *v.result.QuotaError)
-	}
 	var parts []string
 	if v.result.QuotaError != nil {
 		parts = append(parts, "/quota: "+*v.result.QuotaError)
@@ -455,7 +452,7 @@ func (s *Server) storeValidation(ctx context.Context, id uuid.UUID, v validation
 	now := time.Now().UTC()
 	if v.quota != nil {
 		snap := cpa.Snapshot{FetchedAt: now, LastAttemptAt: now, DatabaseStatus: v.quota.Database.Status,
-			EstimatesReady: v.quota.Estimates.Loaded, Instance: v.quota.Instance, Subscription: v.quota.Subscription,
+			EstimatesReady: v.quota.Estimates.Loaded, Instance: v.quota.Instance,
 			Tier: v.quota.Tier, Account: v.quota.Accounts[0], HasData: true}
 		raw, _ := json.Marshal(snap)
 		_ = s.St.R.Set(ctx, s.St.QuotaKey(id), raw, 0).Err()
@@ -515,7 +512,7 @@ func checkAccountNumbers(wm *float64, conc *int32) error {
 func accountAudit(row sqlc.Account) map[string]any {
 	return map[string]any{"name": row.Name, "base_url": row.BaseUrl, "enabled": row.Enabled,
 		"watermark_5h_percent": row.Watermark5hPercent, "max_concurrency": row.MaxConcurrency, "note": row.Note,
-		"instance": row.Instance, "subscription": row.Subscription, "tier": row.Tier, "auth_index": row.AuthIndex}
+		"instance": row.Instance, "tier": row.Tier, "auth_index": row.AuthIndex}
 }
 
 // AdminCreateAccount implements POST /admin/accounts.
@@ -546,7 +543,7 @@ func (s *Server) AdminCreateAccount(ctx context.Context, req AdminCreateAccountR
 		row, err = tx.Q.CreateAccount(ctx, sqlc.CreateAccountParams{ID: id, Name: strings.TrimSpace(b.Name),
 			BaseUrl: strings.TrimRight(b.BaseUrl, "/"), CpaKeyEnc: s.Box.Seal(b.CpaKey), QuotaTokenEnc: s.Box.Seal(b.QuotaToken),
 			Enabled: deref(b.Enabled, true), Watermark5hPercent: wm, MaxConcurrency: conc, Note: deref(b.Note, ""),
-			Instance: v.quota.Instance, Subscription: v.quota.Subscription, Tier: v.quota.Tier, AuthIndex: acc.AuthIndex, Provider: acc.Provider})
+			Instance: v.quota.Instance, Tier: v.quota.Tier, AuthIndex: acc.AuthIndex})
 		if err != nil {
 			return err
 		}
@@ -605,7 +602,7 @@ func (s *Server) AdminUpdateAccount(ctx context.Context, req AdminUpdateAccountR
 		after, err = tx.Q.UpdateAccount(ctx, sqlc.UpdateAccountParams{ID: before.ID, Name: strings.TrimSpace(deref(b.Name, before.Name)),
 			BaseUrl: baseURL, CpaKeyEnc: s.Box.Seal(cpaKey), QuotaTokenEnc: s.Box.Seal(quotaToken), Enabled: deref(b.Enabled, before.Enabled),
 			Watermark5hPercent: wm, MaxConcurrency: conc, Note: deref(b.Note, before.Note), Instance: v.quota.Instance,
-			Subscription: v.quota.Subscription, Tier: v.quota.Tier, AuthIndex: acc.AuthIndex, Provider: acc.Provider})
+			Tier: v.quota.Tier, AuthIndex: acc.AuthIndex})
 		if err != nil {
 			return err
 		}
@@ -722,7 +719,7 @@ func (s *Server) AdminTestAccount(ctx context.Context, req AdminTestAccountReque
 			}
 			acc := v.quota.Accounts[0]
 			if err := tx.Q.UpdateAccountQuotaInfo(ctx, sqlc.UpdateAccountQuotaInfoParams{ID: row.ID, Instance: v.quota.Instance,
-				Subscription: v.quota.Subscription, Tier: v.quota.Tier, AuthIndex: acc.AuthIndex, Provider: acc.Provider}); err != nil {
+				Tier: v.quota.Tier, AuthIndex: acc.AuthIndex}); err != nil {
 				return err
 			}
 			return tx.RoutingChanged(ctx)
@@ -1130,30 +1127,6 @@ func (s *Server) AdminListAuditLogs(ctx context.Context, req AdminListAuditLogsR
 	return AdminListAuditLogs200JSONResponse(page), nil
 }
 
-// AdminListSafeguardEvents implements GET /admin/safeguard-events.
-func (s *Server) AdminListSafeguardEvents(ctx context.Context, req AdminListSafeguardEventsRequestObject) (AdminListSafeguardEventsResponseObject, error) {
-	at, id, err := decodeCursor(req.Params.Cursor)
-	if err != nil {
-		return nil, err
-	}
-	lim := limitOf(req.Params.Limit)
-	rows, err := s.Store.Q.ListSafeguardEvents(ctx, sqlc.ListSafeguardEventsParams{Limit: lim, UserID: req.Params.UserId, CursorAt: at, CursorID: id})
-	if err != nil {
-		return nil, err
-	}
-	items := make([]SafeguardEvent, len(rows))
-	for i, r := range rows {
-		items[i] = SafeguardEvent{Id: r.ID, RequestId: r.RequestID, UserId: nullUUID(r.UserID), KeyId: nullUUID(r.KeyID),
-			AccountId: nullUUID(r.AccountID), Model: r.Model, Category: r.Category, Reason: r.Reason, CreatedAt: r.CreatedAt}
-	}
-	page := SafeguardEventPage{Items: items, NextCursor: nullable.NewNullNullable[string]()}
-	if len(rows) > 0 {
-		last := rows[len(rows)-1]
-		page.NextCursor = nextCursor(len(rows), lim, last.CreatedAt, last.ID)
-	}
-	return AdminListSafeguardEvents200JSONResponse(page), nil
-}
-
 // ---- prices, reconcile, events ----------------------------------------------------------------
 
 func (s *Server) priceStatus() PriceStatus {
@@ -1251,7 +1224,7 @@ var _ = errors.Is(nil, pgx.ErrNoRows)
 
 // Assignable is the backend's single definition of "可分配": the account can
 // take a new session of a normal call right now — enabled, not in error, not
-// cooling down, not stale, not hard exhausted (5h / week full, paused) and
+// cooling down, not stale, not hard exhausted (5h / week full) and
 // with H_A above the normal-call threshold. Penalized accounts with enough
 // headroom are assignable (the same rule as router.Candidates for standard).
 func Assignable(enabled, errored bool, st *router.AccountState, minHeadroom int64) bool {

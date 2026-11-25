@@ -108,7 +108,7 @@ func FromState(st *router.AccountState, spend5, spend7 int64, now time.Time) Acc
 		return out
 	}
 	acc := st.Snapshot.Account
-	exhausted := st.Cooldown != nil || cpa.Paused(acc, now)
+	exhausted := st.Cooldown != nil
 	observed := observedAt(st.Snapshot)
 	out.Five = WindowFrom(WindowInput{Window: acc.FiveHour, Safety: acc.SafetyFactor, Observed: observed, Spend: spend5,
 		Exhausted: exhausted, Period: Period5h}, now)

@@ -7,10 +7,8 @@ export function ValidationResult({ r }: { r: Schemas["AccountTestResult"] }) {
   const { t } = useTranslation();
   const rows: [string, string | undefined][] = [
     ["instance", r.instance],
-    ["subscription", r.subscription],
     ["tier", r.tier],
     ["auth_index", r.auth_index],
-    ["provider", r.provider],
   ];
   return (
     <div className={cn("border-2", r.ok ? "border-ink" : "border-red")} role="status">
@@ -32,7 +30,7 @@ export function ValidationResult({ r }: { r: Schemas["AccountTestResult"] }) {
       </dl>
       {!r.ok ? (
         <p className="border-t border-red px-3 py-2 text-[12px]">
-          {r.quota_ok ? t("accounts.modelsFailed") : r.subscription && r.subscription !== "claude" ? t("errors.unsupported_subscription") : t("accounts.quotaFailed")}
+          {r.quota_ok ? t("accounts.modelsFailed") : t("accounts.quotaFailed")}
         </p>
       ) : null}
     </div>

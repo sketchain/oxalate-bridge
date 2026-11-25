@@ -5,38 +5,33 @@ import "strings"
 // Account status reason codes (AccountRuntime.status_reason_code). The panel
 // translates every code; TestReasonCodesTranslated keeps the locales in step.
 const (
-	ReasonDisabled                = "disabled"
-	ReasonUpstreamAuth            = "upstream_auth"
-	ReasonUnsupportedSubscription = "unsupported_subscription"
-	ReasonError                   = "error"
-	ReasonNetwork                 = "network"
-	ReasonUpstream429             = "upstream_429"
-	ReasonUpstream5xx             = "upstream_5xx"
-	ReasonErrorCooldown           = "error_cooldown"
-	ReasonCooldown                = "cooldown"
-	ReasonQuotaStale              = "quota_stale"
-	Reason5hExhausted             = "5h_exhausted"
-	ReasonWeekExhausted           = "week_exhausted"
-	ReasonPaused                  = "paused"
-	ReasonPenalized               = "penalized"
+	ReasonDisabled      = "disabled"
+	ReasonUpstreamAuth  = "upstream_auth"
+	ReasonError         = "error"
+	ReasonNetwork       = "network"
+	ReasonUpstream429   = "upstream_429"
+	ReasonUpstream5xx   = "upstream_5xx"
+	ReasonErrorCooldown = "error_cooldown"
+	ReasonCooldown      = "cooldown"
+	ReasonQuotaStale    = "quota_stale"
+	Reason5hExhausted   = "5h_exhausted"
+	ReasonWeekExhausted = "week_exhausted"
+	ReasonPenalized     = "penalized"
 )
 
 // ReasonCodes are all the codes the backend produces.
 var ReasonCodes = []string{
-	ReasonDisabled, ReasonUpstreamAuth, ReasonUnsupportedSubscription, ReasonError, ReasonNetwork, ReasonUpstream429,
+	ReasonDisabled, ReasonUpstreamAuth, ReasonError, ReasonNetwork, ReasonUpstream429,
 	ReasonUpstream5xx, ReasonErrorCooldown, ReasonCooldown, ReasonQuotaStale, Reason5hExhausted, ReasonWeekExhausted,
-	ReasonPaused, ReasonPenalized,
+	ReasonPenalized,
 }
 
 // errorReasonCode classifies an account's stored error_reason (written by
-// the relay on upstream 401 / 403 and by the quota poll on a subscription
-// change).
+// the relay on upstream 401 / 403).
 func errorReasonCode(raw string) string {
 	switch {
 	case strings.HasPrefix(raw, "upstream 401"), strings.HasPrefix(raw, "upstream 403"):
 		return ReasonUpstreamAuth
-	case strings.HasPrefix(raw, "unsupported subscription"):
-		return ReasonUnsupportedSubscription
 	}
 	return ReasonError
 }
@@ -58,21 +53,19 @@ func cooldownReasonCode(raw string) string {
 }
 
 // hardDisplay maps a hard-exhaustion reason to its display status; ok is
-// false for reasons that are not a full window or a pause (cooldown).
+// false for reasons that are not a full window (cooldown).
 func hardDisplay(reason string) (AccountDisplayStatus, bool) {
 	switch reason {
 	case Reason5hExhausted:
 		return AccountDisplayStatusFiveHourFull, true
 	case ReasonWeekExhausted:
 		return AccountDisplayStatusWeekFull, true
-	case ReasonPaused:
-		return AccountDisplayStatusPaused, true
 	}
 	return "", false
 }
 
 // displayOf picks the single display status by priority: error > disabled
-// > cooldown > full (5h / week / paused) > stale > penalized > normal, and
+// > cooldown > full (5h / week) > stale > penalized > normal, and
 // the matching reason code and raw detail.
 func displayOf(enabled, errored bool, errorReason string, cooldown *string, hardReason string, stale bool, lastError string,
 	penalized bool) (AccountDisplayStatus, string, string) {

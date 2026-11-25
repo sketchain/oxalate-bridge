@@ -16,6 +16,7 @@ import { DataTable, columnHelper } from "@/components/DataTable";
 import { TierChain } from "@/components/Tags";
 import { CopyButton, EmptyState } from "@/components/Feedback";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { SafeguardViewNotice } from "@/components/Safeguard";
 import { TierEditor } from "@/components/TierEditor";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, SheetContent } from "@/components/ui/dialog";
@@ -426,6 +427,7 @@ function KeyDialog({
               {t("keyLimits.fixErrors")}
             </p>
           ) : null}
+          {!initial ? <SafeguardViewNotice /> : null}
           <DialogFooter className="mt-0">
             <Button onClick={onClose}>{t("common.cancel")}</Button>
             <Button type="submit" variant="primary" disabled={save.isPending}>

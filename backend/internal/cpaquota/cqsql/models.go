@@ -9,15 +9,39 @@ import (
 	"time"
 )
 
+type Block struct {
+	Instance      string
+	AuthIndex     string
+	StartAt       time.Time
+	EndAt         time.Time
+	Segments      int32
+	Excluded      int32
+	Gain          float64
+	CostUsd       float64
+	CleanGain     float64
+	CleanCostUsd  float64
+	Reference     float64
+	ReferenceMode string
+	Clean         bool
+}
+
+type Calibration struct {
+	ID        int64
+	Instance  string
+	AuthIndex string
+	Item      json.RawMessage
+	StartedNs int64
+	StartedAt *time.Time
+	EndedNs   int64
+	EndedAt   *time.Time
+	Result    []byte
+}
+
 type Estimate struct {
 	Instance             string
 	AuthIndex            string
-	Provider             string
-	Subscription         string
 	Tier                 string
 	State                string
-	PauseReason          string
-	SegmentWindow        string
 	Basis                string
 	K                    *float64
 	KSource              string
@@ -41,6 +65,15 @@ type Estimate struct {
 	Detail               json.RawMessage
 }
 
+type KBucket struct {
+	Instance  string
+	AuthIndex string
+	BucketNs  int64
+	BucketAt  *time.Time
+	Gain5h    float64
+	Gain7d    float64
+}
+
 type KTrendDaily struct {
 	Instance         string
 	AuthIndex        string
@@ -55,25 +88,42 @@ type KTrendDaily struct {
 	UpdatedAt        time.Time
 }
 
+type Meta struct {
+	Key   string
+	Value string
+}
+
+type ModelWeight struct {
+	Instance  string
+	Enabled   bool
+	Basis     string
+	Effective json.RawMessage
+	Estimate  json.RawMessage
+	Models    json.RawMessage
+	UpdatedAt time.Time
+}
+
+type PriceTable struct {
+	Instance  string
+	SourceUrl string
+	FetchedAt time.Time
+	Models    int32
+	Body      json.RawMessage
+}
+
 type QuotaReport struct {
-	ID               int64
-	Instance         string
-	AuthIndex        string
-	Provider         string
-	RequestID        string
-	AtNs             int64
-	At               *time.Time
-	Plan             string
-	CreditBalance    *float64
-	CreditsUnlimited *bool
-	LimitReached     bool
+	ID        int64
+	Instance  string
+	AuthIndex string
+	RequestID string
+	AtNs      int64
+	At        *time.Time
 }
 
 type QuotaReportWindow struct {
 	ReportID    int64
 	Instance    string
 	AuthIndex   string
-	Provider    string
 	LimitKey    string
 	Seconds     int64
 	AtNs        int64
@@ -87,7 +137,6 @@ type Request struct {
 	ID               int64
 	Instance         string
 	AuthIndex        string
-	Provider         string
 	RequestID        string
 	RequestedNs      int64
 	LatencyMs        int64
@@ -106,7 +155,40 @@ type Request struct {
 	Accounting       string
 	CostUsd          float64
 	Priced           bool
-	MainWindow       bool
 	Failed           bool
 	StatusCode       int32
+}
+
+type SafeguardEvent struct {
+	ID         int64
+	Instance   string
+	AtNs       int64
+	At         *time.Time
+	AuthIndex  string
+	Model      string
+	Category   string
+	Reason     string
+	RequestID  string
+	StatusCode int32
+	Stream     bool
+}
+
+type Segment struct {
+	ID        int64
+	Instance  string
+	AuthIndex string
+	BlockNs   int64
+	BlockAt   *time.Time
+	AtNs      int64
+	At        *time.Time
+	CostUsd   float64
+	Gain      float64
+	Models    []byte
+}
+
+type Stream struct {
+	Instance  string
+	AuthIndex string
+	State     json.RawMessage
+	UpdatedAt time.Time
 }

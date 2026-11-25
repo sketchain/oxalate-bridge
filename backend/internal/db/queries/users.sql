@@ -1,6 +1,6 @@
 -- name: CreateUser :one
-INSERT INTO users (id, username, password_hash, role, status, max_concurrency, rpm, note)
-VALUES ($1, $2, $3, $4, 'active', $5, $6, $7)
+INSERT INTO users (id, username, password_hash, role, status, max_concurrency, rpm, note, safeguard_reset_cards)
+VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8)
 RETURNING *;
 
 -- name: GetUser :one

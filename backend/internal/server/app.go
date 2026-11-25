@@ -40,6 +40,7 @@ import (
 	"github.com/sketchain/oxalate-bridge/backend/internal/proxy"
 	"github.com/sketchain/oxalate-bridge/backend/internal/router"
 	"github.com/sketchain/oxalate-bridge/backend/internal/rstate"
+	"github.com/sketchain/oxalate-bridge/backend/internal/safeguard"
 	"github.com/sketchain/oxalate-bridge/backend/internal/secret"
 	"github.com/sketchain/oxalate-bridge/backend/internal/settings"
 	"github.com/sketchain/oxalate-bridge/backend/internal/settle"
@@ -68,28 +69,29 @@ type Options struct {
 
 // App is one bridge replica.
 type App struct {
-	Cfg      config.Config
-	Log      *slog.Logger
-	Pool     *pgxpool.Pool
-	Redis    redis.UniversalClient
-	St       *rstate.State
-	Store    *store.Store
-	Box      *secret.Box
-	Settings *settings.Store
-	Prices   *billing.Prices
-	Cat      *router.Catalog
-	Router   *router.Router
-	Auth     *authcache.Cache
-	Hub      *events.Hub
-	Outbox   *outbox.Dispatcher
-	Consumer *settle.Consumer
-	Jobs     *jobs.Runner
-	Avail    *avail.Service
-	Subs     *subs.Service
-	Proxy    *proxy.Proxy
-	API      *api.Server
-	CPA      *cpa.Client
-	Notify   *notify.Service
+	Cfg       config.Config
+	Log       *slog.Logger
+	Pool      *pgxpool.Pool
+	Redis     redis.UniversalClient
+	St        *rstate.State
+	Store     *store.Store
+	Box       *secret.Box
+	Settings  *settings.Store
+	Prices    *billing.Prices
+	Cat       *router.Catalog
+	Router    *router.Router
+	Auth      *authcache.Cache
+	Hub       *events.Hub
+	Outbox    *outbox.Dispatcher
+	Consumer  *settle.Consumer
+	Jobs      *jobs.Runner
+	Avail     *avail.Service
+	Subs      *subs.Service
+	Proxy     *proxy.Proxy
+	API       *api.Server
+	CPA       *cpa.Client
+	Notify    *notify.Service
+	Safeguard *safeguard.Service
 
 	opts     Options
 	reloadDB chan struct{}
@@ -163,9 +165,13 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 				a.Hub.Publish(context.Background(), "request_settled", s)
 			}
 		}}
+	a.Safeguard = &safeguard.Service{Store: a.Store, St: a.St, Settings: a.Settings, Log: log}
+	if err := a.Safeguard.SyncBlocklist(ctx); err != nil {
+		return nil, fmt.Errorf("sync safeguard blocklist: %w", err)
+	}
 	a.Avail = &avail.Service{Router: a.Router, St: a.St, Log: log}
 	a.Jobs = &jobs.Runner{St: a.St, Store: a.Store, Box: box, CPA: a.CPA, Cat: a.Cat, Router: a.Router, Settings: a.Settings,
-		Prices: a.Prices, Subs: a.Subs, Hub: a.Hub, Log: log, ID: opts.InstanceID, Avail: a.Avail, Notify: a.Notify}
+		Prices: a.Prices, Subs: a.Subs, Hub: a.Hub, Log: log, ID: opts.InstanceID, Avail: a.Avail, Notify: a.Notify, Safeguard: a.Safeguard}
 	a.Jobs.RefreshPricesFn = a.refreshPrices
 	transport := opts.Transport
 	if transport == nil {
@@ -174,11 +180,11 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	meter := &keymeter.Meter{St: a.St, Q: a.Store.Q}
 	a.Proxy = &proxy.Proxy{Auth: a.Auth, Router: a.Router, St: a.St, Settings: a.Settings, Prices: a.Prices, Store: a.Store,
 		Log: log, Transport: transport, ClientIP: a.ClientIP, OnAccountError: a.requestCatalogReload, Meter: meter,
-		OnKeyExhausted: a.Notify.KeyExhausted}
+		OnKeyExhausted: a.Notify.KeyExhausted, Safeguard: a.Safeguard}
 	a.API = &api.Server{Store: a.Store, St: a.St, Box: box, Settings: a.Settings, Router: a.Router, Cat: a.Cat, Subs: a.Subs,
 		Prices: a.Prices, CPA: a.CPA, Hub: a.Hub, Auth: a.Auth, Log: log, CookieSecure: cfg.CookieSecure,
 		RefreshPrices: a.refreshPrices, Avail: a.Avail, Location: cfg.Location, CPAQuota: &cpaquota.Reader{Pool: pool, Schema: cfg.CPAQuotaSchema},
-		Meter: meter, ClientIPOf: a.ClientIP, VAPIDSubject: cfg.VAPIDSubject, Notify: a.Notify}
+		Meter: meter, ClientIPOf: a.ClientIP, VAPIDSubject: cfg.VAPIDSubject, Notify: a.Notify, Safeguard: a.Safeguard}
 	a.Notify.Subject = func() string { return a.API.VAPIDSubjectInEffect() }
 	a.Proxy.Status = func(ctx context.Context, info authcache.Info) (any, error) { return a.API.KeyStatusOf(ctx, info) }
 	a.Hub.OnInvalidate = a.Auth.DropL1
@@ -266,7 +272,8 @@ func (a *App) bootstrapAdmin(ctx context.Context) error {
 	id, _ := uuid.NewV7()
 	_, err = a.Store.Q.CreateUser(ctx, sqlc.CreateUserParams{ID: id, Username: a.Cfg.BootstrapAdminUsername,
 		PasswordHash: secret.HashPassword(a.Cfg.BootstrapAdminPassword), Role: "admin",
-		MaxConcurrency: int32(a.Settings.Get().DefaultUserConcurrency)})
+		MaxConcurrency:      int32(a.Settings.Get().DefaultUserConcurrency),
+		SafeguardResetCards: int32(a.Settings.Get().SafeguardDefaultResetCards)})
 	if err != nil {
 		return fmt.Errorf("bootstrap admin: %w", err)
 	}

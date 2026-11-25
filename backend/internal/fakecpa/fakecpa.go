@@ -1,7 +1,8 @@
-// Package fakecpa is a fake CLIProxyAPI instance (with the cpa-quota plugin)
-// serving one Claude subscription account: /quota, /v1/models and the Claude
-// Messages endpoints with usage (JSON or SSE) and the unified rate-limit
-// response headers. Tests start it with New; cmd/fakecpa runs several of them
+// Package fakecpa is a fake CLIProxyAPI instance (with the cpa-quota v0.1.0
+// plugin) serving one Claude subscription account: /quota, /v1/models and the
+// Claude Messages endpoints with usage (JSON or SSE) and the unified
+// rate-limit response headers. A prompt containing a refusal marker (see
+// RefuseMarker) gets a safeguard refusal instead of an answer. Tests start it with New; cmd/fakecpa runs several of them
 // standalone for local development (Drift mode).
 package fakecpa
 
@@ -45,7 +46,6 @@ type CPA struct {
 	Key        string
 	QuotaToken string
 	Instance   string
-	Sub        string // reported subscription; "claude" unless a test overrides it
 	Tier       string
 	AuthIndex  string
 	Models     []string
@@ -60,8 +60,11 @@ type CPA struct {
 	FiveReset, WeekReset time.Time
 	State                string
 	DatabaseStatus       string
-	// OmitK leaves accounts[0].k out of /quota (older cpa-quota versions).
+	// OmitK reports accounts[0].k as null (cold start, no k yet).
 	OmitK bool
+	// NoAccounts makes /quota list no account (cpa-quota without
+	// auth_indexes before the account's first request).
+	NoAccounts bool
 	// Safety is the reported safety factor (0 = 0.9).
 	Safety      float64
 	QuotaStatus int
@@ -87,7 +90,7 @@ func New(instance string) *CPA {
 // http.Handler and set BaseURL.
 func NewUnstarted(instance string) *CPA {
 	now := time.Now().UTC()
-	c := &CPA{Key: "cpa-key-" + instance, QuotaToken: "quota-" + instance, Instance: instance, Sub: "claude", Tier: "max5x",
+	c := &CPA{Key: "cpa-key-" + instance, QuotaToken: "quota-" + instance, Instance: instance, Tier: "max5x",
 		AuthIndex: "acct-" + instance, Models: []string{"claude-opus-4-8", "claude-sonnet-4.6"},
 		Usage:    Usage{Input: 100, Output: 50, CacheRead: 1000, CacheWrite: 200},
 		FiveUsed: 10, WeekUsed: 20, FiveTotal: 10, WeekTotal: 100, State: "estimated", DatabaseStatus: "ok",
@@ -203,21 +206,37 @@ func (c *CPA) quotaBody() map[string]any {
 	if c.FiveTotal > 0 && !c.OmitK {
 		k = c.WeekTotal / c.FiveTotal
 	}
+	now := time.Now().UTC()
 	window := func(used, total float64, reset time.Time) map[string]any {
 		return map[string]any{"used_percent": used, "reset_at": reset.Format(time.RFC3339), "total_usd": total,
-			"remaining_usd": sf * total * (1 - used/100)}
+			"remaining_usd": sf * total * (1 - used/100),
+			"forecast": map[string]any{"source": "none", "per_hour_percent": 0, "outcome": "unknown", "exhausts_at": nil,
+				"lookback_seconds": 0}}
 	}
-	return map[string]any{
-		"plugin": "cpa-quota", "instance": c.Instance, "subscription": c.Sub, "tier": c.Tier,
-		"database":  map[string]any{"status": c.DatabaseStatus},
-		"estimates": map[string]any{"loaded": true},
-		"accounts": []map[string]any{{
-			"auth_index": c.AuthIndex, "provider": "claude",
-			"subscription": c.Sub, "tier": c.Tier, "state": c.State, "safety_factor": sf, "k": k,
-			"observed_at": time.Now().UTC().Add(-time.Minute).Format(time.RFC3339),
+	kSource := "auto"
+	if k == nil {
+		kSource = "none"
+	}
+	accounts := []map[string]any{}
+	if !c.NoAccounts {
+		accounts = append(accounts, map[string]any{
+			"auth_index": c.AuthIndex, "tier": c.Tier, "state": c.State, "k": k, "k_source": kSource, "k_auto": k,
+			"totals_from": "estimated", "safety_factor": sf,
+			"observed_at": now.Add(-time.Minute).Format(time.RFC3339),
 			"five_hour":   window(c.FiveUsed, c.FiveTotal, c.FiveReset),
 			"week":        window(c.WeekUsed, c.WeekTotal, c.WeekReset),
-		}},
+			"estimate": map[string]any{"ratio": 0, "usd_per_point": 0, "clean_blocks": 0, "total_blocks": 0, "cold_start_blocks": 0,
+				"segments": 0, "excluded_segments": 0, "voided_segments": 0, "basis": "raw", "estimated_at": now.Format(time.RFC3339)},
+			"model_weights": map[string]any{"enabled": false, "basis": "raw", "suggestions": []any{}},
+		})
+	}
+	return map[string]any{
+		"plugin": "cpa-quota", "version": "0.1.0", "instance": c.Instance, "generated_at": now.Format(time.RFC3339Nano),
+		"tier":        c.Tier,
+		"price_table": map[string]any{"source_url": "", "origin": "none", "updated_at": nil, "models": 0, "last_attempt_at": nil},
+		"database":    map[string]any{"status": c.DatabaseStatus, "pending_writes": 0, "dropped_writes": 0, "schema_version": 1},
+		"estimates":   map[string]any{"loaded": true, "estimated_at": now.Format(time.RFC3339)},
+		"accounts":    accounts,
 	}
 }
 
@@ -318,6 +337,18 @@ func (c *CPA) relay(w http.ResponseWriter, r *http.Request) {
 	}
 	model := gjson.GetBytes(body, "model").String()
 	stream := gjson.GetBytes(body, "stream").Bool()
+	if r.URL.Path == "/v1/messages" {
+		switch {
+		case strings.Contains(string(body), RefuseStreamMarker):
+			c.refuseInResponse(w, model, stream, u)
+			return
+		case strings.Contains(string(body), RefuseMarker):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, RefusalBody("cyber", "fake refusal"))
+			return
+		}
+	}
 	switch r.URL.Path {
 	case "/v1/messages/count_tokens":
 		writeJSON(w, 200, map[string]any{"input_tokens": 42})
@@ -370,11 +401,41 @@ const RatioTable = `{"success":true,"data":{
 	"cache_ratio":{"claude-opus-4-8":0.1,"claude-sonnet-4.6":0.1},
 	"create_cache_ratio":{"claude-opus-4-8":1.25,"claude-sonnet-4.6":1.25}}}`
 
+// Refusal markers: a /v1/messages body containing RefuseMarker gets the
+// CPA safeguard error (400); one containing RefuseStreamMarker gets an answer
+// that ends with stop_reason "refusal" (inside the stream when streaming).
+// RefuseStreamMarker contains RefuseMarker, so it is checked first.
+const (
+	RefuseMarker       = "fakecpa:refuse"
+	RefuseStreamMarker = "fakecpa:refuse-stream"
+)
+
 // RefusalBody is the CPA safeguard error body.
 func RefusalBody(category, reason string) string {
-	raw, _ := json.Marshal(map[string]any{"error": map[string]any{"type": "invalid_request_error",
+	raw, _ := json.Marshal(map[string]any{"type": "error", "error": map[string]any{"type": "invalid_request_error",
 		"message": "claude refusal (" + category + "): " + reason}})
 	return string(raw)
+}
+
+func (c *CPA) refuseInResponse(w http.ResponseWriter, model string, stream bool, u Usage) {
+	details := map[string]any{"type": "refusal", "category": "cyber", "explanation": "fake refusal"}
+	if !stream {
+		writeJSON(w, 200, map[string]any{"id": "msg_1", "type": "message", "role": "assistant", "model": model,
+			"content": []map[string]any{}, "stop_reason": "refusal", "stop_details": details,
+			"usage": map[string]any{"input_tokens": u.Input, "output_tokens": 1}})
+		return
+	}
+	sse(w, []string{
+		event("message_start", map[string]any{"type": "message_start", "message": map[string]any{"id": "msg_1", "type": "message",
+			"role": "assistant", "model": model, "content": []any{}, "usage": map[string]any{"input_tokens": u.Input,
+				"cache_read_input_tokens": u.CacheRead, "cache_creation_input_tokens": u.CacheWrite, "output_tokens": 1}}}),
+		event("content_block_start", map[string]any{"type": "content_block_start", "index": 0, "content_block": map[string]any{"type": "text", "text": ""}}),
+		event("content_block_delta", map[string]any{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "text_delta", "text": "Sure, "}}),
+		event("content_block_stop", map[string]any{"type": "content_block_stop", "index": 0}),
+		event("message_delta", map[string]any{"type": "message_delta", "delta": map[string]any{"stop_reason": "refusal", "stop_details": details},
+			"usage": map[string]any{"output_tokens": 3}}),
+		event("message_stop", map[string]any{"type": "message_stop"}),
+	})
 }
 
 // Contains reports whether any recorded request path contains s.

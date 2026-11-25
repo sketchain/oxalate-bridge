@@ -22,10 +22,8 @@ type Account struct {
 	MaxConcurrency     *int32
 	Note               string
 	Instance           string
-	Subscription       string
 	Tier               string
 	AuthIndex          string
-	Provider           string
 	ErrorStatus        bool
 	ErrorReason        string
 	ErrorAt            *time.Time
@@ -281,16 +279,55 @@ type RequestLog struct {
 	UserAgent         string
 }
 
-type SafeguardEvent struct {
+type SafeguardAppeal struct {
+	ID           uuid.UUID
+	UserID       uuid.UUID
+	Note         string
+	Status       string
+	RejectReason string
+	DecidedBy    *uuid.UUID
+	DecidedAt    *time.Time
+	CreatedAt    time.Time
+}
+
+type SafeguardBlock struct {
+	Hash         string
+	Prompt       string
+	FirstEventID uuid.UUID
+	FirstUserID  *uuid.UUID
+	CreatedAt    time.Time
+	Hits         int64
+	LastHitAt    *time.Time
+	RevokedAt    *time.Time
+	RevokedBy    *uuid.UUID
+}
+
+type SafeguardBlockedRequest struct {
 	ID        uuid.UUID
 	RequestID uuid.UUID
-	UserID    *uuid.UUID
+	UserID    uuid.UUID
 	KeyID     *uuid.UUID
-	AccountID *uuid.UUID
-	Model     string
-	Category  string
-	Reason    string
+	Hash      string
 	CreatedAt time.Time
+}
+
+type SafeguardEvent struct {
+	ID         uuid.UUID
+	RequestID  uuid.UUID
+	UserID     *uuid.UUID
+	KeyID      *uuid.UUID
+	AccountID  *uuid.UUID
+	Model      string
+	Category   string
+	Reason     string
+	CreatedAt  time.Time
+	StatusCode int32
+	Stream     bool
+	Counted    bool
+	PromptHash string
+	Prompt     string
+	BodyGz     []byte
+	BodySize   int64
 }
 
 type Setting struct {
@@ -319,18 +356,22 @@ type UsageHourly struct {
 }
 
 type User struct {
-	ID             uuid.UUID
-	Username       string
-	PasswordHash   string
-	Role           string
-	Status         string
-	BalanceMicro   int64
-	BalanceVersion int64
-	MaxConcurrency int32
-	Rpm            *int32
-	Note           string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	DeletedAt      *time.Time
-	Locale         string
+	ID                  uuid.UUID
+	Username            string
+	PasswordHash        string
+	Role                string
+	Status              string
+	BalanceMicro        int64
+	BalanceVersion      int64
+	MaxConcurrency      int32
+	Rpm                 *int32
+	Note                string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	DeletedAt           *time.Time
+	Locale              string
+	SafeguardAllowance  *int32
+	SafeguardUsed       int32
+	SafeguardResetCards int32
+	SafeguardLockedAt   *time.Time
 }

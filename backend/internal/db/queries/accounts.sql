@@ -1,7 +1,7 @@
 -- name: CreateAccount :one
 INSERT INTO accounts (id, name, base_url, cpa_key_enc, quota_token_enc, enabled, watermark_5h_percent, max_concurrency, note,
-                      instance, subscription, tier, auth_index, provider)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                      instance, tier, auth_index)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 RETURNING *;
 
 -- name: GetAccount :one
@@ -12,7 +12,7 @@ SELECT * FROM accounts WHERE deleted_at IS NULL ORDER BY created_at, id;
 
 -- name: UpdateAccount :one
 UPDATE accounts SET name = $2, base_url = $3, cpa_key_enc = $4, quota_token_enc = $5, enabled = $6, watermark_5h_percent = $7,
-                    max_concurrency = $8, note = $9, instance = $10, subscription = $11, tier = $12, auth_index = $13, provider = $14,
+                    max_concurrency = $8, note = $9, instance = $10, tier = $11, auth_index = $12,
                     error_status = false, error_reason = '', error_at = NULL, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
 RETURNING *;
@@ -33,8 +33,8 @@ UPDATE accounts SET error_status = true, error_reason = $2, error_at = now(), up
 UPDATE accounts SET error_status = false, error_reason = '', error_at = NULL, updated_at = now() WHERE id = $1;
 
 -- name: UpdateAccountQuotaInfo :exec
-UPDATE accounts SET instance = $2, subscription = $3, tier = $4, auth_index = $5, provider = $6, updated_at = now()
-WHERE id = $1 AND (instance, subscription, tier, auth_index, provider) IS DISTINCT FROM ($2, $3, $4, $5, $6);
+UPDATE accounts SET instance = $2, tier = $3, auth_index = $4, updated_at = now()
+WHERE id = $1 AND (instance, tier, auth_index) IS DISTINCT FROM ($2, $3, $4);
 
 -- name: LockAccountForUpdate :one
 -- Serializes deleting an account against binding subscriptions to it.

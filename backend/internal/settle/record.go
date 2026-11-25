@@ -53,14 +53,6 @@ type Record struct {
 	// Wallet is the Redis wallet charged with Billed ("" when nothing was
 	// charged); its pending counter is decremented once the record is in PG.
 	Wallet string `json:"wallet,omitempty"`
-
-	Safeguard *Safeguard `json:"safeguard,omitempty"`
-}
-
-// Safeguard is a Claude policy refusal seen on the request.
-type Safeguard struct {
-	Category string `json:"category"`
-	Reason   string `json:"reason"`
 }
 
 // BalanceTier reports whether a tier charges the user's balance.

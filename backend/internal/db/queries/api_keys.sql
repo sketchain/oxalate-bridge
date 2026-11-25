@@ -32,7 +32,8 @@ SELECT k.id AS key_id, k.user_id, k.tiers, k.subscription_id, k.max_concurrency 
        k.enabled AS key_enabled, (k.deleted_at IS NOT NULL)::boolean AS key_deleted,
        k.quota_limit_micro, k.quota_scope, k.limit_5h_micro, k.limit_1d_micro, k.limit_7d_micro, k.expires_at,
        k.model_allowlist, k.ip_allowlist, k.allow_owner_query,
-       u.role, u.status AS user_status, u.max_concurrency AS user_max_concurrency, u.rpm AS user_rpm
+       u.role, u.status AS user_status, u.max_concurrency AS user_max_concurrency, u.rpm AS user_rpm,
+       u.safeguard_allowance, u.safeguard_used
 FROM api_keys k JOIN users u ON u.id = k.user_id
 WHERE k.key_hash = $1;
 

@@ -5,9 +5,9 @@ import { useTranslation } from "react-i18next";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { KeyRound, RotateCcw, SlidersHorizontal, UserX, UserCheck, Wallet } from "lucide-react";
+import { KeyRound, RotateCcw, ShieldAlert, SlidersHorizontal, UserX, UserCheck, Wallet } from "lucide-react";
 import { api, unwrap, type Schemas } from "@/api/client";
-import { adminUsageQuery, keys, meQuery, subscriptionsInfinite, userKeysQuery, userQuery } from "@/api/queries";
+import { adminUsageQuery, keys, meQuery, subscriptionsInfinite, userKeysQuery, userQuery, userSafeguardQuery } from "@/api/queries";
 import { PageHeader } from "@/components/PageHeader";
 import { Section } from "@/components/Section";
 import { StatStrip } from "@/components/StatStrip";
@@ -26,7 +26,7 @@ import { Field } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApiMutation } from "@/lib/mutations";
-import { formatDateTime, formatUSD, parseUSD } from "@/lib/format";
+import { formatDateTime, formatInt, formatUSD, parseUSD } from "@/lib/format";
 import { seriesFacts, tierSeries, useDayRange } from "@/lib/usage";
 import { shortId } from "@/lib/utils";
 
@@ -109,6 +109,7 @@ function UserDetail() {
           </Section>
         </div>
         <UserKeys userId={userId} />
+        <UserSafeguard userId={userId} />
         <UserSubscriptions userId={userId} />
         <UserUsage userId={userId} />
       </div>
@@ -400,7 +401,7 @@ function UserSubscriptions({ userId }: { userId: string }) {
   const rows = useMemo(() => q.data?.pages.flatMap((p) => p.items) ?? [], [q.data]);
   return (
     <Section
-      n={4}
+      n={5}
       title={t("users.subscriptions")}
       aside={
         <Link to="/admin/subscriptions" search={{ tab: "all", user: userId }} className="text-[13px] font-semibold underline underline-offset-4">
@@ -439,9 +440,130 @@ function UserUsage({ userId }: { userId: string }) {
   const facts = seriesFacts(series, formatUSD);
   const upstream = (q.data?.items ?? []).reduce((a, b) => a + b.upstream_cost_micro, 0);
   return (
-    <Section n={5} title={t("users.recentUsage")} aside={<span className="num text-[12px] text-muted">{t("users.usageTotals", { billed: facts.total, upstream: formatUSD(upstream) })}</span>}>
+    <Section n={6} title={t("users.recentUsage")} aside={<span className="num text-[12px] text-muted">{t("users.usageTotals", { billed: facts.total, upstream: formatUSD(upstream) })}</span>}>
       {q.isPending ? <Skeleton className="h-56" /> : q.error ? <ErrorBox error={q.error} onRetry={() => q.refetch()} /> : <TierStackedBars data={series} description={t("charts.tierSeries", { title: t("users.recentUsage"), ...facts })} />}
     </Section>
   );
 }
 
+
+/** Safeguard counters of the user, with the admin's adjustments (audited). */
+function UserSafeguard({ userId }: { userId: string }) {
+  const { t } = useTranslation();
+  const q = useQuery(userSafeguardQuery(userId));
+  const [editing, setEditing] = useState(false);
+  const s = q.data;
+  return (
+    <Section
+      n={4}
+      title={t("users.safeguard")}
+      aside={
+        <>
+          <Link to="/admin/safeguard" search={{ user: userId }} className="text-[13px] font-semibold underline underline-offset-4">
+            {t("users.safeguardEvents")}
+          </Link>
+          <Button size="sm" variant="primary" disabled={!s} onClick={() => setEditing(true)}>
+            <ShieldAlert aria-hidden />
+            {t("users.safeguardAdjust")}
+          </Button>
+        </>
+      }
+    >
+      {q.isPending ? (
+        <Skeleton className="h-24" />
+      ) : q.error ? (
+        <ErrorBox error={q.error} onRetry={() => q.refetch()} />
+      ) : s ? (
+        <StatStrip
+          stats={[
+            {
+              label: t("users.sgUsed"),
+              value: (
+                <span data-testid="user-sg-used">
+                  {s.used} / {s.allowance}
+                </span>
+              ),
+              note: s.allowance_override != null ? t("users.sgOverride") : t("users.sgDefault", { n: s.default_allowance }),
+              alert: s.locked,
+            },
+            { label: t("users.sgCards"), value: s.reset_cards },
+            { label: t("users.sgEvents"), value: formatInt(s.events_count) },
+            { label: t("users.sgBlocked"), value: formatInt(s.blocked_count), note: s.locked && s.locked_at ? t("users.sgLockedAt", { time: formatDateTime(s.locked_at) }) : undefined },
+          ]}
+        />
+      ) : null}
+      {editing && s ? <SafeguardDialog s={s} onClose={() => setEditing(false)} /> : null}
+    </Section>
+  );
+}
+
+function SafeguardDialog({ s, onClose }: { s: Schemas["AdminUserSafeguard"]; onClose: () => void }) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const int = (min: number, max: number) =>
+    z
+      .string()
+      .trim()
+      .refine((v) => /^\d+$/.test(v) && Number(v) >= min && Number(v) <= max, t("validation.between", { min, max }));
+  const schema = z.object({
+    override: z
+      .string()
+      .trim()
+      .refine((v) => v === "" || (/^\d+$/.test(v) && Number(v) >= 1 && Number(v) <= 1000), t("validation.between", { min: 1, max: 1000 })),
+    used: int(0, 100000),
+    cards: int(0, 1000),
+  });
+  type V = z.infer<typeof schema>;
+  const form = useForm<V>({
+    resolver: zodResolver(schema),
+    defaultValues: { override: s.allowance_override != null ? String(s.allowance_override) : "", used: String(s.used), cards: String(s.reset_cards) },
+  });
+  const errs = form.formState.errors;
+  const save = useApiMutation({
+    mutationFn: (body: Schemas["AdminUserSafeguardUpdate"]) => unwrap(api.PATCH("/admin/users/{userId}/safeguard", { params: { path: { userId: s.user_id } }, body })),
+    success: t("users.sgSaved"),
+    onSuccess: (next) => {
+      qc.setQueryData(keys.userSafeguard(s.user_id), next);
+      void qc.invalidateQueries({ queryKey: keys.user(s.user_id) });
+      void qc.invalidateQueries({ queryKey: ["admin", "users", "list"] });
+      onClose();
+    },
+  });
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent title={t("users.sgAdjustTitle", { name: s.username })} description={t("users.sgAdjustHint")}>
+        <form
+          noValidate
+          className="flex flex-col gap-4"
+          onSubmit={form.handleSubmit((v) => {
+            const body: Schemas["AdminUserSafeguardUpdate"] = {};
+            const override = v.override === "" ? null : Number(v.override);
+            if (override !== (s.allowance_override ?? null)) body.allowance_override = override;
+            if (Number(v.used) !== s.used) body.used = Number(v.used);
+            if (Number(v.cards) !== s.reset_cards) body.reset_cards = Number(v.cards);
+            if (Object.keys(body).length) save.mutate(body);
+            else onClose();
+          })}
+        >
+          <Field label={t("users.sgOverrideLabel")} htmlFor="sg-override" hint={t("users.sgOverrideHint", { n: s.default_allowance })} error={errs.override?.message}>
+            <Input id="sg-override" inputMode="numeric" className="num" aria-invalid={!!errs.override} {...form.register("override")} />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label={t("users.sgUsed")} htmlFor="sg-used" hint={t("users.sgUsedHint")} error={errs.used?.message}>
+              <Input id="sg-used" inputMode="numeric" className="num" aria-invalid={!!errs.used} {...form.register("used")} />
+            </Field>
+            <Field label={t("users.sgCards")} htmlFor="sg-cards" error={errs.cards?.message}>
+              <Input id="sg-cards" inputMode="numeric" className="num" aria-invalid={!!errs.cards} {...form.register("cards")} />
+            </Field>
+          </div>
+          <DialogFooter className="mt-0">
+            <Button onClick={onClose}>{t("common.cancel")}</Button>
+            <Button type="submit" variant="primary" disabled={save.isPending}>
+              {t("common.save")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

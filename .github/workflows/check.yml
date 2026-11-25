@@ -335,7 +335,30 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
 
+      # Anti-drift: migrate a schema with the pinned cpa-quota release's own
+      # code, then TestUpstreamSchemaDrift compares it with schema.sql and
+      # prepares every bridge query against it.
+      - name: Read pinned cpa-quota commit
+        id: cpaquota
+        run: echo "sha=$(tr -d '[:space:]' < internal/cpaquota/UPSTREAM)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        with:
+          repository: sketchain/cpa-quota
+          ref: ${{ steps.cpaquota.outputs.sha }}
+          path: cpa-quota
+          persist-credentials: false
+
+      - name: Migrate a cpa-quota schema with the pinned release
+        working-directory: cpa-quota
+        run: |
+          mkdir drift-migrate
+          cp ../.github/cpa-quota-migrate/main.go drift-migrate/
+          go run ./drift-migrate "$BRIDGE_TEST_DATABASE_URL" cpa_quota_upstream
+
       - name: go test -race
+        env:
+          BRIDGE_TEST_CPA_QUOTA_SCHEMA: cpa_quota_upstream
         run: go test -race -count=1 ./...
 
       - name: Build

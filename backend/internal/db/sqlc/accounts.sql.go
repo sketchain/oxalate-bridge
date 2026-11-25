@@ -22,9 +22,9 @@ func (q *Queries) ClearAccountError(ctx context.Context, id uuid.UUID) error {
 
 const createAccount = `-- name: CreateAccount :one
 INSERT INTO accounts (id, name, base_url, cpa_key_enc, quota_token_enc, enabled, watermark_5h_percent, max_concurrency, note,
-                      instance, subscription, tier, auth_index, provider)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-RETURNING id, name, base_url, cpa_key_enc, quota_token_enc, enabled, watermark_5h_percent, max_concurrency, note, instance, subscription, tier, auth_index, provider, error_status, error_reason, error_at, created_at, updated_at, deleted_at
+                      instance, tier, auth_index)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+RETURNING id, name, base_url, cpa_key_enc, quota_token_enc, enabled, watermark_5h_percent, max_concurrency, note, instance, tier, auth_index, error_status, error_reason, error_at, created_at, updated_at, deleted_at
 `
 
 type CreateAccountParams struct {
@@ -38,10 +38,8 @@ type CreateAccountParams struct {
 	MaxConcurrency     *int32
 	Note               string
 	Instance           string
-	Subscription       string
 	Tier               string
 	AuthIndex          string
-	Provider           string
 }
 
 func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error) {
@@ -56,10 +54,8 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		arg.MaxConcurrency,
 		arg.Note,
 		arg.Instance,
-		arg.Subscription,
 		arg.Tier,
 		arg.AuthIndex,
-		arg.Provider,
 	)
 	var i Account
 	err := row.Scan(
@@ -73,10 +69,8 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.MaxConcurrency,
 		&i.Note,
 		&i.Instance,
-		&i.Subscription,
 		&i.Tier,
 		&i.AuthIndex,
-		&i.Provider,
 		&i.ErrorStatus,
 		&i.ErrorReason,
 		&i.ErrorAt,
@@ -88,7 +82,7 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 }
 
 const getAccount = `-- name: GetAccount :one
-SELECT id, name, base_url, cpa_key_enc, quota_token_enc, enabled, watermark_5h_percent, max_concurrency, note, instance, subscription, tier, auth_index, provider, error_status, error_reason, error_at, created_at, updated_at, deleted_at FROM accounts WHERE id = $1 AND deleted_at IS NULL
+SELECT id, name, base_url, cpa_key_enc, quota_token_enc, enabled, watermark_5h_percent, max_concurrency, note, instance, tier, auth_index, error_status, error_reason, error_at, created_at, updated_at, deleted_at FROM accounts WHERE id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetAccount(ctx context.Context, id uuid.UUID) (Account, error) {
@@ -105,10 +99,8 @@ func (q *Queries) GetAccount(ctx context.Context, id uuid.UUID) (Account, error)
 		&i.MaxConcurrency,
 		&i.Note,
 		&i.Instance,
-		&i.Subscription,
 		&i.Tier,
 		&i.AuthIndex,
-		&i.Provider,
 		&i.ErrorStatus,
 		&i.ErrorReason,
 		&i.ErrorAt,
@@ -120,7 +112,7 @@ func (q *Queries) GetAccount(ctx context.Context, id uuid.UUID) (Account, error)
 }
 
 const listAccounts = `-- name: ListAccounts :many
-SELECT id, name, base_url, cpa_key_enc, quota_token_enc, enabled, watermark_5h_percent, max_concurrency, note, instance, subscription, tier, auth_index, provider, error_status, error_reason, error_at, created_at, updated_at, deleted_at FROM accounts WHERE deleted_at IS NULL ORDER BY created_at, id
+SELECT id, name, base_url, cpa_key_enc, quota_token_enc, enabled, watermark_5h_percent, max_concurrency, note, instance, tier, auth_index, error_status, error_reason, error_at, created_at, updated_at, deleted_at FROM accounts WHERE deleted_at IS NULL ORDER BY created_at, id
 `
 
 func (q *Queries) ListAccounts(ctx context.Context) ([]Account, error) {
@@ -143,10 +135,8 @@ func (q *Queries) ListAccounts(ctx context.Context) ([]Account, error) {
 			&i.MaxConcurrency,
 			&i.Note,
 			&i.Instance,
-			&i.Subscription,
 			&i.Tier,
 			&i.AuthIndex,
-			&i.Provider,
 			&i.ErrorStatus,
 			&i.ErrorReason,
 			&i.ErrorAt,
@@ -193,7 +183,7 @@ const setAccountEnabled = `-- name: SetAccountEnabled :one
 UPDATE accounts SET enabled = $2, error_status = CASE WHEN $2 THEN false ELSE error_status END,
                     error_reason = CASE WHEN $2 THEN '' ELSE error_reason END, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, name, base_url, cpa_key_enc, quota_token_enc, enabled, watermark_5h_percent, max_concurrency, note, instance, subscription, tier, auth_index, provider, error_status, error_reason, error_at, created_at, updated_at, deleted_at
+RETURNING id, name, base_url, cpa_key_enc, quota_token_enc, enabled, watermark_5h_percent, max_concurrency, note, instance, tier, auth_index, error_status, error_reason, error_at, created_at, updated_at, deleted_at
 `
 
 type SetAccountEnabledParams struct {
@@ -215,10 +205,8 @@ func (q *Queries) SetAccountEnabled(ctx context.Context, arg SetAccountEnabledPa
 		&i.MaxConcurrency,
 		&i.Note,
 		&i.Instance,
-		&i.Subscription,
 		&i.Tier,
 		&i.AuthIndex,
-		&i.Provider,
 		&i.ErrorStatus,
 		&i.ErrorReason,
 		&i.ErrorAt,
@@ -254,10 +242,10 @@ func (q *Queries) SoftDeleteAccount(ctx context.Context, id uuid.UUID) error {
 
 const updateAccount = `-- name: UpdateAccount :one
 UPDATE accounts SET name = $2, base_url = $3, cpa_key_enc = $4, quota_token_enc = $5, enabled = $6, watermark_5h_percent = $7,
-                    max_concurrency = $8, note = $9, instance = $10, subscription = $11, tier = $12, auth_index = $13, provider = $14,
+                    max_concurrency = $8, note = $9, instance = $10, tier = $11, auth_index = $12,
                     error_status = false, error_reason = '', error_at = NULL, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, name, base_url, cpa_key_enc, quota_token_enc, enabled, watermark_5h_percent, max_concurrency, note, instance, subscription, tier, auth_index, provider, error_status, error_reason, error_at, created_at, updated_at, deleted_at
+RETURNING id, name, base_url, cpa_key_enc, quota_token_enc, enabled, watermark_5h_percent, max_concurrency, note, instance, tier, auth_index, error_status, error_reason, error_at, created_at, updated_at, deleted_at
 `
 
 type UpdateAccountParams struct {
@@ -271,10 +259,8 @@ type UpdateAccountParams struct {
 	MaxConcurrency     *int32
 	Note               string
 	Instance           string
-	Subscription       string
 	Tier               string
 	AuthIndex          string
-	Provider           string
 }
 
 func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (Account, error) {
@@ -289,10 +275,8 @@ func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (A
 		arg.MaxConcurrency,
 		arg.Note,
 		arg.Instance,
-		arg.Subscription,
 		arg.Tier,
 		arg.AuthIndex,
-		arg.Provider,
 	)
 	var i Account
 	err := row.Scan(
@@ -306,10 +290,8 @@ func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (A
 		&i.MaxConcurrency,
 		&i.Note,
 		&i.Instance,
-		&i.Subscription,
 		&i.Tier,
 		&i.AuthIndex,
-		&i.Provider,
 		&i.ErrorStatus,
 		&i.ErrorReason,
 		&i.ErrorAt,
@@ -321,27 +303,23 @@ func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (A
 }
 
 const updateAccountQuotaInfo = `-- name: UpdateAccountQuotaInfo :exec
-UPDATE accounts SET instance = $2, subscription = $3, tier = $4, auth_index = $5, provider = $6, updated_at = now()
-WHERE id = $1 AND (instance, subscription, tier, auth_index, provider) IS DISTINCT FROM ($2, $3, $4, $5, $6)
+UPDATE accounts SET instance = $2, tier = $3, auth_index = $4, updated_at = now()
+WHERE id = $1 AND (instance, tier, auth_index) IS DISTINCT FROM ($2, $3, $4)
 `
 
 type UpdateAccountQuotaInfoParams struct {
-	ID           uuid.UUID
-	Instance     string
-	Subscription string
-	Tier         string
-	AuthIndex    string
-	Provider     string
+	ID        uuid.UUID
+	Instance  string
+	Tier      string
+	AuthIndex string
 }
 
 func (q *Queries) UpdateAccountQuotaInfo(ctx context.Context, arg UpdateAccountQuotaInfoParams) error {
 	_, err := q.db.Exec(ctx, updateAccountQuotaInfo,
 		arg.ID,
 		arg.Instance,
-		arg.Subscription,
 		arg.Tier,
 		arg.AuthIndex,
-		arg.Provider,
 	)
 	return err
 }

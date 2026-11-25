@@ -27,7 +27,7 @@ func TestRenderLocales(t *testing.T) {
 func TestDefaultsAndVisibility(t *testing.T) {
 	want := map[string]bool{AccountAuthError: true, AccountStale: true, SubscriptionPending: true, ReconcileMismatch: true,
 		StreamBacklogHigh: true, AccountFull: false, SafeguardEvent: false, BalanceLow: true, PlanExpiring: true,
-		AutoRenewFailed: true, KeyExhausted: false}
+		AutoRenewFailed: true, KeyExhausted: false, SafeguardAppealNew: true, SafeguardAppealDone: true}
 	if len(Catalog) != len(want) {
 		t.Fatalf("catalog %d", len(Catalog))
 	}
@@ -75,5 +75,25 @@ func TestValidEndpoint(t *testing.T) {
 	s.AllowAnyEndpoint = true
 	if err := s.ValidEndpoint("http://127.0.0.1:1234/x"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAuthCause(t *testing.T) {
+	for reason, want := range map[string]string{
+		"upstream 401: invalid x-api-key":  "401",
+		"upstream 403: forbidden":          "other",
+		`unsupported subscription "codex"`: "other",
+		"":                                 "other",
+	} {
+		if got := AuthCause(reason); got != want {
+			t.Errorf("%q: %q want %q", reason, got, want)
+		}
+	}
+	for _, l := range []string{"zh-CN", "en"} {
+		for _, c := range []string{"401", "other"} {
+			if phrase(l, "auth_"+c, nil) == "" {
+				t.Errorf("%s auth_%s missing", l, c)
+			}
+		}
 	}
 }

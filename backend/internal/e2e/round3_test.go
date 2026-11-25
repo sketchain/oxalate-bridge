@@ -254,10 +254,9 @@ func TestAccountK(t *testing.T) {
 		t.Fatalf("k without /quota k and cpa-quota: %s", k.Raw)
 	}
 	cpaQuotaSchema(t, e, true)
-	_, err = e.rep.App.Pool.Exec(ctx, `INSERT INTO `+cq+`.estimates (instance, auth_index, provider, subscription, tier, state,
-		segment_window, basis, k, k_source, totals_from, safety_factor, used_5h, used_7d, five_hour_total_usd, weekly_total_usd,
+	_, err = e.rep.App.Pool.Exec(ctx, `INSERT INTO `+cq+`.estimates (instance, auth_index, tier, state, basis, k, k_source, totals_from, safety_factor, used_5h, used_7d, five_hour_total_usd, weekly_total_usd,
 		remaining_five_hour_usd, remaining_week_usd, clean_blocks, total_blocks, segments, excluded_segments, ratio, estimated_at, detail)
-		VALUES ('a', 'acct-a', 'claude', 'claude', 'max5x', 'estimated', '5h', 'raw', 6.5, 'fit', 'tier', 0.9, 10, 20, 10, 100, 9, 72,
+		VALUES ('a', 'acct-a', 'max5x', 'estimated', 'raw', 6.5, 'fit', 'tier', 0.9, 10, 20, 10, 100, 9, 72,
 		1, 1, 1, 0, 1, now(), '{}')`)
 	testutil.Must(t, err)
 	if k := gjson.Get(rawGet(t, e.admin, "/admin/accounts"), "items.0.k").Float(); k != 6.5 {

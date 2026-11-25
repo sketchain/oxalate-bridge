@@ -431,7 +431,21 @@ function AdminSettings() {
           />
           <PricesAndReconcile settings={s} />
           <Notifications settings={s} />
-          <AdminTokens n={9} />
+          <div className="grid gap-6 xl:grid-cols-2">
+            <NumberGroup
+              n={9}
+              title={t("adminSettings.safeguard")}
+              settings={s}
+              note={t("adminSettings.safeguardNote")}
+              specs={[
+                { key: "safeguard_default_allowance", kind: "int", min: 1, max: 1000 },
+                { key: "safeguard_default_reset_cards", kind: "int", min: 0, max: 1000 },
+                { key: "safeguard_hash_min_chars", kind: "int", min: 0, max: 10000 },
+              ]}
+            />
+            <RelayErrors settings={s} />
+          </div>
+          <AdminTokens n={11} />
         </div>
       )}
     </>
@@ -492,6 +506,30 @@ function Notifications({ settings }: { settings: Settings }) {
           </Button>
         </div>
       </form>
+    </Section>
+  );
+}
+
+/** Language of error.message in relay (/v1) answers. */
+function RelayErrors({ settings }: { settings: Settings }) {
+  const { t } = useTranslation();
+  const save = useSave();
+  return (
+    <Section n={10} title={t("adminSettings.relayErrors")}>
+      <div className="flex flex-col gap-4">
+        <Field label={t("adminSettings.f.relay_error_locale")} htmlFor="set-relay-locale" hint={t("adminSettings.relayErrorsHint")}>
+          <NativeSelect
+            id="set-relay-locale"
+            value={settings.relay_error_locale}
+            disabled={save.isPending}
+            onChange={(e) => save.mutate({ relay_error_locale: e.target.value as Settings["relay_error_locale"] })}
+          >
+            <option value="zh-CN">简体中文</option>
+            <option value="en">English</option>
+          </NativeSelect>
+        </Field>
+        <p className="text-[12px] text-muted">{t("adminSettings.relayErrorsNote")}</p>
+      </div>
     </Section>
   );
 }

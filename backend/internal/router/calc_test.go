@@ -135,13 +135,6 @@ func TestHardExhaustedAndLocalReset(t *testing.T) {
 	if ex, _ := cpa.HardExhausted(s.Account, ts("2026-10-05T13:00:00Z")); ex {
 		t.Fatal("window past reset_at still exhausted")
 	}
-	s.Account.State = "paused"
-	if ex, _ := cpa.HardExhausted(s.Account, now); !ex {
-		t.Fatal("paused not exhausted")
-	}
-	if ex, _ := cpa.HardExhausted(s.Account, ts("2026-10-05T13:01:00Z")); ex {
-		t.Fatal("pause from a full window should end at its reset")
-	}
 	w, since, _ := cpa.EffectiveWindow(s.Account.FiveHour, 0.9, *s.Account.ObservedAt, ts("2026-10-05T14:00:00Z"))
 	if w.UsedPercent != 0 || !near(w.RemainingUSD, 7.2) || since != ts("2026-10-05T13:00:00Z") {
 		t.Fatalf("local reset window %+v since %v", w, since)

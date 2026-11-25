@@ -148,6 +148,8 @@ func TestAdminTokenScopes(t *testing.T) {
 		{"PATCH", "/admin/users/" + bobID, map[string]any{"role": "admin"}},
 		{"PATCH", "/admin/users/" + adminID, map[string]any{"password": "hijacked-password"}},
 		{"POST", "/admin/users", map[string]any{"username": "eve", "password": "eve-password", "role": "admin"}},
+		{"PATCH", "/admin/users/" + adminID, map[string]any{"status": "disabled"}},
+		{"DELETE", "/admin/users/" + adminID, nil},
 	} {
 		if st, m := tokenReq(t, base, write, c.method, c.path, c.body); st != 403 || apiCode(m) != "admin_token_forbidden" {
 			t.Fatalf("%s %s with write token: %d %v", c.method, c.path, st, m)
@@ -159,6 +161,15 @@ func TestAdminTokenScopes(t *testing.T) {
 	}
 	// The session still manages tokens and roles.
 	admin.must("PATCH", "/admin/users/"+bobID, map[string]any{"role": "admin"}, 200)
+	// Other admins cannot be disabled or deleted with a token either.
+	for _, c := range []struct {
+		method string
+		body   any
+	}{{"PATCH", map[string]any{"status": "disabled"}}, {"DELETE", nil}} {
+		if st, m := tokenReq(t, base, write, c.method, "/admin/users/"+bobID, c.body); st != 403 || apiCode(m) != "admin_token_forbidden" {
+			t.Fatalf("%s other admin with write token: %d %v", c.method, st, m)
+		}
+	}
 
 	// Audit: token id and name, operator = creator.
 	logs := admin.must("GET", "/admin/audit-logs?target_type=user", nil, 200)
@@ -440,7 +451,8 @@ func TestNotificationPrefsByRole(t *testing.T) {
 
 	defaults := map[string]bool{"account_auth_error": true, "account_stale": true, "subscription_pending": true,
 		"reconcile_mismatch": true, "stream_backlog_high": true, "account_full": false, "safeguard_event": false,
-		"balance_low": true, "plan_expiring": true, "auto_renew_failed": true, "key_exhausted": false}
+		"balance_low": true, "plan_expiring": true, "auto_renew_failed": true, "key_exhausted": false,
+		"safeguard_appeal_new": true, "safeguard_appeal_result": true}
 	check := func(c *client, wantAdmin bool) map[string]any {
 		p := c.must("GET", "/notifications/prefs", nil, 200)
 		if p["balance_threshold_micro"].(float64) != 5_000_000 {
@@ -460,9 +472,9 @@ func TestNotificationPrefsByRole(t *testing.T) {
 			}
 			n++
 		}
-		want := 4
+		want := 5
 		if wantAdmin {
-			want = 11
+			want = 13
 		}
 		if n != want {
 			t.Fatalf("events %d want %d", n, want)
