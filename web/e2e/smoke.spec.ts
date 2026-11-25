@@ -331,7 +331,8 @@ test("safeguard: the user sees the allowance and the notice; a locked user sees 
   await banner.getByRole("link", { name: "查看申请" }).click();
   await expect(page).toHaveURL(/\/safeguard$/);
   await expect(page.getByTestId("sg-remaining")).toHaveText("0 / 3");
-  await expect(page.getByTestId("sg-appeal")).toContainText("待处理");
+  await expect(page.getByTestId("appeal-status")).toHaveText("待处理");
+  await expect(page.getByTestId("sg-appeal")).toContainText("管理员处理后会推送结果");
   await expect(page.getByTestId("sg-blocked")).toHaveText("1");
 });
 

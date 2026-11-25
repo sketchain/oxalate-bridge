@@ -80,7 +80,12 @@ func Seed(ctx context.Context, app *server.App, log *slog.Logger, o Options) err
 	srv := httptest.NewServer(app.Handler())
 	defer srv.Close()
 	s := &seeder{app: app, log: log, o: o, base: srv.URL, rng: rand.New(rand.NewPCG(o.Seed, o.Seed^0x9e3779b97f4a7c15))} //nolint:gosec // demo data
-	return s.run(ctx)
+	err := s.run(ctx)
+	// The seeder logs in over loopback; its logins must not count against
+	// the per-IP login limit of a browser on the same machine (make dev,
+	// scripts/e2e.sh).
+	_ = app.St.R.Del(context.WithoutCancel(ctx), app.St.LoginLimitKey("ip:127.0.0.1"), app.St.LoginLimitKey("ip:::1")).Err()
+	return err
 }
 
 type seeder struct {

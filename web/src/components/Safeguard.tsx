@@ -55,7 +55,11 @@ export function LockPanel({ s, link, className }: { s: Schemas["MySafeguard"]; l
 export function AppealStatusTag({ status }: { status: Schemas["SafeguardAppealStatus"] }) {
   const { t } = useTranslation();
   const cls = status === "pending" ? "border border-ink bg-yellow text-on-yellow" : status === "approved" ? "bg-ink text-bg" : "bg-red text-on-red";
-  return <span className={cn("label-mono inline-flex h-[22px] items-center px-1.5 whitespace-nowrap", cls)}>{t(`appealStatus.${status}`)}</span>;
+  return (
+    <span data-testid="appeal-status" className={cn("label-mono inline-flex h-[22px] items-center px-1.5 whitespace-nowrap", cls)}>
+      {t(`appealStatus.${status}`)}
+    </span>
+  );
 }
 
 /** Remaining triggers as a row of squares: filled = used. */
