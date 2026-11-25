@@ -30,10 +30,8 @@ type Account struct {
 	ErrorReason        string
 	Watermark5hPercent *float64
 	MaxConcurrency     *int32
-	Subscription       string
 	Instance           string
 	AuthIndex          string
-	Provider           string
 	Tier               string
 }
 
@@ -95,8 +93,7 @@ func (c *Catalog) ReloadDB(ctx context.Context) error {
 		}
 		accounts[r.ID] = &Account{ID: r.ID, Name: r.Name, BaseURL: r.BaseUrl, CPAKey: key, Enabled: r.Enabled,
 			Error: r.ErrorStatus, ErrorReason: r.ErrorReason, Watermark5hPercent: r.Watermark5hPercent,
-			MaxConcurrency: r.MaxConcurrency, Subscription: r.Subscription, Instance: r.Instance, AuthIndex: r.AuthIndex,
-			Provider: r.Provider, Tier: r.Tier}
+			MaxConcurrency: r.MaxConcurrency, Instance: r.Instance, AuthIndex: r.AuthIndex, Tier: r.Tier}
 		order = append(order, r.ID)
 	}
 	subRows, err := c.q.ListLiveSubscriptions(ctx)

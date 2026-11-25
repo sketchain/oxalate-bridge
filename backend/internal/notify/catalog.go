@@ -18,10 +18,12 @@ const (
 	StreamBacklogHigh   = "stream_backlog_high"
 	AccountFull         = "account_full"
 	SafeguardEvent      = "safeguard_event"
+	SafeguardAppealNew  = "safeguard_appeal_new"
 	BalanceLow          = "balance_low"
 	PlanExpiring        = "plan_expiring"
 	AutoRenewFailed     = "auto_renew_failed"
 	KeyExhausted        = "key_exhausted"
+	SafeguardAppealDone = "safeguard_appeal_result"
 
 	// testEvent is the "send a test notification" button (never stored).
 	testEvent = "test"
@@ -51,10 +53,12 @@ var Catalog = []Spec{
 	{StreamBacklogHigh, GroupAdmin, true, false},
 	{AccountFull, GroupAdmin, false, false},
 	{SafeguardEvent, GroupAdmin, false, false},
+	{SafeguardAppealNew, GroupAdmin, true, false},
 	{BalanceLow, GroupUser, true, false},
 	{PlanExpiring, GroupUser, true, false},
 	{AutoRenewFailed, GroupUser, true, false},
 	{KeyExhausted, GroupUser, false, false},
+	{SafeguardAppealDone, GroupUser, true, false},
 }
 
 // SpecOf returns the spec of an event.
@@ -97,10 +101,12 @@ var texts = map[string]map[string]text{
 		ReconcileMismatch:   {"对账不一致", "余额不一致的用户 {users} 个，扣费差额 {diff}。"},
 		StreamBacklogHigh:   {"结算积压过高", "结算队列积压 {backlog} 条，已持续 5 分钟以上（阈值 {threshold}）。"},
 		SafeguardEvent:      {"Safeguard 拦截", "{user} 的请求被拦截（{category}）。"},
+		SafeguardAppealNew:  {"新的解封申请", "{user} 申请解除 safeguard 封禁：{note}"},
 		BalanceLow:          {"余额低于 {threshold}", "当前可用余额 {balance}，按量档位可能很快无法使用。"},
 		PlanExpiring:        {"Plan 即将到期", "「{plan}」将于 {date} 到期。{renew}"},
 		AutoRenewFailed:     {"自动续费失败", "「{plan}」自动续费没有成功（{reason}），将于 {date} 到期。"},
 		KeyExhausted:        {"Key 额度用完：{key}", "{what}{recover}"},
+		SafeguardAppealDone: {"解封申请{result}", "{detail}"},
 		testEvent:           {"测试通知", "看到这条消息，说明本设备的推送已经开通。"},
 	},
 	"en": {
@@ -111,10 +117,12 @@ var texts = map[string]map[string]text{
 		ReconcileMismatch:   {"Reconcile mismatch", "{users} user balance(s) differ, charge difference {diff}."},
 		StreamBacklogHigh:   {"Settlement backlog high", "{backlog} entries waiting for more than 5 minutes (threshold {threshold})."},
 		SafeguardEvent:      {"Safeguard block", "A request of {user} was blocked ({category})."},
+		SafeguardAppealNew:  {"New unlock appeal", "{user} asks to lift the safeguard lock: {note}"},
 		BalanceLow:          {"Balance below {threshold}", "Available balance is {balance}; balance tiers may stop working soon."},
 		PlanExpiring:        {"Plan expiring soon", "\"{plan}\" expires on {date}. {renew}"},
 		AutoRenewFailed:     {"Auto-renew failed", "\"{plan}\" could not be renewed ({reason}); it expires on {date}."},
 		KeyExhausted:        {"Key quota used up: {key}", "{what}{recover}"},
+		SafeguardAppealDone: {"Unlock appeal {result}", "{detail}"},
 		testEvent:           {"Test notification", "If you can read this, push notifications work on this device."},
 	},
 }
@@ -136,8 +144,11 @@ var phrases = map[string]map[string]string{
 		"unnamed_key":    "未命名",
 		"unknown_reason": "",
 		"auth_401":       "凭证失效（401）",
-		"auth_sub":       "订阅类型不再是 claude",
 		"auth_other":     "其他",
+		"appeal_ok":      "已通过",
+		"appeal_no":      "被拒绝",
+		"appeal_ok_body": "safeguard 次数已清零，所有 key 恢复转发。",
+		"appeal_no_body": "理由：{reason}",
 	},
 	"en": {
 		"renew_on":       "Auto-renew is on; it will be charged before it expires.",
@@ -154,20 +165,20 @@ var phrases = map[string]map[string]string{
 		"unnamed_key":    "unnamed",
 		"unknown_reason": "",
 		"auth_401":       "credentials invalid (401)",
-		"auth_sub":       "the subscription is no longer claude",
 		"auth_other":     "other",
+		"appeal_ok":      "approved",
+		"appeal_no":      "rejected",
+		"appeal_ok_body": "Your safeguard count was reset; all keys relay again.",
+		"appeal_no_body": "Reason: {reason}",
 	},
 }
 
 // AuthCause classifies an account's error_reason for account_auth_error:
-// "401" (credentials invalid), "sub" (the subscription is no longer claude)
-// or "other" (403 and anything else; the raw reason follows in the body).
+// "401" (credentials invalid) or "other" (403 and anything else; the raw
+// reason follows in the body).
 func AuthCause(reason string) string {
-	switch {
-	case strings.HasPrefix(reason, "upstream 401"):
+	if strings.HasPrefix(reason, "upstream 401") {
 		return "401"
-	case strings.HasPrefix(reason, "unsupported subscription"):
-		return "sub"
 	}
 	return "other"
 }

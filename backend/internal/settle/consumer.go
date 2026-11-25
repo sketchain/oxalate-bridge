@@ -328,14 +328,6 @@ func persist(ctx context.Context, tx *store.Tx, entries []entry, batchID string)
 		if r.KeyID != uuid.Nil && r.CreatedAt.After(keyLast[r.KeyID]) {
 			keyLast[r.KeyID] = r.CreatedAt
 		}
-		if r.Safeguard != nil {
-			id, _ := uuid.NewV7()
-			if err := tx.Q.InsertSafeguardEvent(ctx, sqlc.InsertSafeguardEventParams{ID: id, RequestID: r.RequestID,
-				UserID: &r.UserID, KeyID: &r.KeyID, AccountID: r.AccountID, Model: r.Model, Category: r.Safeguard.Category,
-				Reason: r.Safeguard.Reason, CreatedAt: r.CreatedAt}); err != nil {
-				return nil, nil, nil, fmt.Errorf("insert safeguard event: %w", err)
-			}
-		}
 	}
 	for _, h := range hours {
 		if err := tx.Q.AddUsageHourly(ctx, *h); err != nil {

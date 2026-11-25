@@ -337,6 +337,34 @@ func (s *Service) ObserveSafeguard(ctx context.Context) error {
 	return s.St.R.Set(ctx, key, since.UnixMilli(), 0).Err()
 }
 
+// AppealSubmitted tells every admin about a new safeguard unlock appeal.
+func (s *Service) AppealSubmitted(ctx context.Context, appealID uuid.UUID, username, note string) {
+	s.emit(ctx, Notification{Event: SafeguardAppealNew, Object: appealID.String(), URL: "/admin/safeguard?tab=appeals",
+		Params: func(string) map[string]string {
+			return map[string]string{"user": username, "note": truncRunes(note, 80)}
+		}})
+}
+
+// AppealDecided tells the user how their appeal was decided.
+func (s *Service) AppealDecided(ctx context.Context, appealID, userID uuid.UUID, approved bool, reason string) {
+	s.emit(ctx, Notification{Event: SafeguardAppealDone, Object: appealID.String(), User: userID, URL: "/safeguard",
+		Params: func(l string) map[string]string {
+			if approved {
+				return map[string]string{"result": phrase(l, "appeal_ok", nil), "detail": phrase(l, "appeal_ok_body", nil)}
+			}
+			return map[string]string{"result": phrase(l, "appeal_no", nil),
+				"detail": phrase(l, "appeal_no_body", map[string]string{"reason": truncRunes(reason, 120)})}
+		}})
+}
+
+func truncRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
+}
+
 // KeyExhausted tells the key owner that a key's total quota or a window is
 // used up. It fires once per key, cause and window until the window should
 // have recovered (a day for the total quota).

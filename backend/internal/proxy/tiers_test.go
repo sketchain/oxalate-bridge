@@ -66,20 +66,6 @@ func TestRunTiersOrderAndReasons(t *testing.T) {
 	}
 }
 
-func TestRefusalDetection(t *testing.T) {
-	sg, ok := refusal([]byte(`{"error":{"type":"invalid_request_error","message":"claude refusal (cyber): writing malware"}}`))
-	if !ok || sg.Category != "cyber" || sg.Reason != "writing malware" {
-		t.Fatalf("refusal %+v %v", sg, ok)
-	}
-	sg, ok = refusal([]byte("claude refusal: no category"))
-	if !ok || sg.Category != "" || sg.Reason != "no category" {
-		t.Fatalf("plain refusal %+v %v", sg, ok)
-	}
-	if _, ok := refusal([]byte(`{"error":{"message":"max_tokens too large"}}`)); ok {
-		t.Fatal("ordinary 400 detected as refusal")
-	}
-}
-
 func TestHeaderFiltering(t *testing.T) {
 	for _, h := range []string{"Authorization", "X-Api-Key", "x-goog-api-key", "Cookie", "X-Forwarded-For", "X-Forwarded-Host", "Connection", "Transfer-Encoding"} {
 		if !clientHeaderDrop(h) {

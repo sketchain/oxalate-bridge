@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -25,6 +24,7 @@ import (
 	"github.com/sketchain/oxalate-bridge/backend/internal/notify"
 	"github.com/sketchain/oxalate-bridge/backend/internal/router"
 	"github.com/sketchain/oxalate-bridge/backend/internal/rstate"
+	"github.com/sketchain/oxalate-bridge/backend/internal/safeguard"
 	"github.com/sketchain/oxalate-bridge/backend/internal/secret"
 	"github.com/sketchain/oxalate-bridge/backend/internal/settings"
 	"github.com/sketchain/oxalate-bridge/backend/internal/settle"
@@ -52,6 +52,8 @@ type Runner struct {
 	Avail *avail.Service
 	// Notify detects state changes and sends push notifications (nil = off).
 	Notify *notify.Service
+	// Safeguard keeps the Redis prompt blocklist in step with PG (nil = off).
+	Safeguard *safeguard.Service
 
 	leader atomic.Bool
 	mu     sync.Mutex
@@ -159,6 +161,7 @@ func (r *Runner) tasks(set settings.Values) []task {
 		{"stream", 30 * time.Second, r.StreamMaintenance},
 		{"headroom", 30 * time.Second, r.headroomMetrics},
 		{"notify", 30 * time.Second, r.notifyScan},
+		{"safeguard", 5 * time.Minute, r.syncBlocklist},
 	}
 }
 
@@ -170,6 +173,13 @@ func (r *Runner) due(name string, every time.Duration) bool {
 	}
 	r.last[name] = time.Now()
 	return true
+}
+
+func (r *Runner) syncBlocklist(ctx context.Context) error {
+	if r.Safeguard == nil {
+		return nil
+	}
+	return r.Safeguard.SyncBlocklist(ctx)
 }
 
 // ---- quota and models ------------------------------------------------------
@@ -232,17 +242,6 @@ func (r *Runner) pollQuota(ctx context.Context, a sqlc.Account) bool {
 	}
 	changed := false
 	snap.LastAttemptAt = now
-	if err == nil && !cpa.IsClaude(resp) {
-		// The instance switched to a subscription the bridge does not serve:
-		// keep the old identity (the schema only allows claude) and take the
-		// account out of routing until an admin looks at it.
-		err = fmt.Errorf("unsupported subscription %q: only claude accounts can be used", resp.Subscription)
-		if !a.ErrorStatus {
-			if perr := r.Store.Q.SetAccountError(ctx, sqlc.SetAccountErrorParams{ID: a.ID, ErrorReason: err.Error()}); perr == nil {
-				changed = true
-			}
-		}
-	}
 	if err != nil {
 		snap.LastError = err.Error()
 		if snap.FailingSince.IsZero() {
@@ -251,12 +250,10 @@ func (r *Runner) pollQuota(ctx context.Context, a sqlc.Account) bool {
 	} else {
 		acc := resp.Accounts[0]
 		*snap = cpa.Snapshot{FetchedAt: now, LastAttemptAt: now, DatabaseStatus: resp.Database.Status,
-			EstimatesReady: resp.Estimates.Loaded, Instance: resp.Instance, Subscription: resp.Subscription, Tier: resp.Tier,
-			Account: acc, HasData: true}
-		if a.Instance != resp.Instance || a.Subscription != resp.Subscription || a.Tier != resp.Tier ||
-			a.AuthIndex != acc.AuthIndex || a.Provider != acc.Provider {
+			EstimatesReady: resp.Estimates.Loaded, Instance: resp.Instance, Tier: resp.Tier, Account: acc, HasData: true}
+		if a.Instance != resp.Instance || a.Tier != resp.Tier || a.AuthIndex != acc.AuthIndex {
 			if err := r.Store.Q.UpdateAccountQuotaInfo(ctx, sqlc.UpdateAccountQuotaInfoParams{ID: a.ID, Instance: resp.Instance,
-				Subscription: resp.Subscription, Tier: resp.Tier, AuthIndex: acc.AuthIndex, Provider: acc.Provider}); err == nil {
+				Tier: resp.Tier, AuthIndex: acc.AuthIndex}); err == nil {
 				changed = true
 			}
 		}

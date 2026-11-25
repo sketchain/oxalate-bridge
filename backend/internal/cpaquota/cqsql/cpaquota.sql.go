@@ -90,7 +90,7 @@ func (q *Queries) CountWindowPoints(ctx context.Context, arg CountWindowPointsPa
 
 const getEstimate = `-- name: GetEstimate :one
 
-SELECT instance, auth_index, provider, subscription, tier, state, pause_reason, segment_window, basis, k, k_source, totals_from, safety_factor, used_5h, reset_5h, used_7d, reset_7d, five_hour_total_usd, weekly_total_usd, remaining_five_hour_usd, remaining_week_usd, clean_blocks, total_blocks, segments, excluded_segments, ratio, observed_at, estimated_at, detail FROM estimates WHERE instance = $1 AND auth_index = $2
+SELECT instance, auth_index, tier, state, basis, k, k_source, totals_from, safety_factor, used_5h, reset_5h, used_7d, reset_7d, five_hour_total_usd, weekly_total_usd, remaining_five_hour_usd, remaining_week_usd, clean_blocks, total_blocks, segments, excluded_segments, ratio, observed_at, estimated_at, detail FROM estimates WHERE instance = $1 AND auth_index = $2
 `
 
 type GetEstimateParams struct {
@@ -107,12 +107,8 @@ func (q *Queries) GetEstimate(ctx context.Context, arg GetEstimateParams) (Estim
 	err := row.Scan(
 		&i.Instance,
 		&i.AuthIndex,
-		&i.Provider,
-		&i.Subscription,
 		&i.Tier,
 		&i.State,
-		&i.PauseReason,
-		&i.SegmentWindow,
 		&i.Basis,
 		&i.K,
 		&i.KSource,

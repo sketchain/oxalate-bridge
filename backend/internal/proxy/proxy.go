@@ -28,6 +28,7 @@ import (
 	"github.com/sketchain/oxalate-bridge/backend/internal/relaymsg"
 	"github.com/sketchain/oxalate-bridge/backend/internal/router"
 	"github.com/sketchain/oxalate-bridge/backend/internal/rstate"
+	"github.com/sketchain/oxalate-bridge/backend/internal/safeguard"
 	"github.com/sketchain/oxalate-bridge/backend/internal/secret"
 	"github.com/sketchain/oxalate-bridge/backend/internal/sessionid"
 	"github.com/sketchain/oxalate-bridge/backend/internal/settings"
@@ -66,6 +67,9 @@ type Proxy struct {
 	Meter *keymeter.Meter
 	// Status renders GET /v1/bridge/status (implemented by the panel API).
 	Status func(context.Context, authcache.Info) (any, error)
+	// Safeguard locks users out after their allowance of refusals, refuses
+	// blocklisted prompts and records refusals.
+	Safeguard *safeguard.Service
 }
 
 // NewTransport is the pooled transport used for CPA. There is no overall
@@ -236,6 +240,8 @@ type call struct {
 	// balanceRej is an exhausted quota or window of a balance-scope key:
 	// standard and force are refused, the plan tier is still tried.
 	balanceRej *keymeter.Rejection
+	// refusal is a safeguard refusal seen in the response.
+	refusal *safeguard.Refusal
 }
 
 // admission is an admitted tier with its account candidates.
@@ -276,6 +282,9 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Relay-Request-Id", requestID.String())
 
 	ctx := r.Context()
+	if !c.checkSafeguard(ctx, w) {
+		return
+	}
 	if rej := keymeter.CheckStatic(auth, p.ClientIP(r), c.ri.normModel, start); rej != nil {
 		c.rejectKey(w, rej)
 		return
@@ -332,6 +341,59 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("X-Relay-Tier", tier)
 	c.serve(w, adm)
+}
+
+// checkSafeguard refuses, before any tier is tried, every request of a user
+// whose safeguard allowance is used up and every Messages request whose
+// prompt is on the blocklist. Neither reaches CPA or uses the allowance.
+func (c *call) checkSafeguard(ctx context.Context, w http.ResponseWriter) bool {
+	p := c.p
+	if p.Safeguard == nil {
+		return true
+	}
+	if safeguard.Locked(c.auth.SafeguardUsed, c.auth.SafeguardAllowance, c.set.SafeguardDefaultAllowance) {
+		metrics.Rejections.WithLabelValues("", "safeguard_locked").Inc()
+		p.writeMsgCode(w, http.StatusForbidden, "permission_error", "safeguard_locked", relaymsg.SafeguardLocked, nil, nil)
+		c.settleRejected(http.StatusForbidden, "safeguard_locked")
+		return false
+	}
+	if c.ep.path != "/v1/messages" {
+		return true
+	}
+	hash := safeguard.Hash(safeguard.Prompt(c.body), c.set.SafeguardHashMinChars)
+	blocked, err := p.Safeguard.Blocked(ctx, hash)
+	if err != nil {
+		p.Log.Error("safeguard blocklist", "err", err)
+		p.writeMsg(w, http.StatusServiceUnavailable, "api_error", relaymsg.SafeguardUnavailable, nil)
+		return false
+	}
+	if !blocked {
+		return true
+	}
+	metrics.Rejections.WithLabelValues("", "safeguard_prompt_blocked").Inc()
+	if err := p.Safeguard.RecordHit(context.WithoutCancel(ctx), c.requestID, c.auth.UserID, c.auth.KeyID, hash, c.start); err != nil {
+		p.Log.Error("record blocklist hit", "err", err)
+	}
+	p.writeMsgCode(w, http.StatusBadRequest, "invalid_request_error", "safeguard_prompt_blocked", relaymsg.SafeguardPromptBlocks, nil, nil)
+	c.settleRejected(http.StatusBadRequest, "safeguard_prompt_blocked")
+	return false
+}
+
+// recordRefusal stores a refusal the response carried (before the client
+// sees the refusal, so an immediate retry already meets the lock or the
+// blocklist).
+func (c *call) recordRefusal(account *router.Account, status int, ref safeguard.Refusal) {
+	if c.p.Safeguard == nil {
+		return
+	}
+	accID := account.ID
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err := c.p.Safeguard.Record(ctx, safeguard.Trigger{RequestID: c.requestID, UserID: c.auth.UserID, KeyID: c.auth.KeyID,
+		AccountID: &accID, Model: c.ri.normModel, Refusal: ref, StatusCode: status, Stream: c.ri.stream, Body: c.body,
+		At: c.start}); err != nil {
+		c.p.Log.Error("record safeguard refusal", "request_id", c.requestID, "err", err)
+	}
 }
 
 // balanceTierRejection renders c.balanceRej as the rejection of one tier.
@@ -725,34 +787,6 @@ func responseHeaderDrop(name string) bool {
 	return false
 }
 
-var refusalRe = regexp.MustCompile(`^claude refusal(?:\s*\(([^)]*)\))?\s*:?\s*(.*)$`)
-
-// refusal detects CPA's safeguard error text in a 400 body.
-func refusal(body []byte) (*settle.Safeguard, bool) {
-	candidates := []string{}
-	if gjson.ValidBytes(body) {
-		for _, path := range []string{"error.message", "message", "error", "detail"} {
-			if r := gjson.GetBytes(body, path); r.Type == gjson.String {
-				candidates = append(candidates, r.String())
-			}
-		}
-	}
-	candidates = append(candidates, string(body))
-	for _, text := range candidates {
-		text = strings.TrimSpace(text)
-		if !strings.HasPrefix(text, "claude refusal") {
-			continue
-		}
-		m := refusalRe.FindStringSubmatch(text)
-		sg := &settle.Safeguard{}
-		if m != nil {
-			sg.Category, sg.Reason = strings.TrimSpace(m[1]), strings.TrimSpace(m[2])
-		}
-		return sg, true
-	}
-	return nil, false
-}
-
 // idleReader cancels the upstream request when no byte arrives for d.
 type idleReader struct {
 	rc    io.ReadCloser
@@ -910,10 +944,11 @@ func (c *call) serve(w http.ResponseWriter, adm *admission) {
 			break
 		}
 		if res.err == nil && res.resp.StatusCode == http.StatusBadRequest {
-			if sg, ok := refusal(res.errBody); ok {
+			if ref, ok := safeguard.DetectError(res.errBody); ok {
 				metrics.UpstreamErrors.WithLabelValues("refusal").Inc()
+				c.recordRefusal(account, http.StatusBadRequest, ref)
 				c.writeUpstreamError(w, res)
-				c.settle(adm, account, http.StatusBadRequest, "safeguard_refusal", usage.Usage{}, retries, res.firstMs, sg)
+				c.settle(adm, account, http.StatusBadRequest, "safeguard_refusal", usage.Usage{}, retries, res.firstMs)
 				return
 			}
 		}
@@ -937,17 +972,25 @@ func (c *call) serve(w http.ResponseWriter, adm *admission) {
 		} else {
 			c.p.writeMsg(w, http.StatusBadGateway, "api_error", relaymsg.UpstreamUnreachable, nil)
 		}
-		c.settle(adm, account, status, typ, usage.Usage{}, retries, 0, nil)
+		c.settle(adm, account, status, typ, usage.Usage{}, retries, 0)
 		return
 	}
 	if res.resp.StatusCode >= 400 {
 		c.writeUpstreamError(w, res)
-		c.settle(adm, account, res.resp.StatusCode, "upstream_"+strconv.Itoa(res.resp.StatusCode), usage.Usage{}, retries, res.firstMs, nil)
+		c.settle(adm, account, res.resp.StatusCode, "upstream_"+strconv.Itoa(res.resp.StatusCode), usage.Usage{}, retries, res.firstMs)
 		return
 	}
 	metrics.FirstByte.WithLabelValues(adm.tier).Observe(float64(res.firstMs) / 1000)
-	u, status, errType := c.stream(w, res)
-	c.settle(adm, account, status, errType, u, retries, res.firstMs, nil)
+	u, status, errType := c.stream(w, res, account)
+	if c.refusal != nil {
+		// A refusal after the response started: the usage reported so far
+		// is charged like any request, and the request counts as a trigger.
+		metrics.UpstreamErrors.WithLabelValues("refusal").Inc()
+		if errType == "" {
+			errType = "safeguard_refusal"
+		}
+	}
+	c.settle(adm, account, status, errType, u, retries, res.firstMs)
 }
 
 func (c *call) nextAccount(adm *admission, failed *router.Account, cands *[]router.Candidate) *router.Account {
@@ -976,7 +1019,7 @@ func (c *call) writeUpstreamError(w http.ResponseWriter, res attemptResult) {
 }
 
 // stream copies the response to the client while reading usage.
-func (c *call) stream(w http.ResponseWriter, res attemptResult) (usage.Usage, int, string) {
+func (c *call) stream(w http.ResponseWriter, res attemptResult, account *router.Account) (usage.Usage, int, string) {
 	resp := res.resp
 	defer func() {
 		resp.Body.Close()
@@ -999,6 +1042,10 @@ func (c *call) stream(w http.ResponseWriter, res attemptResult) (usage.Usage, in
 	var u usage.Usage
 	if !isSSE {
 		buf, err := io.ReadAll(resp.Body)
+		if ref, ok := safeguard.DetectResponse(buf); ok && !c.ep.count {
+			c.refusal = &ref
+			c.recordRefusal(account, resp.StatusCode, ref)
+		}
 		if len(buf) > 0 {
 			if _, werr := w.Write(buf); werr != nil {
 				return usage.FromBody(buf), 499, "client_closed"
@@ -1024,15 +1071,27 @@ func (c *call) stream(w http.ResponseWriter, res attemptResult) (usage.Usage, in
 			_ = rc.Flush()
 		}
 	}
-	sc := &usage.SSEScanner{OnEvent: u.Event}
+	sc := &usage.SSEScanner{OnEvent: func(event string, data []byte) {
+		u.Event(event, data)
+		if c.refusal == nil {
+			if ref, ok := safeguard.DetectEvent(event, data); ok {
+				c.refusal = &ref
+			}
+		}
+	}}
+	recorded := false
 	buf := make([]byte, 32<<10)
 	var readErr error
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
 			chunk := buf[:n]
-			write(chunk)
 			sc.Feed(chunk)
+			if c.refusal != nil && !recorded {
+				recorded = true
+				c.recordRefusal(account, resp.StatusCode, *c.refusal)
+			}
+			write(chunk)
 			if writeErr != nil {
 				break
 			}
@@ -1045,6 +1104,9 @@ func (c *call) stream(w http.ResponseWriter, res attemptResult) (usage.Usage, in
 		}
 	}
 	sc.Flush()
+	if c.refusal != nil && !recorded {
+		c.recordRefusal(account, resp.StatusCode, *c.refusal)
+	}
 	switch {
 	case writeErr != nil || c.r.Context().Err() != nil:
 		return u, 499, "client_closed"
@@ -1055,13 +1117,12 @@ func (c *call) stream(w http.ResponseWriter, res attemptResult) (usage.Usage, in
 }
 
 // settle computes the charge and hands the record to Redis.
-func (c *call) settle(adm *admission, account *router.Account, status int, errType string, u usage.Usage, retries, firstMs int, sg *settle.Safeguard) {
+func (c *call) settle(adm *admission, account *router.Account, status int, errType string, u usage.Usage, retries, firstMs int) {
 	now := c.p.now()
 	rec := c.baseRecord(now, status, errType)
 	rec.Tier = adm.tier
 	rec.TierMult, rec.ModelMult = adm.tierMult, adm.modelMult
 	rec.Retries, rec.FirstByteMs = retries, firstMs
-	rec.Safeguard = sg
 	accID := account.ID
 	rec.AccountID = &accID
 	if adm.plan != nil {

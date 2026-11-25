@@ -27,6 +27,7 @@ import (
 	"github.com/sketchain/oxalate-bridge/backend/internal/notify"
 	"github.com/sketchain/oxalate-bridge/backend/internal/router"
 	"github.com/sketchain/oxalate-bridge/backend/internal/rstate"
+	"github.com/sketchain/oxalate-bridge/backend/internal/safeguard"
 	"github.com/sketchain/oxalate-bridge/backend/internal/secret"
 	"github.com/sketchain/oxalate-bridge/backend/internal/settings"
 	"github.com/sketchain/oxalate-bridge/backend/internal/store"
@@ -64,6 +65,8 @@ type Server struct {
 	Meter *keymeter.Meter
 	// ClientIPOf resolves the real client IP (public key query rate limit).
 	ClientIPOf func(*http.Request) string
+	// Safeguard holds per-user refusal counts, appeals and the prompt blocklist.
+	Safeguard *safeguard.Service
 }
 
 var _ StrictServerInterface = (*Server)(nil)

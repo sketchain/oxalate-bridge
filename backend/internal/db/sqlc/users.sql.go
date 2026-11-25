@@ -24,19 +24,20 @@ func (q *Queries) CountAdmins(ctx context.Context) (int64, error) {
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (id, username, password_hash, role, status, max_concurrency, rpm, note)
-VALUES ($1, $2, $3, $4, 'active', $5, $6, $7)
-RETURNING id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at, locale
+INSERT INTO users (id, username, password_hash, role, status, max_concurrency, rpm, note, safeguard_reset_cards)
+VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8)
+RETURNING id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at, locale, safeguard_allowance, safeguard_used, safeguard_reset_cards, safeguard_locked_at
 `
 
 type CreateUserParams struct {
-	ID             uuid.UUID
-	Username       string
-	PasswordHash   string
-	Role           string
-	MaxConcurrency int32
-	Rpm            *int32
-	Note           string
+	ID                  uuid.UUID
+	Username            string
+	PasswordHash        string
+	Role                string
+	MaxConcurrency      int32
+	Rpm                 *int32
+	Note                string
+	SafeguardResetCards int32
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -48,6 +49,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.MaxConcurrency,
 		arg.Rpm,
 		arg.Note,
+		arg.SafeguardResetCards,
 	)
 	var i User
 	err := row.Scan(
@@ -65,12 +67,16 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Locale,
+		&i.SafeguardAllowance,
+		&i.SafeguardUsed,
+		&i.SafeguardResetCards,
+		&i.SafeguardLockedAt,
 	)
 	return i, err
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at, locale FROM users WHERE id = $1 AND deleted_at IS NULL
+SELECT id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at, locale, safeguard_allowance, safeguard_used, safeguard_reset_cards, safeguard_locked_at FROM users WHERE id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
@@ -91,6 +97,10 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Locale,
+		&i.SafeguardAllowance,
+		&i.SafeguardUsed,
+		&i.SafeguardResetCards,
+		&i.SafeguardLockedAt,
 	)
 	return i, err
 }
@@ -112,7 +122,7 @@ func (q *Queries) GetUserBalance(ctx context.Context, id uuid.UUID) (GetUserBala
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at, locale FROM users WHERE lower(username) = lower($1) AND deleted_at IS NULL
+SELECT id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at, locale, safeguard_allowance, safeguard_used, safeguard_reset_cards, safeguard_locked_at FROM users WHERE lower(username) = lower($1) AND deleted_at IS NULL
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, lower string) (User, error) {
@@ -133,12 +143,16 @@ func (q *Queries) GetUserByUsername(ctx context.Context, lower string) (User, er
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Locale,
+		&i.SafeguardAllowance,
+		&i.SafeguardUsed,
+		&i.SafeguardResetCards,
+		&i.SafeguardLockedAt,
 	)
 	return i, err
 }
 
 const getUserForUpdate = `-- name: GetUserForUpdate :one
-SELECT id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at, locale FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
+SELECT id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at, locale, safeguard_allowance, safeguard_used, safeguard_reset_cards, safeguard_locked_at FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
 `
 
 func (q *Queries) GetUserForUpdate(ctx context.Context, id uuid.UUID) (User, error) {
@@ -159,6 +173,10 @@ func (q *Queries) GetUserForUpdate(ctx context.Context, id uuid.UUID) (User, err
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Locale,
+		&i.SafeguardAllowance,
+		&i.SafeguardUsed,
+		&i.SafeguardResetCards,
+		&i.SafeguardLockedAt,
 	)
 	return i, err
 }
@@ -297,7 +315,7 @@ func (q *Queries) ListUsernames(ctx context.Context, ids []uuid.UUID) ([]ListUse
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at, locale FROM users
+SELECT id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at, locale, safeguard_allowance, safeguard_used, safeguard_reset_cards, safeguard_locked_at FROM users
 WHERE deleted_at IS NULL
   AND ($2::text IS NULL OR username ILIKE '%' || $2::text || '%')
   AND ($3::timestamptz IS NULL OR (created_at, id) < ($3::timestamptz, $4::uuid))
@@ -341,6 +359,10 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 			&i.UpdatedAt,
 			&i.DeletedAt,
 			&i.Locale,
+			&i.SafeguardAllowance,
+			&i.SafeguardUsed,
+			&i.SafeguardResetCards,
+			&i.SafeguardLockedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -395,7 +417,7 @@ func (q *Queries) SoftDeleteUser(ctx context.Context, id uuid.UUID) error {
 const updateUser = `-- name: UpdateUser :one
 UPDATE users SET role = $2, status = $3, max_concurrency = $4, rpm = $5, note = $6, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at, locale
+RETURNING id, username, password_hash, role, status, balance_micro, balance_version, max_concurrency, rpm, note, created_at, updated_at, deleted_at, locale, safeguard_allowance, safeguard_used, safeguard_reset_cards, safeguard_locked_at
 `
 
 type UpdateUserParams struct {
@@ -432,6 +454,10 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Locale,
+		&i.SafeguardAllowance,
+		&i.SafeguardUsed,
+		&i.SafeguardResetCards,
+		&i.SafeguardLockedAt,
 	)
 	return i, err
 }

@@ -68,9 +68,8 @@ func (s *Server) AdminGetAccountEstimate(ctx context.Context, req AdminGetAccoun
 	if err != nil {
 		return nil, cpaQuotaErr(err, "cpa-quota estimate")
 	}
-	return AdminGetAccountEstimate200JSONResponse{Instance: e.Instance, AuthIndex: e.AuthIndex, Provider: e.Provider,
-		Subscription: e.Subscription, Tier: e.Tier, State: e.State, PauseReason: e.PauseReason, SegmentWindow: e.SegmentWindow,
-		Basis: e.Basis, K: nullFloat(e.K), KSource: e.KSource, TotalsFrom: e.TotalsFrom, SafetyFactor: e.SafetyFactor,
+	return AdminGetAccountEstimate200JSONResponse{Instance: e.Instance, AuthIndex: e.AuthIndex,
+		Tier: e.Tier, State: e.State, Basis: e.Basis, K: nullFloat(e.K), KSource: e.KSource, TotalsFrom: e.TotalsFrom, SafetyFactor: e.SafetyFactor,
 		Used5h: e.Used5h, Reset5h: nullTime(e.Reset5h), Used7d: e.Used7d, Reset7d: nullTime(e.Reset7d),
 		FiveHourTotalUsd: e.FiveHourTotalUsd, WeeklyTotalUsd: e.WeeklyTotalUsd, RemainingFiveHourUsd: e.RemainingFiveHourUsd,
 		RemainingWeekUsd: e.RemainingWeekUsd, CleanBlocks: int(e.CleanBlocks), TotalBlocks: int(e.TotalBlocks),

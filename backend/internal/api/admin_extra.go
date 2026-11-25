@@ -250,7 +250,7 @@ func CountAccounts(items []Account) OverviewAccounts {
 			continue
 		case AccountDisplayStatusCooldown:
 			out.Cooldown++
-		case AccountDisplayStatusFiveHourFull, AccountDisplayStatusWeekFull, AccountDisplayStatusPaused:
+		case AccountDisplayStatusFiveHourFull, AccountDisplayStatusWeekFull:
 			out.Full++
 		case AccountDisplayStatusStale:
 			out.Stale++

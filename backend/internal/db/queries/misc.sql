@@ -1,15 +1,3 @@
--- name: InsertSafeguardEvent :exec
-INSERT INTO safeguard_events (id, request_id, user_id, key_id, account_id, model, category, reason, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-ON CONFLICT (request_id) DO NOTHING;
-
--- name: ListSafeguardEvents :many
-SELECT * FROM safeguard_events
-WHERE (sqlc.narg('user_id')::uuid IS NULL OR user_id = sqlc.narg('user_id')::uuid)
-  AND (sqlc.narg('cursor_at')::timestamptz IS NULL OR (created_at, id) < (sqlc.narg('cursor_at')::timestamptz, sqlc.narg('cursor_id')::uuid))
-ORDER BY created_at DESC, id DESC
-LIMIT $1;
-
 -- name: InsertAuditLog :exec
 INSERT INTO audit_logs (id, operator_id, action, target_type, target_id, diff, ip, token_id, token_name)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);

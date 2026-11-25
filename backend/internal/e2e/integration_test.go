@@ -27,7 +27,7 @@ func newUser(t *testing.T, app *server.App, balance int64) uuid.UUID {
 	ctx := context.Background()
 	id, _ := uuid.NewV7()
 	_, err := app.Store.Q.CreateUser(ctx, sqlc.CreateUserParams{ID: id, Username: "u" + id.String()[:8], PasswordHash: "x",
-		Role: "user", MaxConcurrency: 100})
+		Role: "user", MaxConcurrency: 100, SafeguardResetCards: 1})
 	testutil.Must(t, err)
 	if balance != 0 {
 		testutil.Must(t, app.Store.InTx(ctx, func(tx *store.Tx) error {

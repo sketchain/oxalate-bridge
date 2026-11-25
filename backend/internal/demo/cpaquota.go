@@ -71,20 +71,20 @@ func (s *seeder) cpaQuota(ctx context.Context) error {
 			k = *qa.K
 		}
 		peak5, peak7 := five.UsedPercent, week.UsedPercent
-		detail, _ := json.Marshal(map[string]any{"auth_index": auth, "provider": "claude", "k": k, "demo": true,
+		detail, _ := json.Marshal(map[string]any{"auth_index": auth, "k": k, "demo": true,
 			"profile": map[string]any{"tier": prof.Tier, "five_hour_total_usd": prof.FiveTotal, "weekly_total_usd": prof.WeekTotal,
 				"safety_factor": prof.Safety}})
 		observed := now
 		if qa.ObservedAt != nil {
 			observed = *qa.ObservedAt
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO `+q+`.estimates (instance, auth_index, provider, subscription, tier, state, segment_window, basis,
+		if _, err := tx.Exec(ctx, `INSERT INTO `+q+`.estimates (instance, auth_index, tier, state, basis,
 			k, k_source, totals_from, safety_factor, used_5h, reset_5h, used_7d, reset_7d, five_hour_total_usd, weekly_total_usd,
 			remaining_five_hour_usd, remaining_week_usd, clean_blocks, total_blocks, segments, excluded_segments, ratio, observed_at,
 			estimated_at, detail)
-			VALUES ($1, $2, 'claude', $3, $4, $5, '5h', 'raw', $6, 'fit', 'tier', $7, $8, $9, $10, $11, $12, $13,
-			$14, $15, 12, 14, 240, 6, 1.02, $16, $17, $18)`,
-			instance, auth, quota.Subscription, quota.Tier, qa.State, k, qa.SafetyFactor, five.UsedPercent, five.ResetAt,
+			VALUES ($1, $2, $3, $4, 'raw', $5, 'fit', 'tier', $6, $7, $8, $9, $10, $11, $12,
+			$13, $14, 12, 14, 240, 6, 1.02, $15, $16, $17)`,
+			instance, auth, quota.Tier, qa.State, k, qa.SafetyFactor, five.UsedPercent, five.ResetAt,
 			week.UsedPercent, week.ResetAt, five.TotalUSD, week.TotalUSD, five.RemainingUSD, week.RemainingUSD, observed, now, detail); err != nil {
 			return err
 		}
@@ -113,13 +113,13 @@ func (s *seeder) cpaQuota(ctx context.Context) error {
 					SELECT (extract(epoch FROM t))::bigint AS s
 					FROM generate_series(now() - make_interval(secs => $6::float8), now(), make_interval(secs => $5::float8)) t
 				), r AS (
-					INSERT INTO `+q+`.quota_reports (instance, auth_index, provider, at_ns)
-					SELECT $1::text, $2::text, 'claude', s * 1000000000 FROM pts RETURNING id, at_ns
+					INSERT INTO `+q+`.quota_reports (instance, auth_index, at_ns)
+					SELECT $1::text, $2::text, s * 1000000000 FROM pts RETURNING id, at_ns
 				), p AS (
 					SELECT id, at_ns, mod(at_ns / 1000000000 - $4::bigint + $3::bigint * 1000, $3::bigint) AS phase FROM r
 				)
-				INSERT INTO `+q+`.quota_report_windows (report_id, instance, auth_index, provider, limit_key, seconds, at_ns, used_percent, reset_ns)
-				SELECT id, $1::text, $2::text, 'claude', 'unified', $3::bigint, at_ns,
+				INSERT INTO `+q+`.quota_report_windows (report_id, instance, auth_index, limit_key, seconds, at_ns, used_percent, reset_ns)
+				SELECT id, $1::text, $2::text, 'unified', $3::bigint, at_ns,
 				       least(100, (phase::float8 / $3::bigint) * $7::float8 + random() * 2),
 				       (at_ns / 1000000000 + $3::bigint - phase) * 1000000000
 				FROM p`, instance, auth, int64(w.seconds), anchor, w.step, w.span, peak); err != nil {
@@ -127,11 +127,11 @@ func (s *seeder) cpaQuota(ctx context.Context) error {
 			}
 		}
 		// cpa-quota's view of the requests the bridge sent (a few percent apart).
-		if _, err := tx.Exec(ctx, `INSERT INTO `+q+`.requests (instance, auth_index, provider, request_id, requested_ns, completed_ns, model,
-				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, accounting, cost_usd, priced, main_window, status_code)
-			SELECT $1, $2, 'claude', request_id::text, (extract(epoch FROM created_at) * 1e9)::bigint,
+		if _, err := tx.Exec(ctx, `INSERT INTO `+q+`.requests (instance, auth_index, request_id, requested_ns, completed_ns, model,
+				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, accounting, cost_usd, priced, status_code)
+			SELECT $1, $2, request_id::text, (extract(epoch FROM created_at) * 1e9)::bigint,
 			       (extract(epoch FROM created_at) * 1e9)::bigint + latency_ms::bigint * 1000000, model, input_tokens, cache_read_tokens,
-			       cache_write_tokens, output_tokens, 'complete', upstream_cost_micro / 1e6 * (0.97 + random() * 0.08), true, true, status_code
+			       cache_write_tokens, output_tokens, 'complete', upstream_cost_micro / 1e6 * (0.97 + random() * 0.08), true, status_code
 			FROM `+bridge+`.request_logs WHERE account_id = $3`, instance, auth, acc); err != nil {
 			return err
 		}

@@ -106,8 +106,8 @@ var table = map[string][2]string{
 	KeyBalanceQuota:      {"key 余额口径的总额度已用完（Plan 档仍可用）", "API key balance quota exhausted; the plan tier is still available"},
 	KeyBalanceWindow:     {"key 余额口径的 {window} 窗口限额已用完（Plan 档仍可用）", "API key {window} balance spending limit reached; the plan tier is still available"},
 	KeyBalanceWinRecover: {"key 余额口径的 {window} 窗口限额已用完，预计 {recovers_at} 恢复（Plan 档仍可用）", "API key {window} balance spending limit reached; expected to recover at {recovers_at}; the plan tier is still available"},
-	SafeguardLocked: {"你的账户触发 safeguard 的次数已用完，所有 API key 已暂停转发。请登录面板使用重置卡或申请解封。",
-		"Your account has used up its safeguard allowance and all API keys are paused. Sign in to the panel to use a reset card or request an unlock."},
+	SafeguardLocked: {"你的账户触发 safeguard 的次数已用完，所有 API key 已暂停转发。请登录面板使用重置卡或申请解封。触发 safeguard 的请求内容管理员可查看。",
+		"Your account has used up its safeguard allowance and all API keys are paused. Sign in to the panel to use a reset card or request an unlock. Administrators can view the requests that triggered the safeguard."},
 	SafeguardPromptBlocks: {"这条提示词此前触发过 safeguard，已被本站自动拦截（不会发往上游，也不扣次数）。请修改后再试。",
 		"This prompt has triggered the safeguard before and is blocked by this relay (not sent upstream, no allowance used). Please change it and try again."},
 
