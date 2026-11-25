@@ -298,11 +298,13 @@ func TestAuthInvalidationReachesOtherReplica(t *testing.T) {
 		info, err := b.App.Auth.Lookup(ctx, raw)
 		return err == nil && info.Found && !info.KeyEnabled
 	}, "replica B still sees the key enabled")
-	// The outbox row is gone once delivered.
-	var n int
-	testutil.Must(t, a.App.Pool.QueryRow(ctx, "SELECT count(*) FROM outbox").Scan(&n))
-	if n != 0 {
-		t.Fatalf("outbox rows left: %d", n)
-	}
+	// The outbox row is gone once delivered. The dispatcher deletes the
+	// row in the transaction that delivers it, so B can see the
+	// invalidation a moment before that transaction commits.
+	testutil.Eventually(t, 5*time.Second, func() bool {
+		var n int
+		testutil.Must(t, a.App.Pool.QueryRow(ctx, "SELECT count(*) FROM outbox").Scan(&n))
+		return n == 0
+	}, "outbox rows left after delivery")
 	_ = redis.Nil
 }
