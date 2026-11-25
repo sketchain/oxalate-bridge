@@ -148,6 +148,8 @@ func TestAdminTokenScopes(t *testing.T) {
 		{"PATCH", "/admin/users/" + bobID, map[string]any{"role": "admin"}},
 		{"PATCH", "/admin/users/" + adminID, map[string]any{"password": "hijacked-password"}},
 		{"POST", "/admin/users", map[string]any{"username": "eve", "password": "eve-password", "role": "admin"}},
+		{"PATCH", "/admin/users/" + adminID, map[string]any{"status": "disabled"}},
+		{"DELETE", "/admin/users/" + adminID, nil},
 	} {
 		if st, m := tokenReq(t, base, write, c.method, c.path, c.body); st != 403 || apiCode(m) != "admin_token_forbidden" {
 			t.Fatalf("%s %s with write token: %d %v", c.method, c.path, st, m)

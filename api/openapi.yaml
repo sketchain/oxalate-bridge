@@ -20,8 +20,9 @@ info:
       check. Each admin operation carries `x-admin-token-scope`: `read`
       (GET / HEAD, including the SSE stream: read and write tokens), `write`
       (write tokens only) or `none` (session only: managing admin tokens).
-      Changing a user's role, creating an admin user and setting an admin's
-      password are refused for every token (`admin_token_forbidden`, 403).
+      Changing a user's role, creating an admin user, setting an admin's
+      password, disabling an admin and deleting an admin are refused for
+      every token (`admin_token_forbidden`, 403).
       Token errors: `admin_token_invalid`, `admin_token_expired`,
       `admin_token_revoked` (401), `admin_token_ip_denied`,
       `admin_token_read_only`, `admin_token_forbidden` (403),

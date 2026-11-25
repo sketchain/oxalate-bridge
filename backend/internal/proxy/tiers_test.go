@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sketchain/oxalate-bridge/backend/internal/relaymsg"
 	"github.com/sketchain/oxalate-bridge/backend/internal/router"
 )
 
@@ -19,8 +20,8 @@ func TestRunTiersOrderAndReasons(t *testing.T) {
 			return "admitted:" + tier, nil
 		}
 	}
-	planOut := &router.Rejection{Tier: "plan", Code: router.CodePlanExhausted, Message: "plan 本期额度已用完"}
-	stdOut := &router.Rejection{Tier: "standard", Code: router.CodeInsufficientFunds, Message: "余额不足"}
+	planOut := &router.Rejection{Tier: "plan", Code: router.CodePlanExhausted, MsgID: relaymsg.PlanExhausted}
+	stdOut := &router.Rejection{Tier: "standard", Code: router.CodeInsufficientFunds, MsgID: relaymsg.InsufficientFunds}
 
 	// First admitting tier wins; later tiers are not tried.
 	tried = nil
@@ -44,10 +45,18 @@ func TestRunTiersOrderAndReasons(t *testing.T) {
 	if tier != "" || len(rejs) != 2 {
 		t.Fatalf("expected two rejections: %q %v", tier, rejs)
 	}
-	msg := RejectionMessage(rejs)
+	zh := append([]router.Rejection(nil), rejs...)
+	LocalizeRejections("zh-CN", zh)
+	msg := RejectionMessage("zh-CN", zh)
 	if !strings.Contains(msg, "plan: plan 本期额度已用完") || !strings.Contains(msg, "普通调用: 余额不足") ||
-		strings.Index(msg, "plan:") > strings.Index(msg, "普通调用") {
+		strings.Index(msg, "plan:") > strings.Index(msg, "普通调用") || !strings.HasPrefix(msg, "没有可用的档位") {
 		t.Fatalf("message %q", msg)
+	}
+	en := append([]router.Rejection(nil), rejs...)
+	LocalizeRejections("en", en)
+	msg = RejectionMessage("en", en)
+	if msg != "no tier is available (plan: the plan's quota for this period is used up; standard: insufficient balance)" {
+		t.Fatalf("en message %q", msg)
 	}
 
 	// No tiers at all.

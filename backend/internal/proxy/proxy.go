@@ -25,6 +25,7 @@ import (
 	"github.com/sketchain/oxalate-bridge/backend/internal/billing"
 	"github.com/sketchain/oxalate-bridge/backend/internal/keymeter"
 	"github.com/sketchain/oxalate-bridge/backend/internal/metrics"
+	"github.com/sketchain/oxalate-bridge/backend/internal/relaymsg"
 	"github.com/sketchain/oxalate-bridge/backend/internal/router"
 	"github.com/sketchain/oxalate-bridge/backend/internal/rstate"
 	"github.com/sketchain/oxalate-bridge/backend/internal/secret"
@@ -116,7 +117,7 @@ func (p *Proxy) Routes(handle func(method, pattern string, h http.HandlerFunc)) 
 
 // ServeUnknown answers paths under /v1 that the relay does not serve.
 func (p *Proxy) ServeUnknown(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotFound, "not_found_error", "only the Claude Messages API is served (/v1/messages, /v1/messages/count_tokens, /v1/models, /v1/bridge/status)")
+	p.writeMsg(w, http.StatusNotFound, "not_found_error", relaymsg.NotFound, nil)
 }
 
 // apiKey extracts the client's API key.
@@ -135,21 +136,21 @@ func apiKey(r *http.Request) string {
 func (p *Proxy) authenticate(w http.ResponseWriter, r *http.Request) (authcache.Info, bool) {
 	key := apiKey(r)
 	if key == "" {
-		writeError(w, http.StatusUnauthorized, "authentication_error", "missing API key")
+		p.writeMsg(w, http.StatusUnauthorized, "authentication_error", relaymsg.MissingKey, nil)
 		return authcache.Info{}, false
 	}
 	info, err := p.Auth.Lookup(r.Context(), key)
 	if err != nil {
 		p.Log.Error("auth lookup", "err", err)
-		writeError(w, http.StatusServiceUnavailable, "api_error", "authentication temporarily unavailable")
+		p.writeMsg(w, http.StatusServiceUnavailable, "api_error", relaymsg.AuthUnavailable, nil)
 		return authcache.Info{}, false
 	}
 	if !info.Found {
-		writeError(w, http.StatusUnauthorized, "authentication_error", "invalid API key")
+		p.writeMsg(w, http.StatusUnauthorized, "authentication_error", relaymsg.InvalidKey, nil)
 		return authcache.Info{}, false
 	}
 	if !info.Usable() {
-		writeError(w, http.StatusForbidden, "permission_error", "API key or user is disabled")
+		p.writeMsg(w, http.StatusForbidden, "permission_error", relaymsg.KeyDisabled, nil)
 		return authcache.Info{}, false
 	}
 	return info, true
@@ -262,7 +263,7 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
 	if err != nil {
-		writeError(w, http.StatusRequestEntityTooLarge, "invalid_request_error", "request body too large or unreadable")
+		p.writeMsg(w, http.StatusRequestEntityTooLarge, "invalid_request_error", relaymsg.BodyTooLarge, nil)
 		return
 	}
 	requestID, _ := uuid.NewV7()
@@ -283,7 +284,7 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 		rej, err := p.Meter.CheckLimits(ctx, auth, start)
 		if err != nil {
 			p.Log.Error("key limits", "err", err)
-			writeError(w, http.StatusServiceUnavailable, "api_error", "key limit state unavailable")
+			p.writeMsg(w, http.StatusServiceUnavailable, "api_error", relaymsg.KeyLimitsUnavailable, nil)
 			return
 		}
 		if rej.TierOnly() {
@@ -307,7 +308,7 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 	}
 	adm, tier, rejections := RunTiers(ctx, auth.Tiers, func(ctx context.Context, tier string) (*admission, *router.Rejection) {
 		if c.keyRej != nil {
-			return nil, &router.Rejection{Tier: tier, Code: c.keyRej.Code, Message: c.keyRej.Message}
+			return nil, &router.Rejection{Tier: tier, Code: c.keyRej.Code, MsgID: c.keyRej.MsgID, MsgParams: c.keyRej.MsgParams}
 		}
 		if c.balanceRej != nil && c.auth.Counts(tier) {
 			return nil, c.balanceTierRejection(tier)
@@ -322,7 +323,9 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 		for _, rej := range rejections {
 			metrics.Rejections.WithLabelValues(rej.Tier, rej.Code).Inc()
 		}
-		msg := RejectionMessage(rejections)
+		loc := c.set.RelayErrorLocale
+		LocalizeRejections(loc, rejections)
+		msg := RejectionMessage(loc, rejections)
 		writeErrorWith(w, http.StatusTooManyRequests, "rate_limit_error", msg, map[string]any{"rejections": rejections})
 		c.settleRejected(http.StatusTooManyRequests, "tier_rejected")
 		return
@@ -334,15 +337,7 @@ func (p *Proxy) ServeRelay(w http.ResponseWriter, r *http.Request) {
 // balanceTierRejection renders c.balanceRej as the rejection of one tier.
 func (c *call) balanceTierRejection(tier string) *router.Rejection {
 	r := c.balanceRej
-	msg := "key 余额口径的总额度已用完（Plan 档仍可用）"
-	if r.Window != "" {
-		msg = "key 余额口径的 " + r.Window + " 窗口限额已用完"
-		if r.RecoversAt != nil {
-			msg += "，预计 " + r.RecoversAt.UTC().Format(time.RFC3339) + " 恢复"
-		}
-		msg += "（Plan 档仍可用）"
-	}
-	return &router.Rejection{Tier: tier, Code: r.Code, Message: msg, Window: r.Window, RecoversAt: r.RecoversAt}
+	return &router.Rejection{Tier: tier, Code: r.Code, MsgID: r.MsgID, MsgParams: r.MsgParams, Window: r.Window, RecoversAt: r.RecoversAt}
 }
 
 // rejectKey answers a key-level refusal (never falls through to a tier).
@@ -351,7 +346,7 @@ func (c *call) rejectKey(w http.ResponseWriter, rej *keymeter.Rejection) {
 	if c.p.OnKeyExhausted != nil && (rej.Code == keymeter.CodeQuotaExhausted || rej.Code == keymeter.CodeWindowExhausted) {
 		go c.p.OnKeyExhausted(context.Background(), c.auth.KeyID, rej.Code, rej.Window, rej.RecoversAt)
 	}
-	writeErrorWith(w, rej.Status, rej.Type, rej.Message, rej.Extra())
+	writeErrorWith(w, rej.Status, rej.Type, rej.Text(c.set.RelayErrorLocale), rej.Extra())
 	c.settleRejected(rej.Status, rej.Code)
 }
 
@@ -372,22 +367,22 @@ func (c *call) admitLimits(ctx context.Context, w http.ResponseWriter) bool {
 	}
 	if a.UserMaxConc == 0 {
 		// 0 means the user may not make requests at all.
-		writeError(w, http.StatusTooManyRequests, "rate_limit_error", "用户并发上限为 0")
+		c.p.writeMsg(w, http.StatusTooManyRequests, "rate_limit_error", relaymsg.UserConcurrencyZero, nil)
 		c.settleRejected(http.StatusTooManyRequests, "rate_limited")
 		return false
 	}
 	ok, idx, err := c.p.St.Admit(ctx, c.requestID.String(), conc, rpm, leaseTTL, c.p.now())
 	if err != nil {
 		c.p.Log.Error("admit limits", "err", err)
-		writeError(w, http.StatusServiceUnavailable, "api_error", "rate limiter unavailable")
+		c.p.writeMsg(w, http.StatusServiceUnavailable, "api_error", relaymsg.RateLimiterUnavailable, nil)
 		return false
 	}
 	if !ok {
-		msg := "并发数已达上限"
+		id := relaymsg.ConcurrencyLimited
 		if idx >= len(conc) {
-			msg = "每分钟请求数已达上限"
+			id = relaymsg.RPMLimited
 		}
-		writeError(w, http.StatusTooManyRequests, "rate_limit_error", msg)
+		c.p.writeMsg(w, http.StatusTooManyRequests, "rate_limit_error", id, nil)
 		c.settleRejected(http.StatusTooManyRequests, "rate_limited")
 		return false
 	}
@@ -596,18 +591,18 @@ func (c *call) admitTier(ctx context.Context, tier string) (*admission, *router.
 			return nil, rej
 		}
 		if !c.acquireAccount(ctx, t.Account) {
-			return nil, &router.Rejection{Tier: tier, Code: router.CodeAccountBusy, Message: "plan 绑定账号并发已满"}
+			return nil, &router.Rejection{Tier: tier, Code: router.CodeAccountBusy, MsgID: relaymsg.PlanAccountBusy}
 		}
 		if !c.ep.count {
 			ok, err := c.hold(ctx, tier, t.Wallet, tierMult, modelMult, c.periodBase(t))
 			if err != nil {
 				c.dropLease(c.p.St.ConcKey("a", t.Account.ID))
 				c.p.Log.Error("plan hold", "err", err)
-				return nil, &router.Rejection{Tier: tier, Code: router.CodeStateUnavailable, Message: "额度状态暂不可用"}
+				return nil, &router.Rejection{Tier: tier, Code: router.CodeStateUnavailable, MsgID: relaymsg.QuotaStateDown}
 			}
 			if !ok {
 				c.dropLease(c.p.St.ConcKey("a", t.Account.ID))
-				return nil, &router.Rejection{Tier: tier, Code: router.CodePlanExhausted, Message: "plan 本期额度已用完"}
+				return nil, &router.Rejection{Tier: tier, Code: router.CodePlanExhausted, MsgID: relaymsg.PlanExhausted}
 			}
 		}
 		return &admission{tier: tier, plan: t, account: t.Account, wallet: t.Wallet, tierMult: tierMult, modelMult: modelMult}, nil
@@ -617,23 +612,23 @@ func (c *call) admitTier(ctx context.Context, tier string) (*admission, *router.
 			avail, err := c.walletAvailable(ctx, wallet, c.userBase)
 			if err != nil {
 				c.p.Log.Error("balance read", "err", err)
-				return nil, &router.Rejection{Tier: tier, Code: router.CodeStateUnavailable, Message: "余额状态暂不可用"}
+				return nil, &router.Rejection{Tier: tier, Code: router.CodeStateUnavailable, MsgID: relaymsg.BalanceStateDown}
 			}
 			if avail <= 0 {
-				return nil, &router.Rejection{Tier: tier, Code: router.CodeInsufficientFunds, Message: "余额不足"}
+				return nil, &router.Rejection{Tier: tier, Code: router.CodeInsufficientFunds, MsgID: relaymsg.InsufficientFunds}
 			}
 		}
 		cands, err := c.p.Router.Candidates(ctx, tier, c.ri.normModel, now, nil)
 		if err != nil {
 			c.p.Log.Error("candidates", "err", err)
-			return nil, &router.Rejection{Tier: tier, Code: router.CodeStateUnavailable, Message: "路由状态暂不可用"}
+			return nil, &router.Rejection{Tier: tier, Code: router.CodeStateUnavailable, MsgID: relaymsg.RouteStateDown}
 		}
 		acc, rest, busy := c.pickAndLease(ctx, cands)
 		if acc == nil {
 			if busy {
-				return nil, &router.Rejection{Tier: tier, Code: router.CodeAccountBusy, Message: "可用账号并发已满"}
+				return nil, &router.Rejection{Tier: tier, Code: router.CodeAccountBusy, MsgID: relaymsg.AccountBusy}
 			}
-			return nil, &router.Rejection{Tier: tier, Code: router.CodeNoAccount, Message: "无可用账号"}
+			return nil, &router.Rejection{Tier: tier, Code: router.CodeNoAccount, MsgID: relaymsg.NoAccount}
 		}
 		if !c.ep.count {
 			ok, err := c.hold(ctx, tier, wallet, tierMult, modelMult, c.userBase)
@@ -641,17 +636,17 @@ func (c *call) admitTier(ctx context.Context, tier string) (*admission, *router.
 				c.dropLease(c.p.St.ConcKey("a", acc.ID))
 				if err != nil {
 					c.p.Log.Error("balance hold", "err", err)
-					return nil, &router.Rejection{Tier: tier, Code: router.CodeStateUnavailable, Message: "余额状态暂不可用"}
+					return nil, &router.Rejection{Tier: tier, Code: router.CodeStateUnavailable, MsgID: relaymsg.BalanceStateDown}
 				}
 				if c.balanceRej != nil {
 					return nil, c.balanceTierRejection(tier)
 				}
-				return nil, &router.Rejection{Tier: tier, Code: router.CodeInsufficientFunds, Message: "余额不足"}
+				return nil, &router.Rejection{Tier: tier, Code: router.CodeInsufficientFunds, MsgID: relaymsg.InsufficientFunds}
 			}
 		}
 		return &admission{tier: tier, account: acc, candidates: rest, wallet: wallet, tierMult: tierMult, modelMult: modelMult}, nil
 	}
-	return nil, &router.Rejection{Tier: tier, Code: router.CodeUnsupportedTier, Message: "未知档位"}
+	return nil, &router.Rejection{Tier: tier, Code: router.CodeUnsupportedTier, MsgID: relaymsg.UnknownTier}
 }
 
 // pickAndLease picks a candidate (sticky first) whose account lease can be
@@ -940,7 +935,7 @@ func (c *call) serve(w http.ResponseWriter, adm *admission) {
 		if c.r.Context().Err() != nil {
 			status, typ = 499, "client_closed"
 		} else {
-			writeError(w, http.StatusBadGateway, "api_error", "upstream unreachable")
+			c.p.writeMsg(w, http.StatusBadGateway, "api_error", relaymsg.UpstreamUnreachable, nil)
 		}
 		c.settle(adm, account, status, typ, usage.Usage{}, retries, 0, nil)
 		return
@@ -1145,6 +1140,21 @@ func statusClass(status int) string {
 		return "4xx"
 	}
 	return "2xx"
+}
+
+// writeMsg writes an Anthropic-shaped error whose message is relaymsg id in
+// the configured locale.
+func (p *Proxy) writeMsg(w http.ResponseWriter, status int, typ, id string, params map[string]string) {
+	writeError(w, status, typ, relaymsg.Text(p.Settings.Get().RelayErrorLocale, id, params))
+}
+
+// writeMsgCode is writeMsg with error.code (and extra members).
+func (p *Proxy) writeMsgCode(w http.ResponseWriter, status int, typ, code, id string, params map[string]string, extra map[string]any) {
+	e := map[string]any{"code": code}
+	for k, v := range extra {
+		e[k] = v
+	}
+	writeErrorWith(w, status, typ, relaymsg.Text(p.Settings.Get().RelayErrorLocale, id, params), e)
 }
 
 // writeError writes an Anthropic-shaped error.

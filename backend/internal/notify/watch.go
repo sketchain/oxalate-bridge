@@ -71,7 +71,9 @@ func (s *Service) ObserveAccounts(ctx context.Context, obs []AccountObs) error {
 		o := o
 		if cur.Auth && !p.Auth {
 			s.emit(ctx, Notification{Event: AccountAuthError, Object: o.ID.String(), URL: url,
-				Params: func(string) map[string]string { return map[string]string{"name": o.Name, "reason": o.Reason} }})
+				Params: func(l string) map[string]string {
+					return map[string]string{"name": o.Name, "cause": phrase(l, "auth_"+AuthCause(o.Reason), nil), "reason": o.Reason}
+				}})
 		}
 		if cur.Stale && !p.Stale {
 			s.emit(ctx, Notification{Event: AccountStale, Object: o.ID.String(), URL: url,

@@ -1123,7 +1123,7 @@
   },
   "adminTokens": {
     "title": "管理 API Token",
-    "intro": "给脚本、监控或小组件调用 /api/v1/admin/* 用：请求头带 Authorization: Bearer oba-…。只读 token 只能 GET；两种 token 都不能管理 token、修改角色或重置管理员密码。",
+    "intro": "给脚本、监控或小组件调用 /api/v1/admin/* 用：请求头带 Authorization: Bearer oba-…。只读 token 只能 GET；两种 token 都不能管理 token、修改角色、重置管理员密码，也不能停用或删除管理员。",
     "create": "新建 Token",
     "createHint": "完整 token 只在创建成功时显示一次。",
     "name": "名称",

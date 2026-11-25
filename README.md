@@ -185,7 +185,7 @@ jq -r '
 给脚本、监控、小组件用的管理端 token，管理员在「系统设置 → 管理 API Token」里创建（名称、只读 / 读写、过期时间、IP 白名单）。格式 `oba-` + 43 位 base62，完整 token 只在创建成功时返回一次，库里只存 sha256（查找用）和显示用前缀。
 
 - `/api/v1/admin/*` 同时接受会话 Cookie 和 `Authorization: Bearer oba-…`；token 请求不需要 `X-Requested-With`。token 只能访问 `/admin/*`。
-- 只读：GET / HEAD（含 SSE 事件流 `/admin/events`）；读写：全部管理操作。两种都不能管理 token 本身（列出 / 创建 / 吊销），不能修改用户角色、创建管理员、设置管理员的密码（`admin_token_forbidden`）。`openapi.yaml` 每个管理接口都标了 `x-admin-token-scope`（read / write / none）。
+- 只读：GET / HEAD（含 SSE 事件流 `/admin/events`）；读写：全部管理操作。两种都不能管理 token 本身（列出 / 创建 / 吊销），不能修改用户角色、创建管理员、设置管理员的密码、停用或删除管理员（`admin_token_forbidden`）。`openapi.yaml` 每个管理接口都标了 `x-admin-token-scope`（read / write / none）。
 - 错误码：`admin_token_invalid` / `admin_token_expired` / `admin_token_revoked`（401），`admin_token_ip_denied` / `admin_token_read_only` / `admin_token_forbidden`（403），`admin_token_rate_limited`（429，按 token 每分钟 `admin_token_per_minute` 次，默认 120）。创建人不再是有效管理员时 token 失效。
 - 审计日志记录 `token_id`、`token_name`，`operator_id` 是 token 的创建人；最近使用时间和 IP 每个副本每分钟最多写一次。
 

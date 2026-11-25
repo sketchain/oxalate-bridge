@@ -146,6 +146,9 @@ func (s *Server) AdminUpdateUser(ctx context.Context, req AdminUpdateUserRequest
 		if b.Password != nil && before.Role == "admin" {
 			return nil, errTokenForbidden("set an admin's password")
 		}
+		if before.Role == "admin" && status != before.Status && status == "disabled" {
+			return nil, errTokenForbidden("disable admin users")
+		}
 	}
 	if before.ID == currentUser(ctx).ID && (role != "admin" || status != "active") {
 		return nil, badRequest("you cannot demote or disable yourself")
@@ -206,6 +209,9 @@ func (s *Server) AdminDeleteUser(ctx context.Context, req AdminDeleteUserRequest
 	before, err := s.Store.Q.GetUser(ctx, req.UserId)
 	if err != nil {
 		return nil, mapDomainErr(err)
+	}
+	if _, viaToken := currentToken(ctx); viaToken && before.Role == "admin" {
+		return nil, errTokenForbidden("delete admin users")
 	}
 	err = s.Store.InTx(ctx, func(tx *store.Tx) error {
 		if err := tx.Q.SoftDeleteUser(ctx, before.ID); err != nil {

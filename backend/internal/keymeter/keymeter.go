@@ -19,6 +19,7 @@ import (
 
 	"github.com/sketchain/oxalate-bridge/backend/internal/authcache"
 	"github.com/sketchain/oxalate-bridge/backend/internal/db/sqlc"
+	"github.com/sketchain/oxalate-bridge/backend/internal/relaymsg"
 	"github.com/sketchain/oxalate-bridge/backend/internal/rstate"
 )
 
@@ -43,6 +44,24 @@ type Rejection struct {
 	Message    string
 	Window     string     // window rejections only
 	RecoversAt *time.Time // window rejections only, when known
+	// MsgID and MsgParams name the relaymsg text of Message.
+	MsgID     string
+	MsgParams map[string]string
+}
+
+// Text renders the message in locale.
+func (r *Rejection) Text(locale string) string {
+	if r.MsgID == "" {
+		return r.Message
+	}
+	return relaymsg.Text(locale, r.MsgID, r.MsgParams)
+}
+
+// Localize sets Message to the text in locale.
+func (r *Rejection) Localize(locale string) {
+	if r.MsgID != "" {
+		r.Message = relaymsg.Text(locale, r.MsgID, r.MsgParams)
+	}
 }
 
 // TierOnly reports whether the rejection refuses only the tiers that count
@@ -52,28 +71,38 @@ func (r *Rejection) TierOnly() bool { return r != nil && r.Code == CodeBalanceQu
 // QuotaRejection is the rejection of an exhausted total quota.
 func QuotaRejection(scope string) *Rejection {
 	if scope == "b" {
-		return &Rejection{Status: http.StatusTooManyRequests, Type: "rate_limit_error", Code: CodeBalanceQuotaExhausted,
-			Message: "API key balance quota exhausted; the plan tier is still available"}
+		return localized(&Rejection{Status: http.StatusTooManyRequests, Type: "rate_limit_error", Code: CodeBalanceQuotaExhausted,
+			MsgID: relaymsg.KeyBalanceQuota})
 	}
-	return &Rejection{Status: http.StatusTooManyRequests, Type: "rate_limit_error", Code: CodeQuotaExhausted, Message: "API key quota exhausted"}
+	return localized(&Rejection{Status: http.StatusTooManyRequests, Type: "rate_limit_error", Code: CodeQuotaExhausted, MsgID: relaymsg.KeyQuota})
 }
 
 // WindowRejection is the rejection of an exhausted window i.
 func WindowRejection(scope string, i int, recovers *time.Time) *Rejection {
 	name := rstate.WindowSpans[i].Name
 	rej := &Rejection{Status: http.StatusTooManyRequests, Type: "rate_limit_error", Code: CodeWindowExhausted, Window: name, RecoversAt: recovers}
-	rej.Message = "API key " + name + " spending limit reached"
-	if scope == "b" {
-		rej.Code = CodeBalanceQuotaExhausted
-		rej.Message = "API key " + name + " balance spending limit reached"
+	rej.MsgParams = map[string]string{"window": name}
+	switch {
+	case scope == "b" && recovers != nil:
+		rej.Code, rej.MsgID = CodeBalanceQuotaExhausted, relaymsg.KeyBalanceWinRecover
+	case scope == "b":
+		rej.Code, rej.MsgID = CodeBalanceQuotaExhausted, relaymsg.KeyBalanceWindow
+	case recovers != nil:
+		rej.MsgID = relaymsg.KeyWindowRecover
+	default:
+		rej.MsgID = relaymsg.KeyWindow
 	}
 	if recovers != nil {
-		rej.Message += "; expected to recover at " + recovers.UTC().Format(time.RFC3339)
+		rej.MsgParams["recovers_at"] = recovers.UTC().Format(time.RFC3339)
 	}
-	if scope == "b" {
-		rej.Message += "; the plan tier is still available"
-	}
-	return rej
+	return localized(rej)
+}
+
+// localized fills Message in the default locale (callers that answer a
+// client call Localize with the configured one).
+func localized(r *Rejection) *Rejection {
+	r.Localize(relaymsg.ZH)
+	return r
 }
 
 // Extra is the extra members of the error object.
@@ -155,15 +184,15 @@ func (m *Meter) Recovery(ctx context.Context, key uuid.UUID, scope string, i int
 // CheckStatic applies expiry, the IP allowlist and the model allowlist.
 func CheckStatic(info authcache.Info, ip, normModel string, now time.Time) *Rejection {
 	if info.Expired(now) {
-		return &Rejection{Status: http.StatusForbidden, Type: "permission_error", Code: CodeExpired, Message: "API key has expired"}
+		return localized(&Rejection{Status: http.StatusForbidden, Type: "permission_error", Code: CodeExpired, MsgID: relaymsg.KeyExpired})
 	}
 	if len(info.IPAllowlist) > 0 && !IPAllowed(info.IPAllowlist, ip) {
-		return &Rejection{Status: http.StatusForbidden, Type: "permission_error", Code: CodeIPNotAllowed,
-			Message: "client IP is not in the key's IP allowlist"}
+		return localized(&Rejection{Status: http.StatusForbidden, Type: "permission_error", Code: CodeIPNotAllowed,
+			MsgID: relaymsg.IPNotAllowed})
 	}
 	if !ModelAllowed(info.ModelAllowlist, normModel) {
-		return &Rejection{Status: http.StatusForbidden, Type: "permission_error", Code: CodeModelNotAllowed,
-			Message: fmt.Sprintf("model %q is not allowed for this API key", normModel)}
+		return localized(&Rejection{Status: http.StatusForbidden, Type: "permission_error", Code: CodeModelNotAllowed,
+			MsgID: relaymsg.ModelNotAllowed, MsgParams: map[string]string{"model": normModel}})
 	}
 	return nil
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/sketchain/oxalate-bridge/backend/internal/authcache"
+	"github.com/sketchain/oxalate-bridge/backend/internal/relaymsg"
 
 	"github.com/sketchain/oxalate-bridge/backend/internal/db/sqlc"
 )
@@ -35,13 +36,13 @@ func (p *Proxy) ServeStatus(w http.ResponseWriter, r *http.Request) {
 	// lines refresh often and are never billed.
 	limit := p.Settings.Get().StatusKeyPerMinute
 	if !p.allowStatus(ctx, auth.KeyID, limit) {
-		writeError(w, http.StatusTooManyRequests, "rate_limit_error", "status requests are limited to "+strconv.Itoa(limit)+" per minute per key")
+		p.writeMsg(w, http.StatusTooManyRequests, "rate_limit_error", relaymsg.StatusLimited, map[string]string{"limit": strconv.Itoa(limit)})
 		return
 	}
 	body, err := p.Status(ctx, auth)
 	if err != nil {
 		p.Log.Error("bridge status", "err", err)
-		writeError(w, http.StatusServiceUnavailable, "api_error", "status temporarily unavailable")
+		p.writeMsg(w, http.StatusServiceUnavailable, "api_error", relaymsg.StatusUnavailable, nil)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -65,17 +66,17 @@ func (p *Proxy) allowStatus(ctx context.Context, key uuid.UUID, limit int) bool 
 func (p *Proxy) authenticateAny(w http.ResponseWriter, r *http.Request) (authcache.Info, bool) {
 	key := apiKey(r)
 	if key == "" {
-		writeError(w, http.StatusUnauthorized, "authentication_error", "missing API key")
+		p.writeMsg(w, http.StatusUnauthorized, "authentication_error", relaymsg.MissingKey, nil)
 		return authcache.Info{}, false
 	}
 	info, err := p.Auth.Lookup(r.Context(), key)
 	if err != nil {
 		p.Log.Error("auth lookup", "err", err)
-		writeError(w, http.StatusServiceUnavailable, "api_error", "authentication temporarily unavailable")
+		p.writeMsg(w, http.StatusServiceUnavailable, "api_error", relaymsg.AuthUnavailable, nil)
 		return authcache.Info{}, false
 	}
 	if !info.Found {
-		writeError(w, http.StatusUnauthorized, "authentication_error", "invalid API key")
+		p.writeMsg(w, http.StatusUnauthorized, "authentication_error", relaymsg.InvalidKey, nil)
 		return authcache.Info{}, false
 	}
 	return info, true

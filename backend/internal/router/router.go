@@ -10,6 +10,7 @@ import (
 	"github.com/sketchain/oxalate-bridge/backend/internal/authcache"
 	"github.com/sketchain/oxalate-bridge/backend/internal/billing"
 	"github.com/sketchain/oxalate-bridge/backend/internal/cpa"
+	"github.com/sketchain/oxalate-bridge/backend/internal/relaymsg"
 	"github.com/sketchain/oxalate-bridge/backend/internal/rstate"
 	"github.com/sketchain/oxalate-bridge/backend/internal/settings"
 )
@@ -30,10 +31,14 @@ type Rejection struct {
 	// by a window.
 	Window     string     `json:"window,omitempty"`
 	RecoversAt *time.Time `json:"recovers_at,omitempty"`
+	// MsgID and MsgParams name the relaymsg text; the relay renders Message
+	// in the configured locale just before answering.
+	MsgID     string            `json:"-"`
+	MsgParams map[string]string `json:"-"`
 }
 
-func reject(tier, code, msg string) *Rejection {
-	return &Rejection{Tier: tier, Code: code, Message: msg}
+func reject(tier, code, msgID string, params map[string]string) *Rejection {
+	return &Rejection{Tier: tier, Code: code, MsgID: msgID, MsgParams: params}
 }
 
 // Rejection codes.
@@ -77,30 +82,30 @@ type PlanTarget struct {
 // is checked atomically by the hold.
 func (r *Router) EvalPlan(ctx context.Context, auth authcache.Info, normModel string, now time.Time) (*PlanTarget, *Rejection) {
 	if auth.SubscriptionID == nil {
-		return nil, reject(TierPlan, CodeNoSubscription, "key 未绑定 plan 订阅")
+		return nil, reject(TierPlan, CodeNoSubscription, relaymsg.NoSubscription, nil)
 	}
 	sub, ok := r.Cat.Subscription(*auth.SubscriptionID)
 	if !ok || sub.Status != "active" || sub.UserID != auth.UserID {
-		return nil, reject(TierPlan, CodeSubInactive, "plan 订阅未生效")
+		return nil, reject(TierPlan, CodeSubInactive, relaymsg.SubInactive, nil)
 	}
 	if sub.ExpiresAt == nil || !now.Before(*sub.ExpiresAt) {
-		return nil, reject(TierPlan, CodeSubExpired, "plan 订阅已过期")
+		return nil, reject(TierPlan, CodeSubExpired, relaymsg.SubExpired, nil)
 	}
 	if len(sub.AllowedModels) > 0 && !sub.AllowedModels[normModel] {
-		return nil, reject(TierPlan, CodeModelNotInPlan, "模型不在 plan 内")
+		return nil, reject(TierPlan, CodeModelNotInPlan, relaymsg.ModelNotInPlan, nil)
 	}
 	if sub.AccountID == nil {
-		return nil, reject(TierPlan, CodePlanAccountDown, "plan 订阅未分配账号")
+		return nil, reject(TierPlan, CodePlanAccountDown, relaymsg.PlanUnassigned, nil)
 	}
 	acc, ok := r.Cat.Account(*sub.AccountID)
 	if !ok || !acc.Enabled || acc.Error {
-		return nil, reject(TierPlan, CodePlanAccountDown, "plan 绑定的账号不可用")
+		return nil, reject(TierPlan, CodePlanAccountDown, relaymsg.PlanAccountDown, nil)
 	}
 	if !r.Cat.Serves(acc.ID, normModel) {
-		return nil, reject(TierPlan, CodeModelNotServed, "plan 绑定的账号不提供该模型")
+		return nil, reject(TierPlan, CodeModelNotServed, relaymsg.PlanModelNotServed, nil)
 	}
 	if exhausted, why := r.hardExhausted(ctx, acc.ID, now); exhausted {
-		return nil, reject(TierPlan, CodePlanAccountDown, "plan 绑定的账号额度已用尽（"+why+"）")
+		return nil, reject(TierPlan, CodePlanAccountDown, relaymsg.PlanAccountUsedUp, map[string]string{"why": why})
 	}
 	period := r.Cat.PeriodFor(ctx, sub, now)
 	return &PlanTarget{Sub: sub, Account: acc, Period: period, Wallet: rstate.PeriodWallet(sub.ID, period.Start)}, nil

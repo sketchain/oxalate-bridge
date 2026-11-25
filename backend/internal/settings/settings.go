@@ -43,6 +43,19 @@ type Values struct {
 	StreamBacklogThreshold   int                `json:"stream_backlog_threshold"`
 	// VAPIDSubject is the Web Push contact; empty = BRIDGE_VAPID_SUBJECT.
 	VAPIDSubject string `json:"vapid_subject"`
+	// RelayErrorLocale is the language of error.message in /v1 answers
+	// (zh-CN or en); codes and types are never localized.
+	RelayErrorLocale string `json:"relay_error_locale"`
+	// SafeguardDefaultAllowance is how many safeguard refusals a user may
+	// trigger before every key is locked (users can have an override).
+	SafeguardDefaultAllowance int `json:"safeguard_default_allowance"`
+	// SafeguardDefaultResetCards is the number of reset cards a new user
+	// starts with.
+	SafeguardDefaultResetCards int `json:"safeguard_default_reset_cards"`
+	// SafeguardHashMinChars is the shortest normalized prompt (in
+	// characters) that is added to the prompt blocklist; shorter prompts
+	// ("继续", "yes") would block everyone.
+	SafeguardHashMinChars int `json:"safeguard_hash_min_chars"`
 }
 
 // Bounds of the public endpoint rate limits (requests per minute).
@@ -99,6 +112,11 @@ func Defaults() Values {
 		StatusKeyPerMinute:       60,
 		AdminTokenPerMinute:      120,
 		StreamBacklogThreshold:   1000,
+		RelayErrorLocale:         "zh-CN",
+
+		SafeguardDefaultAllowance:  3,
+		SafeguardDefaultResetCards: 1,
+		SafeguardHashMinChars:      16,
 	}
 }
 
@@ -153,6 +171,14 @@ func (v Values) Validate() error {
 		return fmt.Errorf("admin_token_per_minute must be within %d..%d", MinPublicRate, MaxPublicRate)
 	case v.StreamBacklogThreshold < 1:
 		return fmt.Errorf("stream_backlog_threshold must be >= 1")
+	case v.RelayErrorLocale != "zh-CN" && v.RelayErrorLocale != "en":
+		return fmt.Errorf("relay_error_locale must be zh-CN or en")
+	case v.SafeguardDefaultAllowance < 1 || v.SafeguardDefaultAllowance > 1000:
+		return fmt.Errorf("safeguard_default_allowance must be within 1..1000")
+	case v.SafeguardDefaultResetCards < 0 || v.SafeguardDefaultResetCards > 1000:
+		return fmt.Errorf("safeguard_default_reset_cards must be within 0..1000")
+	case v.SafeguardHashMinChars < 0 || v.SafeguardHashMinChars > 10000:
+		return fmt.Errorf("safeguard_hash_min_chars must be within 0..10000")
 	case v.VAPIDSubject != "" && !strings.HasPrefix(v.VAPIDSubject, "mailto:") && !strings.HasPrefix(v.VAPIDSubject, "https://"):
 		return fmt.Errorf("vapid_subject must start with mailto: or https://")
 	}

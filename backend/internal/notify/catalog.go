@@ -90,7 +90,7 @@ type text struct{ title, body string }
 
 var texts = map[string]map[string]text{
 	"zh-CN": {
-		AccountAuthError:    {"账号异常：{name}", "上游返回认证错误（401/403），账号已停止调度。{reason}"},
+		AccountAuthError:    {"账号异常：{name}", "原因：{cause}。账号已停止调度。{reason}"},
 		AccountStale:        {"账号数据过期：{name}", "额度数据已经 {age} 没有更新，账号暂不参与调度。"},
 		AccountFull:         {"账号额度用满：{name}", "{window} 窗口已用满，恢复前不再分配新请求。"},
 		SubscriptionPending: {"有新的待分配订阅", "{user} 购买了「{plan}」，等待分配账号。"},
@@ -104,7 +104,7 @@ var texts = map[string]map[string]text{
 		testEvent:           {"测试通知", "看到这条消息，说明本设备的推送已经开通。"},
 	},
 	"en": {
-		AccountAuthError:    {"Account error: {name}", "The upstream answered 401/403; the account is out of routing. {reason}"},
+		AccountAuthError:    {"Account error: {name}", "Cause: {cause}. The account is out of routing. {reason}"},
 		AccountStale:        {"Account data stale: {name}", "Quota data has not been updated for {age}; the account is out of routing."},
 		AccountFull:         {"Account quota full: {name}", "The {window} window is used up; no new requests until it recovers."},
 		SubscriptionPending: {"New subscription to assign", "{user} bought \"{plan}\"; it is waiting for an account."},
@@ -135,6 +135,9 @@ var phrases = map[string]map[string]string{
 		"renew_other":    "续费出错",
 		"unnamed_key":    "未命名",
 		"unknown_reason": "",
+		"auth_401":       "凭证失效（401）",
+		"auth_sub":       "订阅类型不再是 claude",
+		"auth_other":     "其他",
 	},
 	"en": {
 		"renew_on":       "Auto-renew is on; it will be charged before it expires.",
@@ -150,7 +153,23 @@ var phrases = map[string]map[string]string{
 		"renew_other":    "renewal error",
 		"unnamed_key":    "unnamed",
 		"unknown_reason": "",
+		"auth_401":       "credentials invalid (401)",
+		"auth_sub":       "the subscription is no longer claude",
+		"auth_other":     "other",
 	},
+}
+
+// AuthCause classifies an account's error_reason for account_auth_error:
+// "401" (credentials invalid), "sub" (the subscription is no longer claude)
+// or "other" (403 and anything else; the raw reason follows in the body).
+func AuthCause(reason string) string {
+	switch {
+	case strings.HasPrefix(reason, "upstream 401"):
+		return "401"
+	case strings.HasPrefix(reason, "unsupported subscription"):
+		return "sub"
+	}
+	return "other"
 }
 
 // NormLocale maps any value to a supported locale (default zh-CN).

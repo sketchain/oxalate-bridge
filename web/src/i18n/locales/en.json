@@ -1123,7 +1123,7 @@
   },
   "adminTokens": {
     "title": "Admin API tokens",
-    "intro": "For scripts, monitoring and widgets calling /api/v1/admin/*: send Authorization: Bearer oba-…. Read tokens can only GET; no token can manage tokens, change roles or reset an admin's password.",
+    "intro": "For scripts, monitoring and widgets calling /api/v1/admin/*: send Authorization: Bearer oba-…. Read tokens can only GET; no token can manage tokens, change roles, reset an admin's password, or disable or delete an admin.",
     "create": "New token",
     "createHint": "The full token is shown only once, right after it is created.",
     "name": "Name",
