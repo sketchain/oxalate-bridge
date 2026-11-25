@@ -909,7 +909,6 @@
     "quota_stale": "额度数据过期",
     "5h_exhausted": "5 小时窗口已用满",
     "week_exhausted": "7 天窗口已用满",
-    "paused": "cpa-quota 暂停了该账号",
     "penalized": "5h 用量超过水位线，路由降权",
     "other": "其他原因"
   },

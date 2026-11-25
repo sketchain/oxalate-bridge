@@ -909,7 +909,6 @@
     "quota_stale": "Quota data is stale",
     "5h_exhausted": "5-hour window is used up",
     "week_exhausted": "7-day window is used up",
-    "paused": "Paused by cpa-quota",
     "penalized": "5h usage above the watermark; routing weight reduced",
     "other": "Other reason"
   },
