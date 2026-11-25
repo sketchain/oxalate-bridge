@@ -25,6 +25,7 @@ export const keys = {
   pushConfig: ["push", "config"] as const,
   pushDevices: ["me", "push", "devices"] as const,
   notificationPrefs: ["me", "notifications", "prefs"] as const,
+  mySafeguard: ["me", "safeguard"] as const,
 
   admin: ["admin"] as const,
   overview: ["admin", "overview"] as const,
@@ -45,7 +46,12 @@ export const keys = {
   adminUsage: (f: Q<"adminGetUsageSummary">) => ["admin", "usage", f] as const,
   adminLedger: (f: Q<"adminListLedger">) => ["admin", "ledger", f] as const,
   audit: (f: Q<"adminListAuditLogs">) => ["admin", "audit", f] as const,
-  safeguard: (f: Q<"adminListSafeguardEvents">) => ["admin", "safeguard", f] as const,
+  safeguard: (f: Q<"adminListSafeguardEvents">) => ["admin", "safeguard", "events", f] as const,
+  safeguardEvent: (id: string) => ["admin", "safeguard", "event", id] as const,
+  safeguardBlocks: (f: Q<"adminListSafeguardBlocks">) => ["admin", "safeguard", "blocks", f] as const,
+  safeguardBlock: (hash: string) => ["admin", "safeguard", "block", hash] as const,
+  safeguardAppeals: (f: Q<"adminListSafeguardAppeals">) => ["admin", "safeguard", "appeals", f] as const,
+  userSafeguard: (id: string) => ["admin", "users", id, "safeguard"] as const,
   adminKeyLimits: (id: string) => ["admin", "keys", id, "limits"] as const,
   redeemBatches: ["admin", "redeem", "batches"] as const,
   redeemCodes: (f: Omit<Q<"adminListRedeemCodes">, "cursor">) => ["admin", "redeem", "codes", f] as const,
@@ -227,6 +233,49 @@ export const safeguardInfinite = (f: Omit<Q<"adminListSafeguardEvents">, "cursor
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
 
+export const safeguardEventQuery = (id: string) =>
+  queryOptions({
+    queryKey: keys.safeguardEvent(id),
+    queryFn: () => unwrap(api.GET("/admin/safeguard-events/{eventId}", { params: { path: { eventId: id } } })),
+  });
+
+export const safeguardBlocksInfinite = (f: Omit<Q<"adminListSafeguardBlocks">, "cursor">) =>
+  infiniteQueryOptions({
+    queryKey: keys.safeguardBlocks(f),
+    queryFn: ({ pageParam }) =>
+      unwrap(api.GET("/admin/safeguard-blocks", { params: { query: { ...f, cursor: pageParam || undefined } } })),
+    initialPageParam: "",
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  });
+
+export const safeguardBlockQuery = (hash: string) =>
+  queryOptions({
+    queryKey: keys.safeguardBlock(hash),
+    queryFn: () => unwrap(api.GET("/admin/safeguard-blocks/{hash}", { params: { path: { hash } } })),
+  });
+
+export const safeguardAppealsInfinite = (f: Omit<Q<"adminListSafeguardAppeals">, "cursor">) =>
+  infiniteQueryOptions({
+    queryKey: keys.safeguardAppeals(f),
+    queryFn: ({ pageParam }) =>
+      unwrap(api.GET("/admin/safeguard-appeals", { params: { query: { ...f, cursor: pageParam || undefined } } })),
+    initialPageParam: "",
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  });
+
+/** Pending appeal count (navigation badge). */
+export const pendingAppealsQuery = queryOptions({
+  queryKey: keys.safeguardAppeals({ status: "pending", limit: 1 }),
+  queryFn: () => unwrap(api.GET("/admin/safeguard-appeals", { params: { query: { status: "pending", limit: 1 } } })),
+  refetchInterval: 60_000,
+});
+
+export const userSafeguardQuery = (id: string) =>
+  queryOptions({
+    queryKey: keys.userSafeguard(id),
+    queryFn: () => unwrap(api.GET("/admin/users/{userId}/safeguard", { params: { path: { userId: id } } })),
+  });
+
 export const adminKeyLimitsQuery = (id: string) =>
   queryOptions({
     queryKey: keys.adminKeyLimits(id),
@@ -278,6 +327,7 @@ export const pushConfigQuery = queryOptions({
   retry: false,
 });
 export const pushDevicesQuery = queryOptions({ queryKey: keys.pushDevices, queryFn: () => unwrap(api.GET("/push/subscriptions")) });
+export const mySafeguardQuery = queryOptions({ queryKey: keys.mySafeguard, queryFn: () => unwrap(api.GET("/me/safeguard")) });
 export const notificationPrefsQuery = queryOptions({
   queryKey: keys.notificationPrefs,
   queryFn: () => unwrap(api.GET("/notifications/prefs")),

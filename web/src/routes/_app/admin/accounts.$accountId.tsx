@@ -429,10 +429,10 @@ function Estimate({ a }: { a: Account }) {
           <dl className="grid grid-cols-2 border-2 border-ink text-[13px] sm:grid-cols-4">
             {(
               [
-                ["state", e.state + (e.pause_reason ? ` (${e.pause_reason})` : "")],
+                ["state", e.state],
                 ["k", e.k != null ? `${e.k.toFixed(3)} · ${e.k_source}` : `— · ${e.k_source}`],
                 ["safety", e.safety_factor.toFixed(2)],
-                ["basis", `${e.basis} · ${e.segment_window}`],
+                ["basis", e.basis],
                 ["5h used", `${formatPercent(e.used_5h)} / $${e.five_hour_total_usd.toFixed(2)}`],
                 ["7d used", `${formatPercent(e.used_7d)} / $${e.weekly_total_usd.toFixed(2)}`],
                 ["remaining 5h", `$${e.remaining_five_hour_usd.toFixed(2)}`],

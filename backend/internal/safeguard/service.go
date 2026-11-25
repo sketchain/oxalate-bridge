@@ -292,8 +292,7 @@ func (s *Service) Adjust(ctx context.Context, userID uuid.UUID, a Adjustment) (b
 		if err != nil {
 			return err
 		}
-		before = UserState{ID: u.ID, Username: u.Username, SafeguardAllowance: u.SafeguardAllowance, SafeguardUsed: u.SafeguardUsed,
-			SafeguardResetCards: u.SafeguardResetCards, SafeguardLockedAt: u.SafeguardLockedAt}
+		before = UserState(u)
 		p := sqlc.SetUserSafeguardParams{ID: userID, Allowance: u.SafeguardAllowance, Used: u.SafeguardUsed,
 			ResetCards: u.SafeguardResetCards, DefaultAllowance: int32(s.Settings.Get().SafeguardDefaultAllowance)}
 		if a.SetAllowance {

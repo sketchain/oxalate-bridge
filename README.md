@@ -2,7 +2,7 @@
 
 自建的 Claude API 中转站：用户与 API key、token plan、余额、计费和路由全部由本项目管理，上游是多个 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)（CPA）v8 实例。每个 CPA 实例只挂一个 Claude 订阅账号（Pro / Max 5x / Max 20x），额度估算来自 CPA 上的 [cpa-quota](https://github.com/sketchain/cpa-quota) 插件。中转站只服务 Claude Messages 协议，只接受 Claude 订阅的上游账号。
 
-本仓库目前是 v0.5.0（第七轮：管理 API token、PWA（可安装、离线页、新版本提示）、Web 推送通知）。第五、六轮（v0.4.x）补齐了完整中转站常用的功能——API key 的额度 / 滑动窗口 / 过期 / 模型与 IP 白名单、免登录的凭 key 查询页、Claude Code 状态栏接口、按 key 用量、兑换码、公告和模型价格页。只装了 Docker 也能用一条命令跑起完整演示（见「只用 Docker 体验」）。界面截图见 [docs/screenshots](docs/screenshots)（例如 [管理 API Token](docs/screenshots/admin-tokens-light.png)、[通知设置](docs/screenshots/user-notifications-light.png)、[离线页](docs/screenshots/offline-mobile.png)、[iOS 安装引导](docs/screenshots/ios-install-banner-mobile.png)、[查询页](docs/screenshots/query-light.png)）。待办见 [docs/TODO.md](docs/TODO.md)。
+本仓库目前是 v0.6.0（第八轮：safeguard 防护（每人次数、重置卡、锁定与申请解封、触发请求留档、提示词黑名单）、转发错误文案语言、对齐 cpa-quota v0.1.0 并在 CI 里防漂移）。第七轮（v0.5.0）加了管理 API token、PWA（可安装、离线页、新版本提示）和 Web 推送通知。第五、六轮（v0.4.x）补齐了完整中转站常用的功能——API key 的额度 / 滑动窗口 / 过期 / 模型与 IP 白名单、免登录的凭 key 查询页、Claude Code 状态栏接口、按 key 用量、兑换码、公告和模型价格页。只装了 Docker 也能用一条命令跑起完整演示（见「只用 Docker 体验」）。界面截图见 [docs/screenshots](docs/screenshots)（例如 [管理 API Token](docs/screenshots/admin-tokens-light.png)、[通知设置](docs/screenshots/user-notifications-light.png)、[离线页](docs/screenshots/offline-mobile.png)、[iOS 安装引导](docs/screenshots/ios-install-banner-mobile.png)、[查询页](docs/screenshots/query-light.png)）。待办见 [docs/TODO.md](docs/TODO.md)。
 
 ## 仓库结构
 
@@ -51,13 +51,14 @@ docs/TODO.md             待办（Scriptable 小组件、转发错误文案语�
 1. 鉴权：`Authorization: Bearer` 或 `X-Api-Key`。进程内 L1（10 秒）→ Redis L2（10 分钟）→ PG；key / 用户改动写 outbox，由投递器删除 L2 并 pub/sub 通知所有副本清 L1。
 2. 请求体只读一次并原样保留；用 gjson 取 `model`、`stream`、`max_tokens`、`cache_control` 的 1h ttl。
 3. 会话标识按 CPA `ExtractSessionInfo` 的优先级提取（移植，未直接 import：直接依赖会让二进制增加约 15 MB），取不到用 key id；只存哈希。
-4. key 级别检查（不往下一档切）：过期 → 403 `key_expired`；来源 IP 不在白名单 → 403 `ip_not_allowed`；模型不在白名单 → 403 `model_not_allowed`；总额度用完 → 429 `key_quota_exhausted`；滑动窗口用完 → 429 `key_window_exhausted`（`error.window` 与预计恢复时间 `error.recovers_at`）。错误体是 Anthropic 原生格式，`error.code` 同时写进请求日志的 `error_type`。见下文「API key 限制」。
+4. key 级别检查（不往下一档切）：过期 → 403 `key_expired`；来源 IP 不在白名单 → 403 `ip_not_allowed`；模型不在白名单 → 403 `model_not_allowed`；总额度用完 → 429 `key_quota_exhausted`；滑动窗口用完 → 429 `key_window_exhausted`（`error.window` 与预计恢复时间 `error.recovers_at`）。错误体是 Anthropic 原生格式，`error.code` 同时写进请求日志的 `error_type`；`error.message` 的语言由运行时参数 `relay_error_locale` 决定（`zh-CN` / `en`，默认中文），code、type 和状态码不随语言变化。见下文「API key 限制」。
 5. 用户与 key 两个维度的并发（Redis 租约，带过期，进程崩溃自动回收）和 RPM（60 秒滑动窗口），超限 429。
-6. 按 key 的 `tiers` 顺序逐档尝试 plan → standard → force（顺序由 key 决定）。只有「这一档不放行」才切下一档，上游报错不切档；全部不放行时 429，`error.rejections` 逐档列出原因。
-7. 预扣（Lua 原子操作）：估算 = 请求体字节 / 3 按输入价 + min(max_tokens, 4096) 按输出价，乘档位与模型倍率，再与 `hold_cap`、可用额、key 剩余额度和各窗口剩余额度取小（同一个脚本里原子完成）。剩余 > 0 才放行，最后一笔允许超出。
-8. 原样转发给 CPA，绝不改写请求体；响应（含 SSE）逐块原样回给客户端，同时读取 usage。
-9. 还没向客户端写出任何字节前：429 → 冷却到 Retry-After / 已用尽窗口的 reset_at / 60 秒；401/403 → 账号置 error；5xx / 网络错误 → 冷却 30 秒；然后同档换号重试（最多 `max_retries` 次，plan 档不换号）。`claude refusal` 开头的 400 不重试、原样透传并记 safeguard 事件。
-10. 结算（Lua 原子操作）：退回钱包与 key 的预扣、计入待落库额、把 billed 累加到 key 的两套用量和分钟桶、累加账号分钟桶、续期粘性映射，并把完整结算记录 XADD 到 Redis Stream。
+6. safeguard 检查（选档之前，不占并发、不预扣）：用户次数已用完 → 403 `safeguard_locked`；最后一条用户消息在全站黑名单里 → 400 `safeguard_prompt_blocked`。见下文「Safeguard 防护」。
+7. 按 key 的 `tiers` 顺序逐档尝试 plan → standard → force（顺序由 key 决定）。只有「这一档不放行」才切下一档，上游报错不切档；全部不放行时 429，`error.rejections` 逐档列出原因。
+8. 预扣（Lua 原子操作）：估算 = 请求体字节 / 3 按输入价 + min(max_tokens, 4096) 按输出价，乘档位与模型倍率，再与 `hold_cap`、可用额、key 剩余额度和各窗口剩余额度取小（同一个脚本里原子完成）。剩余 > 0 才放行，最后一笔允许超出。
+9. 原样转发给 CPA，绝不改写请求体；响应（含 SSE）逐块原样回给客户端，同时读取 usage。
+10. 还没向客户端写出任何字节前：429 → 冷却到 Retry-After / 已用尽窗口的 reset_at / 60 秒；401/403 → 账号置 error；5xx / 网络错误 → 冷却 30 秒；然后同档换号重试（最多 `max_retries` 次，plan 档不换号）。上游以错误形式返回的 safeguard 拒绝不重试、原样透传、不计费，并记 safeguard 事件（识别规则见「Safeguard 防护」）。
+11. 结算（Lua 原子操作）：退回钱包与 key 的预扣、计入待落库额、把 billed 累加到 key 的两套用量和分钟桶、累加账号分钟桶、续期粘性映射，并把完整结算记录 XADD 到 Redis Stream。
 
 ### 实时钱包（余额与 plan 本期额度）
 
@@ -201,8 +202,27 @@ curl -H "Authorization: Bearer oba-…" https://panel.example.com/api/v1/admin/o
 
 - VAPID 密钥对首次启动时生成，存在 settings 表（私钥用 `BRIDGE_SECRET_KEY` 加密）；联系方式取运行时设置 `vapid_subject`，留空时用 `BRIDGE_VAPID_SUBJECT`，都没有时用占位的 `mailto:admin@bridge.invalid`。
 - 用户在「设置 → 通知」开启本设备（iOS 需先添加到主屏幕）、管理自己的设备、按事件开关、设置余额阈值、发送测试通知。订阅端点只接受已知推送服务（FCM、Mozilla、Apple、WNS）的 https 地址。推送服务返回 404 / 410 时自动删除订阅。
-- 事件只在状态变化时触发，上一次的状态存在 Redis（换 leader 不丢）：管理员默认开 `account_auth_error`、`account_stale`、`subscription_pending`、`reconcile_mismatch`、`stream_backlog_high`（积压超过 `stream_backlog_threshold` 并持续 5 分钟），默认关 `account_full`、`safeguard_event`；用户默认开 `balance_low`（余额从阈值以上跌到以下推一次，回到阈值以上才重新计）、`plan_expiring`（到期前 3 天，每个续费周期一次）、`auto_renew_failed`，默认关 `key_exhausted`。
+- 事件只在状态变化时触发，上一次的状态存在 Redis（换 leader 不丢）：管理员默认开 `account_auth_error`、`account_stale`、`subscription_pending`、`reconcile_mismatch`、`stream_backlog_high`（积压超过 `stream_backlog_threshold` 并持续 5 分钟），默认关 `account_full`、`safeguard_event`，默认开 `safeguard_appeal_new`（有新的解封申请）；用户默认开 `safeguard_appeal_result`（解封申请的结果）、`balance_low`（余额从阈值以上跌到以下推一次，回到阈值以上才重新计）、`plan_expiring`（到期前 3 天，每个续费周期一次）、`auto_renew_failed`，默认关 `key_exhausted`。
 - 去重：同一用户、同一事件、同一对象 30 分钟内只推一次（Redis `SET NX EX`，多副本共享）。发送走 Redis 队列（每个副本一个 worker，Lua 原子取任务），失败按 10 s 起指数退避重试 5 次；消息 TTL 1 小时，账号异常类用 high urgency；文案按用户的 `locale`（面板切换语言时同步）选择中文或英文，点击通知聚焦已打开的窗口或打开对应页面。
+
+### Safeguard 防护
+
+用来防止同一个人（或他的 agent 反复重试）不断触发 Claude 的 safeguard 拒绝、把上游账号弄脏。
+
+- 次数：每个用户一份，所有 key 共用，默认 3 次（运行时参数 `safeguard_default_allowance`，改动对所有用户即时生效；管理员可在用户详情里给单个用户设次数，`null` 表示跟随默认）。每次上游返回拒绝扣 1 次，用完即锁定，不会自动恢复。
+- 锁定：该用户所有 key 的转发请求在中转站本地拒绝，403 `safeguard_locked`，提示去面板处理。面板照常登录；`GET /v1/models`、`/v1/bridge/status` 不受影响。面板每个页面顶部显示锁定警示条。
+- 重置卡：新用户默认 1 张（`safeguard_default_reset_cards`），用户在「我的 Safeguard」里点一下把已用次数清零；管理员可以补发（或直接调整已用次数）。
+- 申请解封：只能在锁定时提交，同一时间只有一个待处理申请。管理员在「Safeguard 管理 → 解封申请」同意（已用次数清零）或拒绝（必须写理由）；新申请推送给管理员（`safeguard_appeal_new`），结果推送给用户（`safeguard_appeal_result`）。不是完整工单，没有来回对话。
+- 留档：每次触发保存客户端发来的完整请求体（gzip，存在 `safeguard_events.body_gz`，永久保留、不自动清理），以及规范化后的提示词（最多 4000 字）。管理员在触发记录的详情里分段查看原文（每段 64 KiB）或下载；首次查看和下载写审计日志。用户的 safeguard 页、锁定提示和创建 key 的对话框都写明「管理员可以查看触发 safeguard 的请求内容」。
+- 提示词黑名单：
+  1. 取最后一条 role 为 user 的消息；字符串内容直接用，数组内容取所有 `text` 块用换行拼接；
+  2. 去掉所有 `<system-reminder>…</system-reminder>`（Claude Code 每次都会变的日期、文件列表等）；
+  3. 剩下为空时改用这条消息里 `tool_result` 的文本，同样去掉 system reminder；
+  4. 连续空白（空格、制表符、换行）合并成一个空格并去掉首尾；
+  5. 结果短于 `safeguard_hash_min_chars`（默认 16 个字符）时不进黑名单，否则取 sha256（十六进制）。
+  触发后这个 hash 进入全站黑名单，之后任何用户发出相同内容都在本地拒绝：400 `safeguard_prompt_blocked`，不扣次数、不转发，用户面板记录被拦截的次数和时间。管理员在「提示词黑名单」里看 hash ↔ 提示词、命中次数，可撤销误伤；撤销后同样的内容再次触发会重新加入。第 3 步的 tool_result 兜底可能把常见的工具输出拉黑，遇到时撤销即可。
+- 拒绝识别（与 cpa-quota v0.1.0 一致）：错误体（`error.message`、`message`、`error`、`detail` 或整个响应体）里 CLIProxyAPI 生成的 `claude refusal`、`claude refusal (<类别>)`、`claude refusal (<类别>): <原因>`、`claude refusal: <原因>`（不区分大小写）；非流式响应或流式 `message_delta` 的 `stop_reason: refusal`，或 `stop_details` 里的拒绝类型 / 类别（cyber、bio、frontier_llm、reasoning_extraction、general_harms）；Anthropic 纯文本的 cyber 使用政策拒绝（只看错误）。
+- 计费：错误形式的拒绝不计费；200 响应里（含流式中途）的拒绝按上游实际报告的用量计费。同一用户的多个并发请求同时被拒、而前一个已经让他锁定或把内容拉黑时，后面的只记录、不扣次数。
 
 ### 落库
 
@@ -225,7 +245,8 @@ Stream 消费者（consumer group，多副本可同时消费）每批一个 PG �
 
 ### 上游账号
 
-- 只接受 Claude 订阅：导入、编辑、测试时 `/quota` 返回的 `subscription` 不是 `claude` 就拒绝（`unsupported_subscription`）；plan 的 `subscription` 也只能是 `claude`。数据库对未删除的账号与 plan、`active` / `pending_assignment` 的订阅加了 CHECK 约束。已导入的账号之后若 `/quota` 报告了别的订阅，轮询会把它置为 error（不改库里的订阅字段）。
+- 只有 Claude 账号：cpa-quota v0.1.0 只服务 Claude，`/quota` 不再返回订阅类型和 provider，账号表也不存这两项；plan 的 `subscription` 仍只能是 `claude`（`unsupported_subscription`）。
+- **每个 CPA 一个号**：每个 CPA 都必须在 cpa-quota 的配置里写上 `auth_indexes`，让 `/quota` 列出这个号；没配时 `/quota` 不列账号，导入和测试失败，报「quota response lists no account」。
 - 删除保护：账号上还绑定着 `active` 或 `pending_assignment` 的订阅时不能删除，返回 409 `account_has_subscriptions`，`error.subscriptions` 列出这些订阅（id、用户、状态、plan 名）；先换绑或取消。停用不受影响。删除与绑定订阅在同一账号行上加锁互斥，不会漏掉并发绑定。
 
 ### 面板会话
@@ -238,7 +259,7 @@ Stream 消费者（consumer group，多副本可同时消费）每批一个 PG �
 
 ### cpa-quota 数据（管理员只读）
 
-账号表里的 `instance`、`auth_index`（来自 `/quota`）定位 `BRIDGE_CPA_QUOTA_SCHEMA` 中 cpa-quota 的数据（表结构以 cpa-quota schema version 1 为准）：
+账号表里的 `instance`、`auth_index`（来自 `/quota`）定位 `BRIDGE_CPA_QUOTA_SCHEMA` 中 cpa-quota 的数据（表结构以 cpa-quota v0.1.0 为准，schema version 1；对应的提交记在 `backend/internal/cpaquota/UPSTREAM`）：
 
 - `GET /api/v1/admin/accounts/{id}/estimate`：`estimates` 表对应行，`detail` 原样返回。
 - `GET /api/v1/admin/accounts/{id}/k-trend?days=N`：`k_trend_daily`（默认 30 天，最大 365）。
@@ -247,12 +268,14 @@ Stream 消费者（consumer group，多副本可同时消费）每批一个 PG �
 
 查询都在只读事务里执行（`search_path` 指向 cpa-quota 的 schema，语句超时 3 秒）；schema 或表不存在、或超时时返回 503 `cpa_quota_unavailable`。cpa-quota 的表不在本项目的迁移里。
 
+防漂移：CI 的 Test 任务按 `UPSTREAM` 里的提交拉取 cpa-quota，用它自己的迁移代码建一个 schema；`TestUpstreamSchemaDrift` 把 `queries/cpaquota.sql` 的每条查询分别对 `internal/cpaquota/schema.sql` 和这个真实 schema 做 prepare，再比较两边的列、索引和 schema_version，有差异就失败并列出「只在上游 / 只在 schema.sql」。升级 cpa-quota 时改 `UPSTREAM`，按报错更新 `schema.sql` 和查询。本地没设 `BRIDGE_TEST_CPA_QUOTA_SCHEMA` 时只检查查询能否对 `schema.sql` prepare。
+
 ### 用户可用额度（`GET /api/v1/me/availability`）
 
 返回调用者本人视角的预估值（`estimated: true`、`computed_at`），不含任何账号名、数量或 id。每个账号（上游成本口径，micro-USD，沿用本地窗口重置）：
 
 - T5 = safety_factor × five_hour.total_usd，T7 = safety_factor × week.total_usd；total 为 0（未知）时该维度容量为 0。
-- r5 = max(0, five_hour.remaining − S5)，r7 = max(0, week.remaining − S7)；S 是该窗口快照（或本地重置）之后本账号的花费。paused、cooldown 时两个 r 都取 0，某窗口 used ≥ 100 时该窗口的 r 取 0，未来的重置照常计入。
+- r5 = max(0, five_hour.remaining − S5)，r7 = max(0, week.remaining − S7)；S 是该窗口快照（或本地重置）之后本账号的花费。cooldown 时两个 r 都取 0，某窗口 used ≥ 100 时该窗口的 r 取 0，未来的重置照常计入。
 - n(T) = 0（下次重置 ≥ now+T），否则 1 + ⌊(now+T − 下次重置) / 周期⌋；假设 5h 窗口重置后立即开始下一个，结果是上限。
 - C5(T) = r5 + n5(T)·T5（没有 5h 窗口时为无穷大），C7(T) = r7 + n7(T)·T7（没有 week 窗口时为 0）。
 - 强制调用（启用、非 error 的账号，stale 用最后一次快照）：F = min(C5, C7)；普通调用（启用、非 stale / cooldown / error）：S = max(0, min(C5, C7 − P·(1 + n7)))，P 为该账号的 plan 预留。
@@ -306,6 +329,10 @@ Stream 消费者（consumer group，多副本可同时消费）每批一个 PG �
 | `admin_token_per_minute` | 120 | 每个管理 API token 的每分钟次数（1–10000） |
 | `stream_backlog_threshold` | 1000 | 结算积压超过它并持续 5 分钟推送 `stream_backlog_high` |
 | `vapid_subject` | 空 | Web 推送联系方式，空 = `BRIDGE_VAPID_SUBJECT` |
+| `relay_error_locale` | `zh-CN` | 转发接口错误 `message` 的语言（`zh-CN` / `en`） |
+| `safeguard_default_allowance` | 3 | 每个用户的 safeguard 次数（1–1000，用户单独设置优先；改动对所有用户即时生效） |
+| `safeguard_default_reset_cards` | 1 | 新用户的重置卡数量（0–1000） |
+| `safeguard_hash_min_chars` | 16 | 规范化后的提示词至少这么多字符才进黑名单（0–10000） |
 
 ## 只用 Docker 体验（演示环境）
 
@@ -324,8 +351,8 @@ seed（一次性任务，执行 `bridge seed-demo` 写入演示数据后退出�
 | 用户名 | 密码 | 说明 |
 | --- | --- | --- |
 | `admin` | `admin-pass-123` | 管理员：概览、上游账号、订阅分配、日志等 |
-| `alice` | `demo-pass-123` | 余额 $80（另兑换过一个 $10 兑换码），一份有效的 Max 周卡 + 一份待分配的 Sonnet 轻量包，两个带限额的 key（「Claude Code」开启了凭 key 查询账户） |
-| `bob` | `demo-pass-123` | 余额较少，管理员直接开通的 Max 月卡（所在账号已超卖） |
+| `alice` | `demo-pass-123` | 余额 $80（另兑换过一个 $10 兑换码），一份有效的 Max 周卡 + 一份待分配的 Sonnet 轻量包，两个带限额的 key（「Claude Code」开启了凭 key 查询账户），safeguard 已触发 1 次 |
+| `bob` | `demo-pass-123` | 余额较少，管理员直接开通的 Max 月卡（所在账号已超卖）；safeguard 次数已用完（所有 key 被锁定），有一个待处理的解封申请 |
 | `carol` | `demo-pass-123` | 几乎没有余额，只有余额档 key |
 
 4 个上游账号分别处于：正常、降权中、5h 已满、几分钟后变成「数据过期」。另有一批 20 个兑换码（前缀 OXA，其中一个已用、一个已作废）和一条公告。凭 key 查询页在 <http://localhost:8080/query>。
@@ -367,7 +394,7 @@ Vite 把 `/api` 和 `/v1` 代理到 `127.0.0.1:8080` 的后端，前端改动热
 `make dev-down` 停容器，`make dev-reset` 清空数据（下次重新生成演示数据）。
 
 演示数据（`bridge seed-demo -fakecpa http://127.0.0.1:18400`）：4 个指向 fakecpa 的账号（正常、降权中、5h 已满、几分钟后变成数据过期）、
-3 个 plan、alice 的一份有效订阅和一份待分配订阅、bob 的管理员开通订阅、若干 key、真实经过中转的请求和 13 天历史用量、一条 safeguard 事件；
+3 个 plan、alice 的一份有效订阅和一份待分配订阅、bob 的管理员开通订阅、若干 key、真实经过中转的请求和 13 天历史用量、safeguard 触发（bob 用完 3 次并有一个待处理的解封申请，alice 触发过 1 次）；
 库里没有 cpa-quota schema 时还会建一个演示用的（估算、k 趋势、5h / 7d 曲线、成本对比）。已有数据时不做任何事。
 
 ### 其他命令

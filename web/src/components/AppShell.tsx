@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { LogOut, Menu, Moon, Search, Sun } from "lucide-react";
 import { Dialog as D } from "radix-ui";
 import { api, unwrap, type Schemas } from "@/api/client";
-import { keys, overviewQuery } from "@/api/queries";
+import { keys, overviewQuery, pendingAppealsQuery } from "@/api/queries";
 import { adminNav, mobileTabs, userNav, type NavItem } from "@/lib/nav";
 import { getTheme, isDark, setTheme } from "@/lib/theme";
 import { APP_VERSION } from "@/lib/version";
@@ -16,12 +16,15 @@ import { Button } from "./ui/button";
 import { SheetContent } from "./ui/dialog";
 import { CommandPalette, useCommandPaletteHotkey } from "./CommandPalette";
 import { AnnouncementBanner } from "./AnnouncementBanner";
+import { SafeguardLockBanner } from "./Safeguard";
 
 function isActive(item: NavItem, path: string) {
   return item.exact ? path === item.to : path === item.to || path.startsWith(item.to + "/");
 }
 
-function NavList({ items, title, pending, onNavigate }: { items: NavItem[]; title: string; pending: number; onNavigate?: () => void }) {
+type Badges = Record<NonNullable<NavItem["badge"]>, number>;
+
+function NavList({ items, title, badges, onNavigate }: { items: NavItem[]; title: string; badges?: Badges; onNavigate?: () => void }) {
   const { t } = useTranslation();
   const path = useRouterState({ select: (s) => s.location.pathname });
   return (
@@ -44,7 +47,7 @@ function NavList({ items, title, pending, onNavigate }: { items: NavItem[]; titl
                 <span className={cn("num w-5 text-[11px]", active ? "text-on-yellow" : "text-muted")}>{item.n}</span>
                 <item.icon className="size-4" aria-hidden />
                 <span className="flex-1 truncate">{t(item.label)}</span>
-                {item.badge === "pending" ? <CountBadge n={pending} /> : null}
+                {item.badge && badges ? <CountBadge n={badges[item.badge]} /> : null}
               </Link>
             </li>
           );
@@ -98,6 +101,7 @@ export function AppShell({ me, children }: { me: Schemas["Me"]; children: ReactN
   useCommandPaletteHotkey(() => setPalette(true));
   const logout = useLogout();
   const overview = useQuery({ ...overviewQuery, enabled: admin });
+  const appeals = useQuery({ ...pendingAppealsQuery, enabled: admin });
   const qc = useQueryClient();
   const { i18n } = useTranslation();
   const lang = i18n.language === "en" ? "en" : "zh-CN";
@@ -116,11 +120,12 @@ export function AppShell({ me, children }: { me: Schemas["Me"]; children: ReactN
     return () => document.documentElement.removeAttribute("data-tabbar");
   }, [onAdmin]);
   const pending = overview.data?.pending_assignment ?? 0;
+  const badges: Badges = { pending, appeals: appeals.data?.pending ?? 0 };
 
   const groups = (onNavigate?: () => void) => (
     <>
-      <NavList items={userNav} title={t("nav.groupUser")} pending={0} onNavigate={onNavigate} />
-      {admin ? <NavList items={adminNav} title={t("nav.groupAdmin")} pending={pending} onNavigate={onNavigate} /> : null}
+      <NavList items={userNav} title={t("nav.groupUser")} onNavigate={onNavigate} />
+      {admin ? <NavList items={adminNav} title={t("nav.groupAdmin")} badges={badges} onNavigate={onNavigate} /> : null}
     </>
   );
 
@@ -175,7 +180,7 @@ export function AppShell({ me, children }: { me: Schemas["Me"]; children: ReactN
               <D.Trigger asChild>
                 <Button variant="ghost" size="icon-sm" aria-label={t("nav.menu")} className="relative">
                   <Menu aria-hidden />
-                  {pending > 0 ? <span className="absolute -top-0.5 -right-0.5 size-2.5 border border-ink bg-yellow" aria-hidden /> : null}
+                  {badges.pending + badges.appeals > 0 ? <span className="absolute -top-0.5 -right-0.5 size-2.5 border border-ink bg-yellow" aria-hidden /> : null}
                 </Button>
               </D.Trigger>
               <SheetContent side="left" title={t("nav.menu")}>
@@ -203,6 +208,7 @@ export function AppShell({ me, children }: { me: Schemas["Me"]; children: ReactN
       >
         <div className="mx-auto max-w-[1400px]">
           <AnnouncementBanner />
+          <SafeguardLockBanner />
           {children}
         </div>
       </main>

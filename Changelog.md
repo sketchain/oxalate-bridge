@@ -1,5 +1,49 @@
 # Changelog
 
+## v0.6.0
+
+### Safeguard 防护
+
+- 每个用户一份 safeguard 次数（所有 key 共用），默认 3 次（`safeguard_default_allowance`，改动对所有用户即时生效），管理员可在用户详情里单独调整次数、已用次数和重置卡。次数用完即锁定，不会自动恢复。
+- 锁定期间该用户所有 key 的 `/v1/messages`、`/v1/messages/count_tokens` 在中转站本地拒绝：403 `safeguard_locked`，提示去面板用重置卡或申请解封；面板照常登录，`GET /v1/models` 和状态栏接口不受影响。检查在选档之前，不占并发、不预扣。
+- 重置卡：新用户默认 1 张（`safeguard_default_reset_cards`），用户自己点一下把已用次数清零；管理员可以补发。
+- 申请解封：锁定后用户填写说明提交（同一时间只能有一个待处理申请），管理员同意（已用次数清零）或拒绝（必须写理由），双方都有推送（新事件 `safeguard_appeal_new` 给管理员、`safeguard_appeal_result` 给用户，默认开）。
+- 每次触发保存客户端发来的完整请求体（gzip，永久保留，不自动清理），管理员在后台分段查看原文或下载；首次查看和下载记审计日志。用户的 safeguard 页、锁定提示和创建 key 的对话框都写明管理员可以查看触发的请求。
+- 提示词黑名单：取最后一条 user 消息的文本（去掉 `<system-reminder>`，没有文本时用 tool_result 的文本，连续空白合并成一个空格），sha256 后写入全站黑名单。之后任何用户发出相同内容都在本地拒绝：400 `safeguard_prompt_blocked`，不扣次数、不转发。规范化后短于 `safeguard_hash_min_chars`（默认 16 个字符）的不进黑名单。管理员可撤销误伤；撤销后同样的内容再触发会重新加入。
+- 拒绝识别跟 cpa-quota v0.1.0 一致：错误体里的 `claude refusal…` 文本、响应或流式 `message_delta` 的 `stop_reason: refusal` / `stop_details` 拒绝类别、Anthropic 纯文本的 cyber 拒绝。上游错误形式的拒绝不计费；非流式 200 和流式中途的拒绝按上游实际报告的用量计费。同一用户并发的多个请求被拒、而第一个已经锁定或拉黑时，后面的只记录、不再扣次数。
+- 新接口：`GET /me/safeguard`、`POST /me/safeguard/reset-card`、`POST /me/safeguard/appeals`；`PATCH /admin/users/{userId}/safeguard`；`GET /admin/safeguard-events/{eventId}`、`/body`（分段）、`/raw`（下载）；`GET /admin/safeguard-blocks`、`GET /admin/safeguard-blocks/{hash}`、`POST /admin/safeguard-blocks/{hash}/revoke`；`GET /admin/safeguard-appeals`、`POST /admin/safeguard-appeals/{appealId}/approve|reject`。`GET /admin/safeguard-events` 新增按用户、按 hash 过滤；`User` 新增 `safeguard_locked`。
+- 新错误码：`safeguard_locked`（403）、`safeguard_prompt_blocked`（400）、`safeguard_no_reset_card`、`safeguard_nothing_to_reset`、`safeguard_not_locked`、`safeguard_appeal_pending`、`safeguard_appeal_decided`（均为 409），都有中英文文案。
+- 前端：用户导航新增「我的 Safeguard」（剩余次数、重置卡、申请解封、被自动拦截的次数和时间、最近的触发记录）；锁定时每个页面顶部显示警示条；管理端「Safeguard 管理」分成触发记录（详情抽屉、请求体查看、同内容记录）、提示词黑名单（hash ↔ 提示词、撤销）、解封申请（待处理数量角标，同意 / 拒绝）三个标签；用户详情新增 safeguard 分组与调整对话框，用户列表显示锁定标签；系统设置新增 safeguard 参数分组。
+
+### 转发错误文案语言
+
+- 新运行时参数 `relay_error_locale`（`zh-CN` / `en`，默认 `zh-CN`），`/v1/*` 返回给客户端的错误 `message` 统一用这种语言；`error.type`、`error.code`、状态码和其他字段不变。文案集中在 `internal/relaymsg`，有测试保证每条两种语言都有。管理端「系统设置」可选。
+
+### 对齐 cpa-quota v0.1.0
+
+- cpa-quota v0.1.0（`3f2b333`）只服务 Claude 账号，`/quota` 不再返回 `subscription` 和 `provider`。账号表删掉这两列（及其 CHECK 约束），导入、测试、详情不再显示和校验订阅类型；`account_auth_error` 推送的原因去掉「订阅类型变化」，只分「凭证失效（401）」和其他。plan 的 `subscription` 仍只能是 `claude`。
+- 每个 CPA 必须在 cpa-quota 里配置 `auth_indexes`（一个 CPA 一个号），否则 `/quota` 不列出账号，导入失败：「quota response lists no account」。
+- `internal/cpaquota/schema.sql` 换成 v0.1.0 的表结构（schema version 1）。
+- 去掉账号的「Paused」状态（cpa-quota 不再报告），面板和可用额度计算同步删除。
+
+### 防漂移检查
+
+- CI 的 Test 任务按 `backend/internal/cpaquota/UPSTREAM` 记录的提交拉取 cpa-quota，用它自己的迁移代码建一个 schema；`TestUpstreamSchemaDrift` 把本仓库 `queries/cpaquota.sql` 的每条查询分别对 `schema.sql` 和这个真实 schema 做 prepare，并比较两边的列、索引和 schema_version，不一致时列出「只在上游 / 只在 schema.sql」的差异。升级 cpa-quota 时改 UPSTREAM 即可。
+
+### 管理 API token
+
+- 读写 token 也不能停用或删除管理员账号（`admin_token_forbidden`）。
+
+### 推送
+
+- `account_auth_error` 的正文写明原因（凭证失效 401 / 其他，后面附原始原因），不再拆成多个事件。
+
+### 测试与演示数据
+
+- 后端：次数与锁定、重置卡、申请的同意 / 拒绝与推送、请求体保存与分段读取、黑名单拦截不扣次数、撤销与重新加入、并发触发不重复扣次数、提示词规范化、各种拒绝形式的识别、管理员调整、错误文案两种语言、防漂移检查。
+- Playwright 冒烟：用户 safeguard 页（剩余次数、重置卡、可查看提示）、锁定用户的警示条和申请状态、管理员查看触发记录与请求体、黑名单、驳回申请的必填校验、用户列表锁定标签；手机端无横向溢出的页面加上了用户 safeguard 页。
+- `seed-demo` 通过 fakecpa 的拒绝标记真实触发：bob 用完 3 次（其中一次重复内容被黑名单拦下）并提交了一个待处理的解封申请；alice 在一次流式响应中途触发 1 次。fakecpa 新增对应的拒绝标记。
+
 ## v0.5.0
 
 ### 新增错误码

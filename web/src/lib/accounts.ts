@@ -7,7 +7,7 @@ type Account = Schemas["Account"];
 
 /**
  * Display status, decided by the backend (`runtime.display_status`) by
- * priority: error > disabled > cooldown > 5h / 7d full or paused > stale >
+ * priority: error > disabled > cooldown > 5h / 7d full > stale >
  * penalized > normal.
  */
 export function accountKind(a: Account): StatusKind {
@@ -53,8 +53,6 @@ export function accountNote(a: Account, now: Date, locale: string, t: TFunction)
       return reasonText || t("status.error");
     case "disabled":
       return t("accounts.note.disabled");
-    case "paused":
-      return t("accounts.note.paused");
     case "five_hour_full":
     case "week_full": {
       const w = rt.display_status === "week_full" ? rt.week : rt.five_hour;

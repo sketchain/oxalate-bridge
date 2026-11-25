@@ -109,7 +109,7 @@ test("dark mode toggle is applied and remembered", async ({ page }) => {
   await expect(html).not.toHaveClass(/dark/);
 });
 
-const USER_PAGES = ["/", "/keys", "/usage", "/plans", "/billing", "/pricing", "/settings", "/me"];
+const USER_PAGES = ["/", "/keys", "/usage", "/plans", "/billing", "/pricing", "/safeguard", "/settings", "/me"];
 
 /** A separate API session (its own cookies) logged in as the admin. */
 async function adminApi(baseURL: string): Promise<APIRequestContext> {
@@ -314,4 +314,47 @@ test("admin edits the public endpoint rate limits", async ({ page, baseURL }) =>
   // Restore the default for the other tests.
   expect((await admin.patch("/api/v1/admin/settings", { data: { status_key_per_minute: 60 } })).ok()).toBeTruthy();
   await admin.dispose();
+});
+
+test("safeguard: the user sees the allowance and the notice; a locked user sees the lock and the appeal", async ({ page }) => {
+  // Seed data: alice used 1 of 3, bob used all 3 (locked) with a pending appeal.
+  await login(page, USER, "/safeguard");
+  await expect(page.getByTestId("sg-remaining")).toHaveText("2 / 3");
+  await expect(page.getByTestId("sg-cards")).toHaveText("1");
+  await expect(page.getByTestId("safeguard-notice")).toContainText("管理员可以查看");
+  await expect(page.getByTestId("safeguard-locked")).toHaveCount(0);
+
+  await page.context().clearCookies();
+  await login(page, { username: "bob", password: USER.password });
+  const banner = page.getByTestId("safeguard-locked");
+  await expect(banner).toContainText("所有 key 已暂停转发");
+  await banner.getByRole("link", { name: "查看申请" }).click();
+  await expect(page).toHaveURL(/\/safeguard$/);
+  await expect(page.getByTestId("sg-remaining")).toHaveText("0 / 3");
+  await expect(page.getByTestId("sg-appeal")).toContainText("待处理");
+  await expect(page.getByTestId("sg-blocked")).toHaveText("1");
+});
+
+test("safeguard admin: triggers with the stored body, the blocklist and the pending appeal", async ({ page }) => {
+  await login(page, ADMIN, "/admin/safeguard");
+  await page.getByRole("button", { name: "查看", exact: true }).first().click();
+  const drawer = page.getByTestId("sg-event");
+  await expect(drawer).toBeVisible();
+  await drawer.getByRole("button", { name: "查看请求体" }).click();
+  await expect(page.getByTestId("sg-body")).toContainText('"messages"');
+  await page.keyboard.press("Escape");
+
+  await page.getByRole("tab", { name: "提示词黑名单" }).click();
+  await expect(page.getByText("横向移动").first()).toBeVisible();
+
+  await page.getByRole("tab", { name: /解封申请/ }).click();
+  const appeals = page.getByTestId("sg-appeals");
+  await expect(appeals).toContainText("bob");
+  await appeals.getByRole("button", { name: "拒绝" }).first().click();
+  await page.getByRole("dialog").getByRole("button", { name: "拒绝" }).click();
+  await expect(page.getByRole("dialog")).toContainText("必填");
+  await page.getByRole("dialog").getByRole("button", { name: "取消" }).click();
+
+  await page.goto("/admin/users");
+  await expect(page.getByTestId("user-safeguard-locked").first()).toBeVisible();
 });

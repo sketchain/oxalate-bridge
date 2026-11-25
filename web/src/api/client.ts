@@ -33,6 +33,11 @@ export const ERROR_CODES = [
   "admin_token_forbidden",
   "admin_token_rate_limited",
   "push_unavailable",
+  "safeguard_no_reset_card",
+  "safeguard_nothing_to_reset",
+  "safeguard_not_locked",
+  "safeguard_appeal_pending",
+  "safeguard_appeal_decided",
   "internal",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];

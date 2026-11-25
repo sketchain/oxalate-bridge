@@ -19,7 +19,7 @@ function MePage() {
   const { data: me } = useSuspenseQuery(meQuery);
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const links = userNav.filter((i) => ["/plans", "/billing", "/pricing", "/settings"].includes(i.to));
+  const links = userNav.filter((i) => ["/plans", "/billing", "/pricing", "/safeguard", "/settings"].includes(i.to));
   return (
     <>
       <PageHeader code="OB-00" title={t("nav.me")} />

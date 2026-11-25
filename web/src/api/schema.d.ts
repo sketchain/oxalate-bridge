@@ -87,6 +87,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/safeguard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's safeguard counters, reset cards, lock and latest appeal, and the requests the prompt blocklist stopped. */
+        get: operations["getMySafeguard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/safeguard/reset-card": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Spend one reset card to clear the safeguard count (and the lock).
+         * @description Errors: `safeguard_no_reset_card` (409) when the user has none,
+         *     `safeguard_nothing_to_reset` (409) when the count is already 0.
+         */
+        post: operations["useSafeguardResetCard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/safeguard/appeals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask an administrator to lift the safeguard lock.
+         * @description Only while locked (`safeguard_not_locked`, 409) and with no other
+         *     pending appeal (`safeguard_appeal_pending`, 409). Admins get a
+         *     `safeguard_appeal_new` push; the decision comes back as
+         *     `safeguard_appeal_result`.
+         */
+        post: operations["submitSafeguardAppeal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/push/config": {
         parameters: {
             query?: never;
@@ -650,6 +711,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/users/{userId}/safeguard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        get: operations["adminGetUserSafeguard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Set the user's allowance override, count or reset cards (audited). */
+        patch: operations["adminUpdateUserSafeguard"];
+        trace?: never;
+    };
     "/admin/keys/{keyId}/enabled": {
         parameters: {
             query?: never;
@@ -780,9 +860,9 @@ export interface paths {
         put?: never;
         /**
          * Import an account. /quota and /v1/models must both succeed before it is saved.
-         * @description Only Claude subscriptions are accepted: when /quota reports a subscription other
-         *     than `claude` the import fails with 422 `unsupported_subscription` (edits are
-         *     checked the same way).
+         * @description /quota must be served by cpa-quota v0.1.0 or later and list the account (set
+         *     `auth_indexes` in cpa-quota so each CPA reports exactly one account); otherwise the
+         *     import fails with 422 `upstream_validation_failed` ("quota response lists no account").
          */
         post: operations["adminCreateAccount"];
         delete?: never;
@@ -1167,6 +1247,178 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/safeguard-events/{eventId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        get: operations["adminGetSafeguardEvent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/safeguard-events/{eventId}/body": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * One chunk of the stored request body (the first chunk read is audited).
+         * @description The body is stored gzip-compressed; this returns up to `limit` bytes
+         *     of the original JSON from `offset`, cut on a UTF-8 boundary. Pass
+         *     `next_offset` back as `offset`; it is null at the end.
+         */
+        get: operations["adminGetSafeguardEventBody"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/safeguard-events/{eventId}/raw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        /** The whole stored request body as a file (audited). */
+        get: operations["adminDownloadSafeguardEventBody"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/safeguard-blocks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The prompt blocklist (hash and prompt), newest first. */
+        get: operations["adminListSafeguardBlocks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/safeguard-blocks/{hash}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hash: components["parameters"]["BlockHash"];
+            };
+            cookie?: never;
+        };
+        get: operations["adminGetSafeguardBlock"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/safeguard-blocks/{hash}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hash: components["parameters"]["BlockHash"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Take a prompt off the blocklist (a false positive). Audited. */
+        post: operations["adminRevokeSafeguardBlock"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/safeguard-appeals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["adminListSafeguardAppeals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/safeguard-appeals/{appealId}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appealId: components["parameters"]["AppealId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a pending appeal; the user's count is cleared and the lock lifted. Audited.
+         * @description `safeguard_appeal_decided` (409) when it is no longer pending.
+         */
+        post: operations["adminApproveSafeguardAppeal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/safeguard-appeals/{appealId}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appealId: components["parameters"]["AppealId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject a pending appeal with a reason the user sees. Audited. */
+        post: operations["adminRejectSafeguardAppeal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/prices": {
         parameters: {
             query?: never;
@@ -1391,7 +1643,9 @@ export interface components {
                  *     admin_token_invalid, admin_token_expired, admin_token_revoked,
                  *     admin_token_ip_denied, admin_token_read_only, admin_token_forbidden,
                  *     admin_token_rate_limited, push_unavailable,
-                 *     internal.
+                 *     safeguard_no_reset_card, safeguard_nothing_to_reset,
+                 *     safeguard_not_locked, safeguard_appeal_pending,
+                 *     safeguard_appeal_decided, internal.
                  */
                 code: string;
                 message: string;
@@ -2034,6 +2288,8 @@ export interface components {
             username: string;
             role: components["schemas"]["Role"];
             status: components["schemas"]["UserStatus"];
+            /** @description Every key is refused until the count drops below the allowance. */
+            safeguard_locked: boolean;
             /** Format: int64 */
             balance_micro: number;
             max_concurrency: number;
@@ -2094,7 +2350,7 @@ export interface components {
         AccountRuntime: {
             /**
              * @description Decided by the backend: the account can take a new session of a normal call right now —
-             *     enabled, not stale / cooldown / error / 5h or week full / paused, and H_A above the
+             *     enabled, not stale / cooldown / error / 5h or week full, and H_A above the
              *     normal-call threshold (standard_min_headroom_micro). A penalized account with enough
              *     headroom is assignable.
              */
@@ -2109,13 +2365,13 @@ export interface components {
             status_reason: string;
             /**
              * @description Machine-readable reason for `display_status` (empty when there is none). Known codes:
-             *     `disabled`, `upstream_auth` (upstream 401 / 403), `unsupported_subscription`, `error`
+             *     `disabled`, `upstream_auth` (upstream 401 / 403), `error`
              *     (any other error), `network`, `upstream_429`, `upstream_5xx`, `error_cooldown`,
-             *     `cooldown`, `quota_stale`, `5h_exhausted`, `week_exhausted`, `paused`, `penalized`.
+             *     `cooldown`, `quota_stale`, `5h_exhausted`, `week_exhausted`, `penalized`.
              *     Clients must cope with codes they do not know.
              */
             status_reason_code: string;
-            /** @description Why the account cannot take requests (`5h_exhausted`, `week_exhausted`, `paused`, `cooldown`), empty otherwise. */
+            /** @description Why the account cannot take requests (`5h_exhausted`, `week_exhausted`, `cooldown`), empty otherwise. */
             hard_reason: string;
             /** @description H_A < 0 (plan reservations exceed what is left of the week). */
             oversold: boolean;
@@ -2125,7 +2381,7 @@ export interface components {
             /** Format: date-time */
             cooldown_until?: string | null;
             hard_exhausted: boolean;
-            /** @description cpa-quota account state: cold, estimated or paused. */
+            /** @description cpa-quota account state: cold or estimated. */
             state?: string;
             /** Format: double */
             safety_factor?: number;
@@ -2158,10 +2414,10 @@ export interface components {
         };
         /**
          * @description The single status to show for an account, by priority: error > disabled > cooldown >
-         *     five_hour_full / week_full / paused (hard exhausted) > stale > penalized > normal.
+         *     five_hour_full / week_full (hard exhausted) > stale > penalized > normal.
          * @enum {string}
          */
-        AccountDisplayStatus: "error" | "disabled" | "cooldown" | "five_hour_full" | "week_full" | "paused" | "stale" | "penalized" | "normal";
+        AccountDisplayStatus: "error" | "disabled" | "cooldown" | "five_hour_full" | "week_full" | "stale" | "penalized" | "normal";
         Account: {
             /** Format: uuid */
             id: string;
@@ -2175,10 +2431,8 @@ export interface components {
             max_concurrency?: number | null;
             note: string;
             instance: string;
-            subscription: string;
             tier: string;
             auth_index: string;
-            provider: string;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -2249,10 +2503,8 @@ export interface components {
             models_ok: boolean;
             models_error?: string;
             instance?: string;
-            subscription?: string;
             tier?: string;
             auth_index?: string;
-            provider?: string;
             models?: string[];
         };
         BlockingSubscription: {
@@ -2264,16 +2516,12 @@ export interface components {
             status: components["schemas"]["SubscriptionStatus"];
             plan_name: string;
         };
-        /** @description A row of cpa-quota's `estimates` table (schema version 1), unchanged. */
+        /** @description A row of cpa-quota's `estimates` table (schema version 1, cpa-quota v0.1.0), unchanged. */
         CpaQuotaEstimate: {
             instance: string;
             auth_index: string;
-            provider: string;
-            subscription: string;
             tier: string;
             state: string;
-            pause_reason: string;
-            segment_window: string;
             basis: string;
             /** Format: double */
             k?: number | null;
@@ -2533,6 +2781,17 @@ export interface components {
             vapid_subject: string;
             /** @description The contact actually used. */
             readonly vapid_subject_effective: string;
+            /**
+             * @description Language of error.message in relay (/v1) answers (default zh-CN); error.code and error.type are never localized.
+             * @enum {string}
+             */
+            relay_error_locale: "zh-CN" | "en";
+            /** @description Safeguard triggers per user before every key is locked (default 3; a user override wins). Changes apply to every user at once. */
+            safeguard_default_allowance: number;
+            /** @description Reset cards a new user starts with (default 1). */
+            safeguard_default_reset_cards: number;
+            /** @description Shortest normalized prompt (characters) put on the blocklist (default 16). */
+            safeguard_hash_min_chars: number;
         };
         /** @description Any subset of Settings. */
         SettingsPatch: {
@@ -2569,6 +2828,11 @@ export interface components {
             admin_token_per_minute?: number;
             stream_backlog_threshold?: number;
             vapid_subject?: string;
+            /** @enum {string} */
+            relay_error_locale?: "zh-CN" | "en";
+            safeguard_default_allowance?: number;
+            safeguard_default_reset_cards?: number;
+            safeguard_hash_min_chars?: number;
         };
         AuditLog: {
             /** Format: uuid */
@@ -2673,11 +2937,12 @@ export interface components {
         /**
          * @description Admin events: account_auth_error, account_stale, subscription_pending,
          *     reconcile_mismatch, stream_backlog_high (on by default), account_full,
-         *     safeguard_event (off by default). User events: balance_low,
-         *     plan_expiring, auto_renew_failed (on by default), key_exhausted (off).
+         *     safeguard_event (off by default), safeguard_appeal_new (on). User
+         *     events: balance_low, plan_expiring, auto_renew_failed,
+         *     safeguard_appeal_result (on by default), key_exhausted (off).
          * @enum {string}
          */
-        NotificationEvent: "account_auth_error" | "account_stale" | "subscription_pending" | "reconcile_mismatch" | "stream_backlog_high" | "account_full" | "safeguard_event" | "balance_low" | "plan_expiring" | "auto_renew_failed" | "key_exhausted";
+        NotificationEvent: "account_auth_error" | "account_stale" | "subscription_pending" | "reconcile_mismatch" | "stream_backlog_high" | "account_full" | "safeguard_event" | "safeguard_appeal_new" | "balance_low" | "plan_expiring" | "auto_renew_failed" | "key_exhausted" | "safeguard_appeal_result";
         NotificationPref: {
             event: components["schemas"]["NotificationEvent"];
             /** @enum {string} */
@@ -2705,6 +2970,12 @@ export interface components {
             items: components["schemas"]["AuditLog"][];
             next_cursor?: string | null;
         };
+        /**
+         * @description One request Claude refused for safety reasons. `counted` is false
+         *     when the prompt was already on the blocklist (a concurrent repeat),
+         *     so it did not use the user's allowance. `prompt` is the normalized
+         *     last user message (see README); the list cuts it to 500 characters.
+         */
         SafeguardEvent: {
             /** Format: uuid */
             id: string;
@@ -2721,10 +2992,171 @@ export interface components {
             reason: string;
             /** Format: date-time */
             created_at: string;
+            /** @description Upstream status (200 for a refusal inside a response or stream). */
+            status_code: number;
+            stream: boolean;
+            counted: boolean;
+            /** @description Empty when the prompt was too short to hash. */
+            prompt_hash: string;
+            prompt: string;
+            has_body: boolean;
+            /**
+             * Format: int64
+             * @description Uncompressed body size in bytes.
+             */
+            body_size: number;
+            username: string;
+            key_name: string;
+            key_prefix: string;
+            account_name: string;
         };
         SafeguardEventPage: {
             items: components["schemas"]["SafeguardEvent"][];
             next_cursor?: string | null;
+        };
+        SafeguardBodyChunk: {
+            text: string;
+            /** Format: int64 */
+            offset: number;
+            /** Format: int64 */
+            next_offset?: number | null;
+            /** Format: int64 */
+            total_size: number;
+        };
+        SafeguardBlock: {
+            hash: string;
+            prompt: string;
+            /** Format: uuid */
+            first_event_id?: string | null;
+            /** Format: uuid */
+            first_user_id?: string | null;
+            first_username: string;
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: int64
+             * @description Requests the entry stopped.
+             */
+            hits: number;
+            /** Format: date-time */
+            last_hit_at?: string | null;
+            /** Format: date-time */
+            revoked_at?: string | null;
+            revoked_by_username: string;
+        };
+        SafeguardBlockPage: {
+            items: components["schemas"]["SafeguardBlock"][];
+            next_cursor?: string | null;
+        };
+        /** @enum {string} */
+        SafeguardAppealStatus: "pending" | "approved" | "rejected";
+        SafeguardAppeal: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            user_id: string;
+            username: string;
+            note: string;
+            status: components["schemas"]["SafeguardAppealStatus"];
+            reject_reason: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            decided_at?: string | null;
+            decided_by_username: string;
+            /** @description The user's current count. */
+            used: number;
+            /** @description The user's allowance in effect. */
+            allowance: number;
+            reset_cards: number;
+        };
+        SafeguardAppealPage: {
+            items: components["schemas"]["SafeguardAppeal"][];
+            next_cursor?: string | null;
+            /** Format: int64 */
+            pending: number;
+        };
+        SafeguardAppealCreate: {
+            note: string;
+        };
+        SafeguardAppealReject: {
+            reason: string;
+        };
+        MySafeguardAppeal: {
+            /** Format: uuid */
+            id: string;
+            note: string;
+            status: components["schemas"]["SafeguardAppealStatus"];
+            reject_reason: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            decided_at?: string | null;
+        };
+        MySafeguardEvent: {
+            /** Format: date-time */
+            created_at: string;
+            model: string;
+            category: string;
+            counted: boolean;
+        };
+        MySafeguardBlocked: {
+            /** Format: date-time */
+            created_at: string;
+            key_name: string;
+            key_prefix: string;
+        };
+        /**
+         * @description Safeguard state of the caller. While `locked`, every key of the user
+         *     is refused locally with `safeguard_locked`. Requests whose prompt is
+         *     on the site-wide blocklist are refused with `safeguard_prompt_blocked`,
+         *     never reach upstream and do not use the allowance; `blocked_count`
+         *     and `recent_blocked` list them. Administrators can view the requests
+         *     that triggered the safeguard.
+         */
+        MySafeguard: {
+            allowance: number;
+            used: number;
+            remaining: number;
+            reset_cards: number;
+            locked: boolean;
+            /** Format: date-time */
+            locked_at?: string | null;
+            /** @description The latest appeal, if any. */
+            appeal?: components["schemas"]["MySafeguardAppeal"] | null;
+            /** Format: int64 */
+            events_count: number;
+            /** @description The latest 20 triggers. */
+            recent_events: components["schemas"]["MySafeguardEvent"][];
+            /** Format: int64 */
+            blocked_count: number;
+            /** @description The latest 20 requests stopped by the blocklist. */
+            recent_blocked: components["schemas"]["MySafeguardBlocked"][];
+        };
+        AdminUserSafeguard: {
+            /** Format: uuid */
+            user_id: string;
+            username: string;
+            /** @description Allowance in effect. */
+            allowance: number;
+            /** @description null = the default setting. */
+            allowance_override?: number | null;
+            default_allowance: number;
+            used: number;
+            reset_cards: number;
+            locked: boolean;
+            /** Format: date-time */
+            locked_at?: string | null;
+            /** Format: int64 */
+            events_count: number;
+            /** Format: int64 */
+            blocked_count: number;
+        };
+        /** @description Fields left out keep their value; allowance_override null = use the default. */
+        AdminUserSafeguardUpdate: {
+            allowance_override?: number | null;
+            used?: number;
+            reset_cards?: number;
         };
         PriceStatus: {
             source_url: string;
@@ -2790,7 +3222,7 @@ export interface components {
             normal: number;
             /** @description Normal status with the routing weight reduced (降权中). */
             penalized: number;
-            /** @description Hard exhausted: 5-hour or week window full, or paused by the plugin. */
+            /** @description Hard exhausted: 5-hour or week window full. */
             full: number;
             stale: number;
             cooldown: number;
@@ -3211,6 +3643,9 @@ export interface components {
         SubscriptionId: string;
         UserId: string;
         AccountId: string;
+        EventId: string;
+        AppealId: string;
+        BlockHash: string;
         Cursor: string;
         Limit: number;
         KeyIdFilter: string;
@@ -3341,6 +3776,73 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getMySafeguard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Safeguard state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MySafeguard"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    useSafeguardResetCard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description State after the reset. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MySafeguard"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    submitSafeguardAppeal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SafeguardAppealCreate"];
+            };
+        };
+        responses: {
+            /** @description State with the new appeal. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MySafeguard"];
+                };
             };
             default: components["responses"]["Error"];
         };
@@ -4278,6 +4780,56 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    adminGetUserSafeguard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The user's safeguard counters. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserSafeguard"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminUpdateUserSafeguard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserSafeguardUpdate"];
+            };
+        };
+        responses: {
+            /** @description Counters after the change. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserSafeguard"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     adminSetKeyEnabled: {
         parameters: {
             query?: never;
@@ -5130,6 +5682,7 @@ export interface operations {
                 cursor?: components["parameters"]["Cursor"];
                 limit?: components["parameters"]["Limit"];
                 user_id?: components["parameters"]["UserIdFilter"];
+                prompt_hash?: string;
             };
             header?: never;
             path?: never;
@@ -5137,13 +5690,235 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Safeguard (Claude refusal) events, newest first. */
+            /** @description Safeguard (Claude refusal) events, newest first; prompt cut to 500 characters. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["SafeguardEventPage"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminGetSafeguardEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The event with the whole normalized prompt (body not included). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SafeguardEvent"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminGetSafeguardEventBody: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The chunk. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SafeguardBodyChunk"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminDownloadSafeguardEventBody: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The original request body (JSON), as an attachment. */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminListSafeguardBlocks: {
+        parameters: {
+            query?: {
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+                status?: "all" | "active" | "revoked";
+                /** @description Substring of the prompt, or an exact hash. */
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Entries; prompt cut to 500 characters. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SafeguardBlockPage"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminGetSafeguardBlock: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hash: components["parameters"]["BlockHash"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The entry with the whole prompt. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SafeguardBlock"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminRevokeSafeguardBlock: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hash: components["parameters"]["BlockHash"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The revoked entry. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SafeguardBlock"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminListSafeguardAppeals: {
+        parameters: {
+            query?: {
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+                user_id?: components["parameters"]["UserIdFilter"];
+                status?: "all" | "pending" | "approved" | "rejected";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Appeals, newest first, with the pending count. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SafeguardAppealPage"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminApproveSafeguardAppeal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appealId: components["parameters"]["AppealId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The decided appeal. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SafeguardAppeal"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    adminRejectSafeguardAppeal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appealId: components["parameters"]["AppealId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SafeguardAppealReject"];
+            };
+        };
+        responses: {
+            /** @description The decided appeal. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SafeguardAppeal"];
                 };
             };
             default: components["responses"]["Error"];

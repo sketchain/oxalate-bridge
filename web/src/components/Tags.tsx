@@ -15,10 +15,9 @@ export type StatusKind =
   | "pending"
   | "five_hour_full"
   | "week_full"
-  | "paused"
   | "full";
 
-const FULL_KINDS: ReadonlySet<StatusKind> = new Set(["five_hour_full", "week_full", "paused", "full"]);
+const FULL_KINDS: ReadonlySet<StatusKind> = new Set(["five_hour_full", "week_full", "full"]);
 
 /** Square status tag. The "full" kinds (hard exhausted) get a 1px ink frame with an 8px hazard stripe on the left. */
 export function StatusTag({ kind, className }: { kind: StatusKind; className?: string }) {
@@ -43,7 +42,6 @@ export function StatusTag({ kind, className }: { kind: StatusKind; className?: s
     pending: "border border-dashed border-ink text-ink",
     five_hour_full: "",
     week_full: "",
-    paused: "",
     full: "",
   };
   return (
